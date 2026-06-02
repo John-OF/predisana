@@ -1,0 +1,356 @@
+/* src/index.css */
+
+:root{
+  --cr-navy: #0b1220;
+  --cr-navy-2: #0a1930;
+  --cr-blue: #1e6bff;
+  --cr-cyan: #2dd4ff;
+  --cr-green: #22c55e;
+  --cr-text: #0f172a;
+  --cr-muted: rgba(15, 23, 42, .72);
+
+  --cr-card-bg: rgba(255,255,255,.92);
+  --cr-card-border: rgba(15, 23, 42, .08);
+
+  --cr-radius: 18px;
+  --cr-shadow: 0 18px 45px rgba(2, 6, 23, .10);
+  --cr-shadow-soft: 0 10px 25px rgba(2, 6, 23, .08);
+
+  --nav-h: 72px;
+}
+
+*{ box-sizing: border-box; }
+
+html, body{
+  height: 100%;
+}
+
+body{
+  margin: 0;
+  color: var(--cr-text);
+  background:
+    radial-gradient(900px 600px at 12% 10%, rgba(45,212,255,.20), transparent 60%),
+    radial-gradient(900px 600px at 88% 20%, rgba(30,107,255,.14), transparent 55%),
+    linear-gradient(180deg, rgba(255,255,255,.86), rgba(255,255,255,.94)),
+    url('/fondo3.jpeg');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+}
+
+#root{
+  min-height: 100%;
+}
+
+/* Para que el contenido no quede escondido detrás del navbar fixed */
+.cr-main{
+  padding-top: var(--nav-h);
+}
+
+/* =========================================================
+   NAVBAR (transparente -> sólido al hacer scroll)
+========================================================= */
+.custom-navbar{
+  background: rgba(10, 25, 48, .12);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(255,255,255,.10);
+  transition: background .25s ease, box-shadow .25s ease, border-color .25s ease;
+}
+
+.custom-navbar.nav-scrolled{
+  background: rgba(10, 25, 48, .92);
+  box-shadow: 0 10px 30px rgba(0,0,0,.20);
+  border-bottom: 1px solid rgba(255,255,255,.12);
+}
+
+.custom-navbar .navbar-brand{
+  letter-spacing: .2px;
+}
+
+.custom-navbar .navlink{
+  color: rgba(255,255,255,.85) !important;
+  position: relative;
+  padding-top: .8rem;
+  padding-bottom: .8rem;
+}
+
+.custom-navbar .navlink:hover{
+  color: #fff !important;
+}
+
+.custom-navbar .navlink.active{
+  color: #fff !important;
+  font-weight: 700;
+}
+
+.custom-navbar .navlink.active::after{
+  content:"";
+  position:absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 6px;
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--cr-cyan), var(--cr-blue));
+  opacity: .95;
+}
+
+.custom-navbar .navbar-toggler{
+  border-color: rgba(255,255,255,.25);
+}
+
+/* =========================================================
+   WRAPPER GLOBAL POR PÁGINA
+========================================================= */
+.cr-page{
+  padding-top: 0; /* ya lo maneja .cr-main */
+  padding-bottom: 2.2rem;
+}
+
+/* =========================================================
+   HERO (Home)
+========================================================= */
+.cr-hero{
+  position: relative;
+  padding: 88px 0 68px; /* se suma al nav fijo porque el main ya tiene padding-top */
+  margin-top: 0;
+  overflow: hidden;
+  background-image: url('/fondo4.jpeg');
+  background-size: cover;
+  background-position: center;
+  border-bottom: 1px solid rgba(15,23,42,.06);
+}
+
+.cr-hero::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  background:
+    linear-gradient(90deg, rgba(10,25,48,.86) 0%, rgba(10,25,48,.64) 38%, rgba(10,25,48,.20) 70%, rgba(10,25,48,.06) 100%),
+    radial-gradient(900px 500px at 18% 40%, rgba(45,212,255,.22), transparent 60%);
+}
+
+.cr-hero .container{
+  position: relative;
+  z-index: 1;
+}
+
+.cr-hero .hero-badge{
+  display:inline-flex;
+  align-items:center;
+  gap:.5rem;
+  padding: .45rem .75rem;
+  border-radius: 999px;
+  background: rgba(255,255,255,.12);
+  border: 1px solid rgba(255,255,255,.16);
+  color: rgba(255,255,255,.92);
+  font-weight: 600;
+}
+
+.cr-hero h1{
+  color: #fff;
+  text-shadow: 0 10px 35px rgba(0,0,0,.25);
+}
+
+.cr-hero .hero-lead{
+  color: rgba(255,255,255,.82);
+  max-width: 58ch;
+}
+
+.cr-hero .hero-illustration{
+  font-size: 7.5rem;
+  filter: drop-shadow(0 18px 30px rgba(0,0,0,.25));
+}
+
+/* =========================================================
+   BOTONES (afinados)
+========================================================= */
+.btn{
+  border-radius: 12px !important;
+}
+
+.btn-primary{
+  background: linear-gradient(90deg, #1e6bff, #2dd4ff) !important;
+  border: none !important;
+  box-shadow: 0 12px 28px rgba(30,107,255,.22);
+}
+
+.btn-primary:hover{
+  filter: brightness(1.03);
+}
+
+.btn-success{
+  background: linear-gradient(90deg, #16a34a, #22c55e) !important;
+  border: none !important;
+  box-shadow: 0 12px 28px rgba(34,197,94,.18);
+}
+
+.btn-outline-light{
+  border-color: rgba(255,255,255,.32) !important;
+  color: rgba(255,255,255,.92) !important;
+}
+
+.btn-outline-light:hover{
+  background: rgba(255,255,255,.12) !important;
+}
+
+/* =========================================================
+   CARDS (glass/clean)
+========================================================= */
+.card{
+  border-radius: var(--cr-radius) !important;
+  box-shadow: var(--cr-shadow-soft);
+}
+
+/* NO tocar cards con bg-* (para no romper métricas/alerts) */
+.card:not(.bg-primary):not(.bg-success):not(.bg-danger):not(.bg-warning):not(.bg-info):not(.bg-dark){
+  background: var(--cr-card-bg);
+  border: 1px solid var(--cr-card-border);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.card-header{
+  border-top-left-radius: var(--cr-radius) !important;
+  border-top-right-radius: var(--cr-radius) !important;
+}
+
+.hover-effect{
+  transition: transform .18s ease, box-shadow .18s ease;
+}
+.hover-effect:hover{
+  transform: translateY(-4px);
+  box-shadow: var(--cr-shadow);
+}
+
+/* Home - cards de acceso rápido */
+.cr-action-card .card-body{
+  padding: 1.6rem;
+}
+.cr-action-icon{
+  width: 54px;
+  height: 54px;
+  border-radius: 16px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background: linear-gradient(135deg, rgba(30,107,255,.14), rgba(45,212,255,.20));
+  border: 1px solid rgba(30,107,255,.18);
+  font-size: 28px;
+  margin-bottom: .8rem;
+}
+
+/* =========================================================
+   Tabs / Nav (Simulación, Métricas, Educación)
+========================================================= */
+.nav-tabs .nav-link{
+  border: none !important;
+  color: rgba(15,23,42,.65) !important;
+  border-radius: 12px 12px 0 0 !important;
+}
+
+.nav-tabs .nav-link.active{
+  color: var(--cr-text) !important;
+  font-weight: 700;
+  background: rgba(30,107,255,.10) !important;
+}
+
+.nav-pills .nav-link{
+  border-radius: 12px !important;
+}
+
+/* =========================================================
+   Accordion (Home)
+========================================================= */
+.accordion{
+  border-radius: var(--cr-radius);
+  overflow:hidden;
+  box-shadow: var(--cr-shadow-soft);
+}
+
+.accordion-button{
+  font-weight: 700;
+}
+
+.accordion-button:not(.collapsed){
+  background: rgba(30,107,255,.10);
+  color: var(--cr-text);
+}
+
+/* =========================================================
+   FOOTER (como prototipo)
+========================================================= */
+.cr-footer{
+  position: relative;
+  background:
+    linear-gradient(180deg, rgba(10,25,48,.88), rgba(10,25,48,.96)),
+    url('/fondo5.jpeg');
+  background-size: cover;
+  background-position: center;
+  color: rgba(255,255,255,.86);
+  border-top: 1px solid rgba(255,255,255,.10);
+}
+
+.cr-footer::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  background:
+    radial-gradient(700px 500px at 20% 20%, rgba(45,212,255,.18), transparent 60%),
+    radial-gradient(700px 500px at 80% 35%, rgba(30,107,255,.16), transparent 55%);
+  pointer-events:none;
+}
+
+.cr-footer .container{
+  position: relative;
+  z-index: 1;
+}
+
+.cr-footer .footer-brand{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:.8rem;
+}
+
+.cr-footer .footer-logo{
+  width: 46px;
+  height: 46px;
+  border-radius: 999px;
+  border: 1px solid rgba(45,212,255,.35);
+  box-shadow: 0 12px 30px rgba(0,0,0,.18);
+}
+
+.cr-footer .footer-title{
+  margin: 0;
+  font-weight: 800;
+  letter-spacing: .2px;
+}
+
+.cr-footer .footer-sub{
+  margin: .4rem 0 0;
+  color: rgba(255,255,255,.72);
+}
+
+.cr-footer .footer-meta{
+  margin-top: 1.2rem;
+  color: rgba(255,255,255,.70);
+  font-size: .95rem;
+}
+
+.cr-footer .footer-note{
+  margin-top: .6rem;
+  color: rgba(255,255,255,.62);
+  font-size: .9rem;
+}
+
+/* Ajustes responsive */
+@media (max-width: 992px){
+  .cr-hero{
+    padding: 72px 0 56px;
+  }
+  .cr-hero .hero-illustration{
+    font-size: 6rem;
+  }
+}

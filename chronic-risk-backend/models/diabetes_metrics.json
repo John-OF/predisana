@@ -1,0 +1,108 @@
+{
+  "dataset": "diabetes",
+  "features": [
+    "age",
+    "pregnancies",
+    "glucose",
+    "blood_pressure",
+    "skin_thickness",
+    "insulin",
+    "bmi",
+    "diabetes_pedigree",
+    "hba1c_level",
+    "blood_glucose_level",
+    "gender_Female",
+    "gender_Male",
+    "smoking_history_current",
+    "smoking_history_former",
+    "smoking_history_never",
+    "smoking_history_ever",
+    "smoking_history_not current",
+    "hypertension",
+    "heart_disease"
+  ],
+  "auc": 0.8308504282332094,
+  "report": {
+    "0": {
+      "precision": 0.9423473014600003,
+      "recall": 0.8497419545708557,
+      "f1-score": 0.8936519597251631,
+      "support": 60842.0
+    },
+    "1": {
+      "precision": 0.4207324800405525,
+      "recall": 0.6773436703050086,
+      "f1-score": 0.5190541332812194,
+      "support": 9803.0
+    },
+    "accuracy": 0.8258192370302215,
+    "macro avg": {
+      "precision": 0.6815398907502764,
+      "recall": 0.7635428124379322,
+      "f1-score": 0.7063530465031913,
+      "support": 70645.0
+    },
+    "weighted avg": {
+      "precision": 0.8699658152348628,
+      "recall": 0.8258192370302215,
+      "f1-score": 0.8416711756267842,
+      "support": 70645.0
+    }
+  },
+  "auc_test": 0.8308504282332094,
+  "auc_train": 0.8315113984890974,
+  "report_test": {
+    "0": {
+      "precision": 0.9423473014600003,
+      "recall": 0.8497419545708557,
+      "f1-score": 0.8936519597251631,
+      "support": 60842.0
+    },
+    "1": {
+      "precision": 0.4207324800405525,
+      "recall": 0.6773436703050086,
+      "f1-score": 0.5190541332812194,
+      "support": 9803.0
+    },
+    "accuracy": 0.8258192370302215,
+    "macro avg": {
+      "precision": 0.6815398907502764,
+      "recall": 0.7635428124379322,
+      "f1-score": 0.7063530465031913,
+      "support": 70645.0
+    },
+    "weighted avg": {
+      "precision": 0.8699658152348628,
+      "recall": 0.8258192370302215,
+      "f1-score": 0.8416711756267842,
+      "support": 70645.0
+    }
+  },
+  "report_train": {
+    "0": {
+      "precision": 0.9426496881355007,
+      "recall": 0.8513861666851571,
+      "f1-score": 0.8946966164049951,
+      "support": 243369.0
+    },
+    "1": {
+      "precision": 0.42381953737335115,
+      "recall": 0.6785003825554705,
+      "f1-score": 0.5217391304347826,
+      "support": 39210.0
+    },
+    "accuracy": 0.8273969403246526,
+    "macro avg": {
+      "precision": 0.6832346127544259,
+      "recall": 0.7649432746203138,
+      "f1-score": 0.7082178734198888,
+      "support": 282579.0
+    },
+    "weighted avg": {
+      "precision": 0.8706580319565778,
+      "recall": 0.8273969403246526,
+      "f1-score": 0.8429459094349371,
+      "support": 282579.0
+    }
+  }
+}

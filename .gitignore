@@ -1,0 +1,43 @@
+# ===== Python (backend) =====
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.ipynb_checkpoints/
+
+# Entornos virtuales
+venv/
+.venv/
+env/
+
+# Base de datos generada en runtime
+*.db
+medical_history.db
+
+# ===== Node / Vite (frontend) =====
+node_modules/
+dist/
+dist-ssr/
+*.local
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Variables de entorno
+.env
+.env.*
+!.env.example
+
+# ===== Editores / OS =====
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.suo
+*.sw?
+
+# ===== Claude =====
+.claude/
