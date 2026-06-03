@@ -1,6 +1,6 @@
-# Chronic Risk Frontend
+# Predisana Frontend
 
-SPA en React 19 + Vite que sirve como interfaz educativa del proyecto de tesis **ChronicRisk AI**: una plataforma para explorar la predicción de riesgo de enfermedades crónicas (diabetes, hipertensión, obesidad y riesgo cardiovascular) usando Machine Learning.
+SPA en React 19 + Vite que sirve como interfaz educativa de **Predisana**: una plataforma para explorar la predicción de riesgo de enfermedades crónicas (diabetes, hipertensión, obesidad y riesgo cardiovascular) usando Machine Learning.
 
 Consume el API [`chronic-risk-backend`](../chronic-risk-backend) y presenta los resultados con visualizaciones interactivas, explicabilidad SHAP y un historial de simulaciones local.
 
@@ -71,7 +71,6 @@ El archivo `vercel.json` ya está configurado para servir la SPA con rewrites a 
 | `/simulacion`    | `Simulacion`     | Formulario clínico → predicción + SHAP. Es la página principal. |
 | `/metricas`      | `Metricas`       | Métricas de los modelos (AUC, classification report train/test). |
 | `/historial`     | `Historial`      | Historial de simulaciones del usuario (localStorage), con export JSON/CSV. |
-| `/evaluacion`    | `Evaluacion`     | Enlace al Google Forms para evaluación SUS de la tesis. |
 | `/aviso`         | `Aviso`          | Aviso legal / disclaimer médico. |
 
 ---

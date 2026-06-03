@@ -1,4 +1,4 @@
-# Chronic Risk — Predicción educativa de riesgo de enfermedades crónicas
+# Predisana — Predicción educativa de riesgo de enfermedades crónicas
 
 Aplicación full-stack que estima el riesgo de cuatro enfermedades crónicas
 (**diabetes, hipertensión, obesidad y cardiovascular**) a partir de datos

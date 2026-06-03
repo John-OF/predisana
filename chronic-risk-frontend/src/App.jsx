@@ -8,7 +8,6 @@ import Simulacion from './pages/Simulacion';
 import Metricas from './pages/Metricas';
 import Aviso from './pages/Aviso';
 import Educacion from './pages/Educacion';
-import Evaluacion from './pages/Evaluacion';
 import Historial from "./pages/Historial";
 
 const NotFound = () => (
@@ -29,7 +28,6 @@ function App() {
             <Route path="/educacion" element={<Educacion />} />
             <Route path="/simulacion" element={<Simulacion />} />
             <Route path="/metricas" element={<Metricas />} />
-            <Route path="/evaluacion" element={<Evaluacion />} />
             <Route path="/aviso" element={<Aviso />} />
             <Route path="/historial" element={<Historial />} />
             <Route path="*" element={<NotFound />} />
@@ -39,9 +37,9 @@ function App() {
         <footer className="cr-footer py-5 mt-auto">
           <Container className="text-center">
             <div className="footer-brand mb-3">
-              <img className="footer-logo" src="/icon.jpeg" alt="ChronicRisk AI" />
+              <img className="footer-logo" src="/icon.jpeg" alt="Predisana" />
               <div className="text-start">
-                <h5 className="footer-title">CronicApp</h5>
+                <h5 className="footer-title">Predisana</h5>
                 <div className="footer-sub">Plataforma de predicción de enfermedades crónicas basada en Machine Learning</div>
               </div>
             </div>

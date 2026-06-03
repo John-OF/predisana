@@ -1,11 +1,20 @@
 import json
 import os
+import sys
 import sqlite3
 import datetime
 from typing import Dict, Any, List
 
 import random
 import glob
+
+# En Windows la consola usa cp1252 y revienta al imprimir emojis (🎲, ⚠️) en los
+# logs. Forzamos UTF-8 en stdout/stderr para que esos print() no tumben requests.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
 
 import numpy as np
 import pandas as pd
@@ -55,7 +64,7 @@ FEATURES: Dict[str, List[str]] = {}
 # 1. FUNCIÓN DE BASE DE DATOS
 # ==========================================
 def init_db():
-    """Crea la tabla si no existe. Esto cumple con el requisito de tesis."""
+    """Crea la tabla si no existe."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute('''

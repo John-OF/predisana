@@ -8,7 +8,7 @@ const Aviso = () => {
             <Alert variant="warning" className="mb-4">
                 <Alert.Heading>⚠ Importante: Herramienta No Clínica</Alert.Heading>
                 <p>
-                    Este sistema es un prototipo académico desarrollado como parte de un proyecto de tesis de Ingeniería de Software.
+                    Este sistema es un prototipo académico desarrollado como proyecto de portafolio de Ingeniería de Software.
                     <strong> NO es un dispositivo médico ni una herramienta de diagnóstico clínico.</strong>
                 </p>
             </Alert>

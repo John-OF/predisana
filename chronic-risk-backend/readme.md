@@ -1,6 +1,6 @@
-# Chronic Risk Backend
+# Predisana Backend
 
-API REST en Python/Flask que sirve modelos de Machine Learning para la predicción de riesgo de enfermedades crónicas (diabetes, hipertensión, obesidad y riesgo cardiovascular). Es el backend de una plataforma educativa de tesis: integra inferencia, explicabilidad con SHAP, generación de datos sintéticos con CTGAN/TVAE, reglas clínicas progresivas y registro de historial en SQLite.
+API REST en Python/Flask que sirve modelos de Machine Learning para la predicción de riesgo de enfermedades crónicas (diabetes, hipertensión, obesidad y riesgo cardiovascular). Es el backend de una plataforma educativa: integra inferencia, explicabilidad con SHAP, generación de datos sintéticos con CTGAN/TVAE, reglas clínicas progresivas y registro de historial en SQLite.
 
 ---
 

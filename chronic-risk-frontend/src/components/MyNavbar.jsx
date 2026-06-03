@@ -27,7 +27,7 @@ const MyNavbar = () => {
             className="d-inline-block align-top me-2 rounded-circle border border-info"
             alt="Logo"
           />
-          CronicApp
+          Predisana
         </Navbar.Brand>
 
         <Navbar.Toggle aria-controls="basic-navbar-nav" />
@@ -41,9 +41,6 @@ const MyNavbar = () => {
             </Nav.Link>
             <Nav.Link as={NavLink} to="/simulacion" className="px-3 navlink">
               Simulador IA
-            </Nav.Link>
-            <Nav.Link as={NavLink} to="/evaluacion" className="px-3 navlink">
-              Evaluación
             </Nav.Link>
             <Nav.Link as={NavLink} to="/metricas" className="px-3 navlink">
               Métricas

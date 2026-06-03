@@ -11,7 +11,7 @@ const Home = () => {
           <Row className="align-items-center">
             <Col lg={7}>
               <div className="hero-badge mb-3">
-                <span>Proyecto de Tesis</span>
+                <span>Proyecto de Portafolio</span>
                 <span style={{ opacity: 0.8 }}>•</span>
                 <span>Ingeniería de Software</span>
               </div>
@@ -23,7 +23,7 @@ const Home = () => {
               <p className="lead hero-lead mb-4">
                 Una plataforma educativa que integra <strong>Machine Learning</strong>,
                 <strong> Datos Sintéticos (GAN)</strong> y simulaciones clínicas interactivas para
-                entender los factores de riesgo en la salud ecuatoriana.
+                entender los factores de riesgo en la salud pública.
               </p>
 
               <div className="d-flex flex-wrap gap-3">
@@ -93,12 +93,12 @@ const Home = () => {
             <Card className="h-100 cr-action-card hover-effect">
               <Card.Body className="text-center">
                 <div className="cr-action-icon mx-auto">📊</div>
-                <h5 className="fw-bold">Evaluación y Retroalimentación</h5>
+                <h5 className="fw-bold">Métricas de los Modelos</h5>
                 <p className="text-muted mb-4">
-                  Mide tu comprensión y evalúa tu experiencia
+                  Revisa el desempeño (AUC, reportes) de cada modelo
                 </p>
-                <Button as={Link} to="/evaluacion" variant="warning" className="px-4 fw-bold">
-                  Ir a evaluación
+                <Button as={Link} to="/metricas" variant="warning" className="px-4 fw-bold">
+                  Ver métricas
                 </Button>
               </Card.Body>
             </Card>
