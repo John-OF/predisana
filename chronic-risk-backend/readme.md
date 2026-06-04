@@ -36,7 +36,7 @@ python -m venv venv
 pip install -r requirements.txt
 ```
 
-> Nota: `requirements.txt` está codificado en UTF-16. Si necesitas editarlo, respeta la codificación o reescríbelo en UTF-8.
+> Nota: `requirements.txt` lista solo las dependencias **directas** (las transitivas las resuelve pip). Está en UTF-8.
 
 ---
 

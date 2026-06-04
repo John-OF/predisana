@@ -2,10 +2,8 @@ import json
 import os
 import sys
 import sqlite3
-import datetime
 from typing import Dict, Any, List
 
-import random
 import glob
 
 # En Windows la consola usa cp1252 y revienta al imprimir emojis (🎲, ⚠️) en los
