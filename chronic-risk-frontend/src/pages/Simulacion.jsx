@@ -21,6 +21,16 @@ const CLINICAL_LIMITS = {
     hba1c_level: { min: 3, max: 15, label: "4 - 9 %", step: 0.1 },
     heart_disease: { min: 0, max: 1, label: "0 (No) - 1 (Sí)", step: 1 }, 
     hypertension: { min: 0, max: 1, label: "0 (No) - 1 (Sí)", step: 1 },
+    blood_glucose_level: { min: 40, max: 500, label: "70 - 200 mg/dL", step: 1 },
+    weight: { min: 30, max: 250, label: "40 - 150 kg", step: 0.1 },
+    waist_circumference: { min: 40, max: 200, label: "60 - 120 cm", step: 0.1 },
+    ap_hi: { min: 70, max: 250, label: "90 - 180 mmHg", step: 1 },
+    ap_lo: { min: 40, max: 150, label: "60 - 120 mmHg", step: 1 },
+    cholesterol: { min: 1, max: 3, label: "1 (Normal) - 3 (Muy alto)", step: 1 },
+    gluc: { min: 1, max: 3, label: "1 (Normal) - 3 (Muy alta)", step: 1 },
+    smoke: { min: 0, max: 1, label: "0 (No) - 1 (Sí)", step: 1 },
+    alco: { min: 0, max: 1, label: "0 (No) - 1 (Sí)", step: 1 },
+    active: { min: 0, max: 1, label: "0 (No) - 1 (Sí)", step: 1 },
     default: { min: 0, max: 1000, label: "Valor positivo", step: 1 }
 };
 
@@ -40,6 +50,15 @@ const VARIABLE_DESCRIPTIONS = {
     smoking_history: "Fumar daña las arterias y el corazón. Es el factor de riesgo modificable más crítico.",
     heart_disease: "Indica si ya has tenido diagnósticos cardíacos previos.",
     hypertension: "Indica si ya has sido diagnosticado previamente con presión alta.",
+    weight: "Tu peso corporal en kilogramos.",
+    waist_circumference: "Contorno de cintura en cm. Refleja la grasa abdominal, clave en el riesgo metabólico.",
+    ap_hi: "Presión sistólica (la 'alta'): el primer número al medir la presión.",
+    ap_lo: "Presión diastólica (la 'baja'): el segundo número al medir la presión.",
+    cholesterol: "Nivel de colesterol según tu médico: 1=Normal, 2=Elevado, 3=Muy alto.",
+    gluc: "Nivel de glucosa según tu médico: 1=Normal, 2=Elevada, 3=Muy alta.",
+    smoke: "Indica si fumas actualmente (0=No, 1=Sí).",
+    alco: "Indica si consumes alcohol habitualmente (0=No, 1=Sí).",
+    active: "Indica si realizas actividad física habitual (0=No, 1=Sí).",
     default: "Variable clínica utilizada por la Inteligencia Artificial."
 };
 
@@ -393,8 +412,6 @@ const Simulacion = () => {
     // Renderizado de campos numéricos
     const renderNumberInput = (feat) => {
 
-        if (feat === "blood_glucose_level") return null;
-
         const isCategoricalPart = config.categoricals && Object.keys(config.categoricals).some(cat => feat.startsWith(cat + "_"));
         if (isCategoricalPart) return null;
 
@@ -474,8 +491,8 @@ const Simulacion = () => {
 
     // Gráfico SHAP (Top 5)
     const renderShapChart = () => {
-        // 1) Filtrar para no mostrar la glucosa duplicada
-        const feats = (currentResult?.top_features || []).filter(f => f.feature !== "blood_glucose_level");
+        // Cada modelo tiene una sola glucosa; ya no hay duplicado que filtrar.
+        const feats = currentResult?.top_features || [];
         if (feats.length === 0) return null;
 
         // 2) Escala para barra azul (importancia = |SHAP|)
@@ -590,7 +607,7 @@ const Simulacion = () => {
 
                                     <Form onSubmit={handleSubmit}>
                                         {/* 1. CAMPOS CATEGÓRICOS (Dropdowns) */}
-                                        {config.categoricals && Object.keys(config.categoricals).map(cat => (
+                                        {config.categoricals && Object.keys(config.categoricals).filter(cat => config.categoricals[cat].length > 0).map(cat => (
                                             <Form.Group className="mb-3" key={cat}>
                                                 <Form.Label className="d-flex align-items-center justify-content-between">
                                                     <span>{getLabel(cat)}</span>

@@ -16,7 +16,20 @@ export const LABELS_ES = {
     pregnancies: "Embarazos",
     skin_thickness: "Grosor Pliegue Cutáneo (mm)",
     diabetes_pedigree: "Función Pedigree Diabetes",
-    
+
+    // Antropométricos (hipertensión)
+    weight: "Peso (kg)",
+    waist_circumference: "Circunferencia de Cintura (cm)",
+
+    // Cardiovascular
+    ap_hi: "Presión Sistólica (mm Hg)",
+    ap_lo: "Presión Diastólica (mm Hg)",
+    cholesterol: "Colesterol (1=Normal a 3=Muy alto)",
+    gluc: "Glucosa (1=Normal a 3=Muy alta)",
+    smoke: "¿Fuma?",
+    alco: "¿Consume alcohol?",
+    active: "¿Actividad física habitual?",
+
     // Opciones
     Male: "Masculino",
     Female: "Femenino",
@@ -24,7 +37,7 @@ export const LABELS_ES = {
     former: "Ex-Fumador",
     never: "Nunca ha fumado",
     ever: "Alguna vez",
-    "not current": "No actual",
+    not_current: "No actual",
     
     // Enfermedades
     diabetes: "Diabetes Tipo 2",
