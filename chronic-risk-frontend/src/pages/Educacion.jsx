@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Container, Row, Col, Card, Button, Table, Badge, Accordion, Tab, Nav, ListGroup } from 'react-bootstrap';
 import { getSyntheticCase } from '../services/api';
+import { Droplet, HeartPulse, Heart, GraphDownArrow, Cpu, ExclamationOctagon, ExclamationTriangle, Eyedropper, Robot, Lightbulb, Magic, Stars } from 'react-bootstrap-icons';
 
 const INFO_ENFERMEDADES = {
     diabetes: {
@@ -107,13 +108,13 @@ const Educacion = () => {
                         <Col sm={3} className="mb-4">
                             <Nav variant="pills" className="flex-column shadow-sm p-3 bg-white rounded">
                                 <Nav.Item>
-                                    <Nav.Link eventKey="diabetes">🩺 Diabetes T2</Nav.Link>
+                                    <Nav.Link eventKey="diabetes"><Droplet className="me-2" />Diabetes T2</Nav.Link>
                                 </Nav.Item>
                                 <Nav.Item>
-                                    <Nav.Link eventKey="hipertension">💓 Hipertensión</Nav.Link>
+                                    <Nav.Link eventKey="hipertension"><HeartPulse className="me-2" />Hipertensión</Nav.Link>
                                 </Nav.Item>
                                 <Nav.Item>
-                                    <Nav.Link eventKey="cardiovascular">🚑 Cardiovascular</Nav.Link>
+                                    <Nav.Link eventKey="cardiovascular"><Heart className="me-2" />Cardiovascular</Nav.Link>
                                 </Nav.Item>
                             </Nav>
                         </Col>
@@ -133,7 +134,7 @@ const Educacion = () => {
                                                 <Row className="mb-4">
                                                     <Col md={6}>
                                                         <div className="p-3 bg-light rounded h-100">
-                                                            <h6 className="text-danger fw-bold">📉 Impacto en Ecuador</h6>
+                                                            <h6 className="text-danger fw-bold"><GraphDownArrow className="me-2" />Impacto en Ecuador</h6>
                                                             <ul className="small mb-0 ps-3">
                                                                 <li><strong>Mortalidad:</strong> {info.mortalidad}</li>
                                                                 <li className="mt-2"><strong>Población Afectada:</strong> {info.poblacion}</li>
@@ -142,7 +143,7 @@ const Educacion = () => {
                                                     </Col>
                                                     <Col md={6}>
                                                         <div className="p-3 bg-light rounded h-100">
-                                                            <h6 className="text-primary fw-bold">🧠 Variables Clave (IA)</h6>
+                                                            <h6 className="text-primary fw-bold"><Cpu className="me-2" />Variables Clave (IA)</h6>
                                                             <p className="small mb-0">{info.variables_ia}</p>
                                                         </div>
                                                     </Col>
@@ -150,7 +151,7 @@ const Educacion = () => {
 
                                                 <Row>
                                                     <Col md={6}>
-                                                        <h6>🚫 Factores de Riesgo / Hábitos</h6>
+                                                        <h6><ExclamationOctagon className="me-2" />Factores de Riesgo / Hábitos</h6>
                                                         <ListGroup variant="flush" className="small">
                                                             {info.factores.map((f, i) => (
                                                                 <ListGroup.Item key={i} className="px-0 py-1">
@@ -160,7 +161,7 @@ const Educacion = () => {
                                                         </ListGroup>
                                                     </Col>
                                                     <Col md={6}>
-                                                        <h6>⚠️ Principales Síntomas</h6>
+                                                        <h6><ExclamationTriangle className="me-2" />Principales Síntomas</h6>
                                                         <ListGroup variant="flush" className="small">
                                                             {info.sintomas.map((s, i) => (
                                                                 <ListGroup.Item key={i} className="px-0 py-1">
@@ -214,7 +215,7 @@ const Educacion = () => {
                     
                     <Accordion defaultActiveKey="0" className="mb-4">
                         <Accordion.Item eventKey="0">
-                            <Accordion.Header>🧪 ¿Qué son los Datos Sintéticos?</Accordion.Header>
+                            <Accordion.Header><Eyedropper className="me-2" />¿Qué son los Datos Sintéticos?</Accordion.Header>
                             <Accordion.Body>
                                 Son registros médicos generados artificialmente que imitan fielmente las estadísticas 
                                 (promedios, correlaciones) de los pacientes reales, pero no corresponden a ninguna persona física. 
@@ -222,7 +223,7 @@ const Educacion = () => {
                             </Accordion.Body>
                         </Accordion.Item>
                         <Accordion.Item eventKey="1">
-                            <Accordion.Header>🤖 ¿Cómo funciona una GAN?</Accordion.Header>
+                            <Accordion.Header><Robot className="me-2" />¿Cómo funciona una GAN?</Accordion.Header>
                             <Accordion.Body>
                                 Es una arquitectura de "competencia" entre dos IAs:
                                 <ul>
@@ -238,7 +239,7 @@ const Educacion = () => {
                 <Col lg={5}>
                     <Card className="bg-primary text-white border-0 shadow">
                         <Card.Body className="p-4">
-                            <h5>💡 Sabías que...</h5>
+                            <h5><Lightbulb className="me-2" />Sabías que...</h5>
                             <p className="mb-0">
                                 Los modelos de IA de este proyecto fueron entrenados usando una técnica llamada <strong>CTGAN</strong> (Conditional Tabular GAN). 
                                 Esto permite generar casos raros o extremos para mejorar la capacidad de predicción del sistema.
@@ -251,7 +252,7 @@ const Educacion = () => {
             {/* DEMO INTERACTIVA */}
             <div className="bg-light p-5 rounded-3 border">
                 <div className="text-center mb-4">
-                    <h3>🧬 Laboratorio de Generación (Demo GAN)</h3>
+                    <h3><Magic className="me-2" />Laboratorio de Generación (Demo GAN)</h3>
                     <p className="text-muted">
                         Observa cómo la IA es capaz de "imaginar" un paciente con características clínicas coherentes.
                     </p>
@@ -263,7 +264,7 @@ const Educacion = () => {
                     >
                         {loading ? (
                             <span><span className="spinner-border spinner-border-sm me-2"/>Generando...</span>
-                        ) : '✨ Generar Paciente Sintético'}
+                        ) : <><Stars className="me-2" />Generar Paciente Sintético</>}
                     </Button>
                 </div>
 

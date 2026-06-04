@@ -1,4 +1,5 @@
 import { Container, Card, Alert } from 'react-bootstrap';
+import { ExclamationTriangleFill } from 'react-bootstrap-icons';
 
 const Aviso = () => {
     return (
@@ -6,7 +7,7 @@ const Aviso = () => {
             <h2 className="mb-4">Aviso Legal y Limitación de Responsabilidad</h2>
             
             <Alert variant="warning" className="mb-4">
-                <Alert.Heading>⚠ Importante: Herramienta No Clínica</Alert.Heading>
+                <Alert.Heading><ExclamationTriangleFill className="me-2" />Importante: Herramienta No Clínica</Alert.Heading>
                 <p>
                     Este sistema es un prototipo académico desarrollado como proyecto de portafolio de Ingeniería de Software.
                     <strong> NO es un dispositivo médico ni una herramienta de diagnóstico clínico.</strong>

@@ -1,5 +1,6 @@
 import { Container, Row, Col, Card, Button, Accordion, Badge, ListGroup } from 'react-bootstrap';
 import { Link } from 'react-router-dom';
+import { Book, Robot, Magic, Cpu, Laptop, JournalText, BarChartLineFill, BoxArrowInDown, Eraser, Puzzle, Rulers, Stars, ShieldLock, Sliders, GraphUpArrow, HeartPulse, Search, Tools } from 'react-bootstrap-icons';
 
 const Home = () => {
   return (
@@ -34,7 +35,7 @@ const Home = () => {
                   size="lg"
                   className="px-4 fw-bold shadow-sm"
                 >
-                  📚 Explorar Biblioteca Educativa
+                  <Book className="me-2" />Explorar Biblioteca Educativa
                 </Button>
 
                 <Button
@@ -44,13 +45,13 @@ const Home = () => {
                   size="lg"
                   className="px-4 fw-bold shadow-sm"
                 >
-                  🤖 Probar Simulador de IA
+                  <Robot className="me-2" />Probar Simulador de IA
                 </Button>
               </div>
             </Col>
 
             <Col lg={5} className="d-none d-lg-block text-center">
-              <div className="hero-illustration">🧬🧠💻</div>
+              <div className="hero-illustration d-flex justify-content-center gap-4"><Magic size={72} /> <Cpu size={72} /> <Laptop size={72} /></div>
             </Col>
           </Row>
         </Container>
@@ -62,7 +63,7 @@ const Home = () => {
           <Col md={4}>
             <Card className="h-100 cr-action-card hover-effect">
               <Card.Body className="text-center">
-                <div className="cr-action-icon mx-auto">📘</div>
+                <div className="cr-action-icon mx-auto"><JournalText /></div>
                 <h5 className="fw-bold">Módulo Educativo</h5>
                 <p className="text-muted mb-4">
                   Aprende sobre ENT y factores de riesgo
@@ -77,7 +78,7 @@ const Home = () => {
           <Col md={4}>
             <Card className="h-100 cr-action-card hover-effect">
               <Card.Body className="text-center">
-                <div className="cr-action-icon mx-auto">🧠</div>
+                <div className="cr-action-icon mx-auto"><Cpu /></div>
                 <h5 className="fw-bold">Simulador con Machine Learning</h5>
                 <p className="text-muted mb-4">
                   Genera casos clínicos sintéticos y predice riesgos
@@ -92,7 +93,7 @@ const Home = () => {
           <Col md={4}>
             <Card className="h-100 cr-action-card hover-effect">
               <Card.Body className="text-center">
-                <div className="cr-action-icon mx-auto">📊</div>
+                <div className="cr-action-icon mx-auto"><BarChartLineFill /></div>
                 <h5 className="fw-bold">Métricas de los Modelos</h5>
                 <p className="text-muted mb-4">
                   Revisa el desempeño (AUC, reportes) de cada modelo
@@ -118,10 +119,10 @@ const Home = () => {
                   Antes de la IA, los datos crudos pasan por un proceso riguroso:
                 </Card.Text>
                 <ListGroup variant="flush" className="small">
-                  <ListGroup.Item>📥 Ingesta de múltiples datasets (PIMA, Kaggle, UCI).</ListGroup.Item>
-                  <ListGroup.Item>🧹 Limpieza de ceros fisiológicos inválidos (ej. Glucosa = 0).</ListGroup.Item>
-                  <ListGroup.Item>🧩 Imputación de valores faltantes usando la <strong>Mediana Estadística</strong>.</ListGroup.Item>
-                  <ListGroup.Item>📏 Estandarización de unidades (mg/dL, kg/m²).</ListGroup.Item>
+                  <ListGroup.Item><BoxArrowInDown className="me-2" />Ingesta de múltiples datasets (PIMA, Kaggle, UCI).</ListGroup.Item>
+                  <ListGroup.Item><Eraser className="me-2" />Limpieza de ceros fisiológicos inválidos (ej. Glucosa = 0).</ListGroup.Item>
+                  <ListGroup.Item><Puzzle className="me-2" />Imputación de valores faltantes usando la <strong>Mediana Estadística</strong>.</ListGroup.Item>
+                  <ListGroup.Item><Rulers className="me-2" />Estandarización de unidades (mg/dL, kg/m²).</ListGroup.Item>
                 </ListGroup>
               </Card.Body>
             </Card>
@@ -136,10 +137,10 @@ const Home = () => {
                   Para proteger la privacidad de los pacientes reales, utilizamos Inteligencia Artificial Generativa:
                 </Card.Text>
                 <ListGroup variant="flush" className="small">
-                  <ListGroup.Item>🤖 Uso de modelos <strong>CTGAN (Conditional Tabular GAN)</strong>.</ListGroup.Item>
-                  <ListGroup.Item>🧠 La IA aprende la distribución estadística real.</ListGroup.Item>
-                  <ListGroup.Item>✨ Generación de miles de "pacientes virtuales" matemáticamente coherentes.</ListGroup.Item>
-                  <ListGroup.Item>🛡️ Anonimización total: Ningún dato real se expone en la web.</ListGroup.Item>
+                  <ListGroup.Item><Robot className="me-2" />Uso de modelos <strong>CTGAN (Conditional Tabular GAN)</strong>.</ListGroup.Item>
+                  <ListGroup.Item><Cpu className="me-2" />La IA aprende la distribución estadística real.</ListGroup.Item>
+                  <ListGroup.Item><Stars className="me-2" />Generación de miles de "pacientes virtuales" matemáticamente coherentes.</ListGroup.Item>
+                  <ListGroup.Item><ShieldLock className="me-2" />Anonimización total: Ningún dato real se expone en la web.</ListGroup.Item>
                 </ListGroup>
               </Card.Body>
             </Card>
@@ -154,9 +155,9 @@ const Home = () => {
                   El corazón predictivo del sistema:
                 </Card.Text>
                 <ListGroup variant="flush" className="small">
-                  <ListGroup.Item>⚖️ Algoritmo seleccionado por su transparencia y alta interpretabilidad en salud.</ListGroup.Item>
-                  <ListGroup.Item>📈 Pipeline de <strong>Scikit-Learn</strong> con escalado de variables.</ListGroup.Item>
-                  <ListGroup.Item>🩺 <strong>Sistema Híbrido:</strong> Combina la predicción matemática con Reglas Clínicas de seguridad.</ListGroup.Item>
+                  <ListGroup.Item><Sliders className="me-2" />Algoritmo seleccionado por su transparencia y alta interpretabilidad en salud.</ListGroup.Item>
+                  <ListGroup.Item><GraphUpArrow className="me-2" />Pipeline de <strong>Scikit-Learn</strong> con escalado de variables.</ListGroup.Item>
+                  <ListGroup.Item><HeartPulse className="me-2" /><strong>Sistema Híbrido:</strong> Combina la predicción matemática con Reglas Clínicas de seguridad.</ListGroup.Item>
                 </ListGroup>
               </Card.Body>
             </Card>
@@ -167,10 +168,10 @@ const Home = () => {
 
         <Row className="justify-content-center">
           <Col lg={10}>
-            <h3 className="mb-4">🔍 Profundización Técnica</h3>
+            <h3 className="mb-4"><Search className="me-2" />Profundización Técnica</h3>
             <Accordion defaultActiveKey="0" className="shadow-sm">
               <Accordion.Item eventKey="0">
-                <Accordion.Header>🛠️ Arquitectura del Software (Backend Flask + Frontend React)</Accordion.Header>
+                <Accordion.Header><Tools className="me-2" />Arquitectura del Software (Backend Flask + Frontend React)</Accordion.Header>
                 <Accordion.Body>
                   El sistema opera con una arquitectura desacoplada. El <strong>Backend</strong> en Python (Flask) gestiona la lógica pesada:
                   carga los modelos <code>.pkl</code> en memoria, procesa las peticiones JSON y aplica correcciones del sistema experto.
@@ -180,7 +181,7 @@ const Home = () => {
               </Accordion.Item>
 
               <Accordion.Item eventKey="1">
-                <Accordion.Header>⚖️ ¿Por qué Regresión Logística y no Redes Neuronales Profundas?</Accordion.Header>
+                <Accordion.Header><Sliders className="me-2" />¿Por qué Regresión Logística y no Redes Neuronales Profundas?</Accordion.Header>
                 <Accordion.Body>
                   En medicina, la <strong>explicabilidad</strong> es vital. Una Regresión Logística permite saber exactamente cuánto peso
                   tiene cada variable. Nuestro enfoque prioriza la transparencia educativa.
@@ -188,7 +189,7 @@ const Home = () => {
               </Accordion.Item>
 
               <Accordion.Item eventKey="2">
-                <Accordion.Header>🧬 El reto de los Datos Sintéticos (CTGAN)</Accordion.Header>
+                <Accordion.Header><Magic className="me-2" />El reto de los Datos Sintéticos (CTGAN)</Accordion.Header>
                 <Accordion.Body>
                   Generar datos de salud es complejo porque las variables están correlacionadas. Usamos <strong>CTGAN</strong> para aprender
                   correlaciones y generar casos coherentes para el simulador.

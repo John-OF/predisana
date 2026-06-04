@@ -5,6 +5,7 @@ import { saveHistoryEntry } from '../services/historyService';
 import { getLabel } from '../utils/translations';
 import Swal from 'sweetalert2';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from 'recharts';
+import { BarChartSteps, Search, ArrowUpShort, ArrowDownShort, PencilSquare, ArrowCounterclockwise, Dice5Fill, RocketTakeoffFill, HeartPulse, ArrowLeftRight } from 'react-bootstrap-icons';
 
 const DISEASES = ['diabetes', 'hipertension', 'cardiovascular'];
 
@@ -352,7 +353,7 @@ const Simulacion = () => {
 
             setCurrentResult(data);
 
-            // ✅ Guardar historial
+            // Guardar historial
             if (baseResult) {
             // estamos en modo comparación: guardar base + nuevo + delta
             saveComparisonToHistory(data);
@@ -462,7 +463,7 @@ const Simulacion = () => {
         return (
             <div className="mt-4 animate__animated animate__fadeIn">
                 <hr />
-                <h5 className="mb-3">⚖️ Comparativa de Escenarios</h5>
+                <h5 className="mb-3"><BarChartSteps className="me-2" />Comparativa de Escenarios</h5>
                 
                 <Alert variant={isImprovement ? 'success' : 'warning'}>
                     <strong>Conclusión: </strong> 
@@ -501,7 +502,7 @@ const Simulacion = () => {
         return (
             <div className="mt-4 animate__animated animate__fadeIn">
             <hr />
-            <h6 className="text-muted mb-2">🔍 Variables más influyentes (IA)</h6>
+            <h6 className="text-muted mb-2"><Search className="me-2" />Variables más influyentes (IA)</h6>
 
             <p className="small text-muted mb-3">
                 Las barras azules indican la importancia (SHAP). Flecha indica si la variable <b>aumenta o reduce</b> la salida del{" "}
@@ -514,7 +515,7 @@ const Simulacion = () => {
                 const absVal = Math.abs(shapVal);
                 const percent = Math.min((absVal / maxAbs) * 100, 100);
 
-                const directionText = shapVal >= 0 ? "↑ Aumenta (modelo)" : "↓ Reduce (modelo)";
+                const directionText = shapVal >= 0 ? <><ArrowUpShort />Aumenta (modelo)</> : <><ArrowDownShort />Reduce (modelo)</>;
                 const directionClass = shapVal >= 0 ? "text-danger" : "text-success";
 
                 return (
@@ -579,11 +580,11 @@ const Simulacion = () => {
                             <Card className="shadow-sm border-0 h-100">
                                 <Card.Body className="p-4">
                                     <div className="d-flex justify-content-between align-items-center mb-4">
-                                        <h5 className="mb-0 text-dark">📝 Ingreso de Datos</h5>
+                                        <h5 className="mb-0 text-dark"><PencilSquare className="me-2" />Ingreso de Datos</h5>
                                         <div className="d-flex gap-2">
                                             {baseResult && (
                                                 <Button variant="outline-secondary" size="sm" onClick={handleResetComparison}>
-                                                    🔄 Reiniciar
+                                                    <ArrowCounterclockwise className="me-1" />Reiniciar
                                                 </Button>
                                             )}
                                             <OverlayTrigger placement="top" overlay={<Tooltip>Genera un paciente ficticio con datos realistas</Tooltip>}>
@@ -593,7 +594,7 @@ const Simulacion = () => {
                                                     onClick={handleGenerateSynthetic}
                                                     disabled={loading || baseResult}
                                                 >
-                                                    🎲 Caso Virtual
+                                                    <Dice5Fill className="me-1" />Caso Virtual
                                                 </Button>
                                             </OverlayTrigger>
                                         </div>
@@ -644,7 +645,7 @@ const Simulacion = () => {
                                                 disabled={loading}
                                                 className="fw-bold"
                                             >
-                                                {loading ? <Spinner as="span" animation="border" size="sm" /> : (baseResult ? '🔍 Comparar Nuevo Escenario' : '🚀 Calcular Riesgo')}
+                                                {loading ? <Spinner as="span" animation="border" size="sm" /> : (baseResult ? <><Search className="me-2" />Comparar Nuevo Escenario</> : <><RocketTakeoffFill className="me-2" />Calcular Riesgo</>)}
                                             </Button>
                                         </div>
                                     </Form>
@@ -658,7 +659,7 @@ const Simulacion = () => {
                                 <Card.Body className="d-flex flex-column justify-content-center p-4">
                                     {!currentResult && !baseResult && (
                                         <div className="text-muted opacity-50">
-                                            <div style={{ fontSize: '5rem' }}>🩺</div>
+                                            <div style={{ fontSize: '5rem' }}><HeartPulse /></div>
                                             <h5 className="mt-3">Esperando datos...</h5>
                                             <p className="small">Completa el formulario o usa el botón "Caso Virtual" para comenzar.</p>
                                         </div>
@@ -704,7 +705,7 @@ const Simulacion = () => {
                                                         className="mt-2"
                                                         onClick={handleSetBaseCase}
                                                     >
-                                                        ⚖️ Comparar con otro escenario
+                                                        <ArrowLeftRight className="me-2" />Comparar con otro escenario
                                                     </Button>
                                                 </div>
                                             )}
