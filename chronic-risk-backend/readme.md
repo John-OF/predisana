@@ -1,18 +1,18 @@
 # Predisana Backend
 
-API REST en Python/Flask que sirve modelos de Machine Learning para la predicción de riesgo de enfermedades crónicas (diabetes, hipertensión, obesidad y riesgo cardiovascular). Es el backend de una plataforma educativa: integra inferencia, explicabilidad con SHAP, generación de datos sintéticos con CTGAN/TVAE, reglas clínicas progresivas y registro de historial en SQLite.
+API REST en Python/Flask que sirve modelos de Machine Learning para la predicción de riesgo de enfermedades crónicas (diabetes, hipertensión y riesgo cardiovascular). Es el backend de una plataforma educativa: integra inferencia, explicabilidad con SHAP, generación de datos sintéticos con CTGAN/TVAE, una capa de interpretación clínica (ADA / ACC-AHA) y registro de historial en SQLite.
 
 ---
 
 ## Características
 
-- **4 modelos de Regresión Logística** servidos desde `models/` (uno por enfermedad).
-- **Explicabilidad SHAP** — cada predicción devuelve el top-5 de variables con mayor impacto.
-- **Reglas clínicas progresivas** sobre la probabilidad del modelo (umbrales de glucosa, HbA1c y presión arterial). Para obesidad se aplica el criterio OMS (BMI ≥ 30) cuando hay BMI disponible.
+- **3 modelos servidos desde `models/`** (uno por enfermedad). Cada modelo es el **ganador de un bake-off por validación cruzada** (LogReg / RandomForest / LightGBM); no todas las enfermedades usan el mismo algoritmo.
+- **Selección de features por respondibilidad** — el simulador es educativo / de autoevaluación, así que cada modelo usa solo features que una persona común puede responder (autorreporte y medición casera/farmacia) y descarta las de laboratorio.
+- **Explicabilidad SHAP agnóstica al modelo** — `LinearExplainer` para modelos lineales y `TreeExplainer` para árboles. Cada predicción devuelve el top-5 de variables con mayor impacto.
+- **Capa de interpretación clínica desacoplada** — la probabilidad reportada es la salida limpia del modelo; los umbrales diagnósticos (ADA para glucosa/HbA1c, ACC/AHA para presión sistólica) se devuelven aparte como `clinical_flags`/`clinical_note` y **no** modifican la probabilidad.
 - **Generación de datos sintéticos** con SDV (CTGAN por defecto, TVAE opcional) para entrenamiento y para la función "caso aleatorio" del simulador.
-- **Pipeline completo de datos** desde CSVs públicos heterogéneos a datasets curados listos para entrenar.
+- **Pipeline de datos por enfermedad** — desde CSVs públicos a un dataset limpio por enfermedad (sin frame maestro concatenado ni imputación cruzada).
 - **Historial de predicciones** persistido en SQLite (`medical_history.db`).
-- **Diccionario de datos** generado automáticamente en CSV y Markdown por dataset.
 
 ---
 
@@ -56,7 +56,7 @@ gunicorn app:app
 ```
 
 Al arrancar, `app.py` ejecuta automáticamente:
-1. `_load_all()` — carga los 4 pipelines de `models/` y construye un `LinearExplainer` de SHAP por modelo.
+1. `_load_all()` — carga los 3 pipelines de `models/`, lee el modelo ganador de cada `_metrics.json` y construye un explainer SHAP acorde al tipo de cada modelo (Linear o Tree).
 2. `init_db()` — crea `medical_history.db` y la tabla `predictions` si no existen.
 
 ### Pipeline de datos y entrenamiento
@@ -64,10 +64,10 @@ Al arrancar, `app.py` ejecuta automáticamente:
 Si no tienes los modelos entrenados (o quieres regenerarlos), corre los scripts en orden:
 
 ```powershell
-# 1. Normaliza los CSV crudos de data_raw/ a un esquema común
+# 1. Normaliza los CSV crudos de data_raw/ a un dataset limpio por enfermedad
 python prepare_datasets.py
 
-# 2. Split estratificado + síntesis CTGAN/TVAE
+# 2. Split estratificado + síntesis CTGAN/TVAE por enfermedad
 python curate_and_synthesize.py
 
 # Opciones útiles
@@ -78,7 +78,7 @@ python curate_and_synthesize.py `
     --epochs 50 `
     --only diabetes,hipertension
 
-# 3. Entrena los 4 modelos y guarda pkl + métricas + features
+# 3. Bake-off multi-modelo por CV: entrena, elige ganador y guarda pkl + métricas + features
 python train_models.py
 ```
 
@@ -96,7 +96,7 @@ Liveness check.
 ```
 
 ### `GET /metrics/<disease>`
-Devuelve `models/<disease>_metrics.json` (incluye AUC y classification report tanto de train como de test).
+Devuelve `models/<disease>_metrics.json`. Incluye el modelo ganador (`best_model`), el `leaderboard` con el AUC de CV de cada candidato, y los AUC + classification report de train y test.
 
 ### `GET /config/<disease>`
 Configuración para construir el formulario en el frontend:
@@ -104,23 +104,24 @@ Configuración para construir el formulario en el frontend:
 ```json
 {
   "disease": "diabetes",
-  "features": ["age", "glucose", "bmi", "..."],
+  "features": ["age", "bmi", "blood_glucose_level", "..."],
   "ranges": { "age": [18, 100], "bmi": [15, 50], "glucose": [60, 260], "blood_pressure": [60, 130] },
   "categoricals": { "gender": ["Female", "Male"], "smoking_history": ["current", "former", "never", "..."] }
 }
 ```
 
+Las `features` son las propias del esquema de cada enfermedad (heterogéneo), ya recortadas por respondibilidad. Las `categoricals` se derivan de los nombres de las columnas one-hot (`gender_*`, `smoking_history_*`).
+
 ### `POST /predict/<disease>`
-Recibe un payload con las features clínicas y devuelve la probabilidad de riesgo + explicación SHAP.
+Recibe un payload con las features clínicas y devuelve la probabilidad de riesgo + explicación SHAP + capa de interpretación clínica.
 
 **Request:**
 ```json
 {
   "age": 55,
-  "glucose": 165,
+  "blood_glucose_level": 165,
   "bmi": 31,
-  "hba1c_level": 7.2,
-  "blood_pressure": 140,
+  "hypertension": 1,
   "gender_Male": 1,
   "smoking_history_former": 1
 }
@@ -130,23 +131,27 @@ Recibe un payload con las features clínicas y devuelve la probabilidad de riesg
 ```json
 {
   "disease": "diabetes",
+  "model": "lightgbm",
   "probability": 0.91,
   "prediction": 1,
-  "raw_model_probability": 0.78,
-  "missing_filled_as_zero": ["insulin", "skin_thickness"],
+  "missing_filled_as_zero": ["heart_disease"],
   "top_features": [
-    { "feature": "glucose", "value": 165, "shap": 0.42, "abs_shap": 0.42 },
-    { "feature": "hba1c_level", "value": 7.2, "shap": 0.28, "abs_shap": 0.28 }
+    { "feature": "blood_glucose_level", "value": 165, "shap": 0.42, "abs_shap": 0.42 },
+    { "feature": "bmi", "value": 31, "shap": 0.28, "abs_shap": 0.28 }
   ],
-  "explain_note": "Las variables mostradas corresponden a los valores SHAP que explican la probabilidad base del modelo; la probabilidad final puede incluir reglas clínicas."
+  "clinical_flags": [
+    { "indicator": "glucose", "value": 165, "category": "diabetes", "source": "ADA",
+      "detail": "Glucosa en ayuno ≥126 mg/dL: criterio de diabetes." }
+  ],
+  "clinical_note": "Glucosa en ayuno ≥126 mg/dL: criterio de diabetes.",
+  "explain_note": "La probabilidad es la salida directa del modelo de ML y los valores SHAP la explican. Los indicadores clínicos (ADA/ACC-AHA) se muestran aparte como referencia y NO modifican la probabilidad."
 }
 ```
 
 **Comportamientos importantes (no triviales):**
 
 - **Aliasing glucosa**: `glucose` y `blood_glucose_level` se espejan automáticamente, así que enviar uno cubre al otro.
-- **Cortocircuito de obesidad**: si `disease=obesidad` y el payload incluye `bmi`, el modelo ML se ignora y se aplica la regla OMS (BMI ≥ 30 → prob 0.99, sino 0.01). El response trae `method: "clinical_rule_bmi"` y `top_features: []`.
-- **Reglas clínicas progresivas**: tras la inferencia, se aplica `prob = max(prob, regla)` por banda clínica (glucosa, HbA1c, presión arterial). Nunca bajan la probabilidad. El campo `raw_model_probability` preserva la probabilidad pre-reglas; `top_features` (SHAP) explica esa probabilidad cruda, no la final.
+- **Capa de interpretación clínica desacoplada (A4)**: `probability` es la salida limpia del modelo (SHAP la explica directamente). Aparte, `clinical_flags`/`clinical_note` exponen los umbrales diagnósticos de referencia (ADA: glucosa ≥100/≥126/≥200, HbA1c ≥5.7/≥6.5; ACC/AHA: sistólica ≥120/≥130/≥140/≥180). Esta capa **no** altera la probabilidad (sustituye al antiguo `max()` con números mágicos).
 - **Filtro de género en SHAP**: las features `gender_*` se omiten del top-5 explicativo.
 - **Features faltantes**: cualquier feature ausente se rellena con 0; los nombres no-dummy aparecen en `missing_filled_as_zero`.
 
@@ -161,15 +166,15 @@ Devuelve una fila aleatoria de los datos sintéticos curados (`data_curated/<dis
 
 ```
 chronic-risk-backend/
-├── app.py                       # API Flask + carga de modelos + SHAP + reglas clínicas
-├── prepare_datasets.py          # Normalización de CSVs crudos → esquema común
+├── app.py                       # API Flask + carga de modelos + SHAP + capa clínica
+├── prepare_datasets.py          # CSVs crudos → un dataset limpio por enfermedad
 ├── curate_and_synthesize.py     # Split estratificado + síntesis CTGAN/TVAE
-├── train_models.py              # Entrenamiento de Regresión Logística por enfermedad
+├── train_models.py              # Bake-off multi-modelo por CV + persistir ganador
 ├── requirements.txt             # Dependencias (UTF-16)
 ├── runtime.txt                  # python-3.12.8
 ├── medical_history.db           # SQLite generada en runtime (gitignored)
-├── data_raw/                    # CSVs públicos originales (PIMA, Kaggle, UCI, etc.)
-├── data_processed/              # Dataset maestro por enfermedad
+├── data_raw/                    # CSVs públicos originales (Kaggle, ENSANUT, etc.)
+├── data_processed/              # Un dataset limpio por enfermedad
 ├── data_curated/                # Train/test split + sintéticos por enfermedad
 └── models/                      # *_pipeline.pkl + *_features.json + *_metrics.json
 ```
@@ -179,6 +184,7 @@ chronic-risk-backend/
 ## Notas técnicas
 
 - El pipeline sklearn tiene pasos nombrados **`scaler`** y **`clf`**. Estos nombres son load-bearing: SHAP los referencia explícitamente en `_build_shap_explainer`. Renombrarlos rompe la explicabilidad silenciosamente.
-- Las 4 enfermedades son un set cerrado declarado en `FILES` (app.py) y en `DATASETS` (train_models.py). Para añadir una nueva, hay que tocar ambos archivos y entrenar el modelo correspondiente.
-- `train_models.py` elimina features con leakage por target (quita `hypertension` para el modelo de hipertensión, `bmi` para obesidad, `heart_disease` para cardiovascular).
-- `prepare_datasets.py` hace fan-in de 7 datasets públicos con esquemas distintos a un `COMMON_SCHEMA` único, con imputación por mediana y caps fisiológicos.
+- Las 3 enfermedades son un set cerrado declarado en `FILES` (app.py) y en `DATASETS` (train_models.py). Para añadir una nueva, hay que tocar ambos archivos y entrenar el modelo correspondiente.
+- `train_models.py` corre un bake-off por enfermedad (LogReg / RandomForest / LightGBM), elige el mejor por AUC en cross-validation y persiste el ganador; el score de cada candidato queda en `_metrics.json.leaderboard`.
+- `get_features_for_disease()` parte del esquema propio de cada dataset y solo descarta las features de laboratorio (no respondibles, `DROP_NON_RESPONDABLE`). Con los esquemas por-enfermedad (B1) ya no hay columnas de leakage que recortar.
+- `prepare_datasets.py` produce un dataset limpio por enfermedad desde su fuente cruda, con imputación por mediana *intra-dataset* y caps fisiológicos (sin esquema común ni imputación cruzada).
