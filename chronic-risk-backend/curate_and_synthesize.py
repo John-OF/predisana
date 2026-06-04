@@ -36,7 +36,21 @@ COLUMN_DESCRIPTIONS = {
     "smoking_history_never": "Nunca ha fumado.",
     "smoking_history_former": "Ex-fumador.",
     "smoking_history_ever": "Alguna vez ha fumado.",
-    "smoking_history_not current": "No fuma actualmente.",
+    "smoking_history_not_current": "No fuma actualmente.",
+    # --- Cardiovascular (cardio_train) ---
+    "ap_hi": "Presión arterial sistólica (mmHg).",
+    "ap_lo": "Presión arterial diastólica (mmHg).",
+    "cholesterol": "Colesterol (ordinal: 1=normal, 2=por encima de lo normal, 3=muy alto).",
+    "gluc": "Glucosa (ordinal: 1=normal, 2=por encima de lo normal, 3=muy alta).",
+    "smoke": "Fumador (0=No, 1=Sí).",
+    "alco": "Consumo de alcohol (0=No, 1=Sí).",
+    "active": "Actividad física habitual (0=No, 1=Sí).",
+    # --- Hipertensión (ENSANUT México) ---
+    "waist_circumference": "Circunferencia de cintura (cm).",
+    "cholesterol_total": "Colesterol total en sangre (mg/dL).",
+    "hdl": "Colesterol HDL ('bueno') (mg/dL).",
+    "ldl": "Colesterol LDL ('malo') (mg/dL).",
+    "triglycerides": "Triglicéridos en sangre (mg/dL).",
     "target": "Variable objetivo (Clase a predecir: 0=Negativo, 1=Positivo)."
 }
 

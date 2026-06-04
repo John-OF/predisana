@@ -54,6 +54,7 @@ FILES = {
 
 MODELS: Dict[str, Any] = {}
 FEATURES: Dict[str, List[str]] = {}
+MODEL_NAMES: Dict[str, str] = {}  # enfermedad -> modelo ganador (A5), desde _metrics.json
 
 # ==========================================
 # 1. FUNCIÓN DE BASE DE DATOS
@@ -120,9 +121,18 @@ def _load_background_for_shap(disease: str, feats: List[str], n: int = 200) -> n
     return df.values.astype(float)
 
 
+def _is_linear_clf(clf) -> bool:
+    """Heurística: ¿el clasificador es lineal (LogReg) o basado en árboles?"""
+    from sklearn.linear_model import LogisticRegression
+    return isinstance(clf, LogisticRegression)
+
+
 def _build_shap_explainer(disease: str):
     """
-    Construye el LinearExplainer para regresión logística.
+    Construye un explainer SHAP acorde al tipo de modelo ganador (A5):
+    LinearExplainer para modelos lineales (LogReg) y TreeExplainer para modelos
+    basados en árboles (LightGBM/RandomForest). El explainer siempre opera sobre
+    el espacio escalado, igual que el clasificador dentro del pipeline.
     Se ejecuta una sola vez al iniciar el backend.
     """
     pipe = MODELS[disease]
@@ -134,11 +144,45 @@ def _build_shap_explainer(disease: str):
     Xb = _load_background_for_shap(disease, feats, n=200)
     Xb_t = scaler.transform(Xb)
 
-    EXPLAINERS[disease] = shap.LinearExplainer(
-        clf,
-        Xb_t,
-        feature_perturbation="interventional"
-    )
+    if _is_linear_clf(clf):
+        EXPLAINERS[disease] = shap.LinearExplainer(
+            clf, Xb_t, feature_perturbation="interventional"
+        )
+    else:
+        # Árboles (LGBM/RandomForest): TreeExplainer en modo tree_path_dependent
+        # (sin background). Es exacto y autoconsistente; pasar background dispara
+        # falsos fallos del "additivity check" con LightGBM.
+        EXPLAINERS[disease] = shap.TreeExplainer(clf)
+
+
+def _shap_vector_for_positive_class(disease: str, Xt: np.ndarray, n_features: int):
+    """
+    Devuelve un vector 1D de valores SHAP para la CLASE POSITIVA, normalizando
+    las distintas formas que devuelven los explainers (Linear vs Tree, binario):
+    lista por clase, array 2D (n, features) o 3D (n, features, clases).
+    """
+    explainer = EXPLAINERS.get(disease)
+    if explainer is None:
+        return None
+
+    if isinstance(explainer, shap.TreeExplainer):
+        # check_additivity desactivado: solo rankeamos por |SHAP|, no exigimos
+        # que sumen exactamente al output (irrelevante para el top-5).
+        sv = explainer.shap_values(Xt, check_additivity=False)
+    else:
+        sv = explainer.shap_values(Xt)
+    if isinstance(sv, list):
+        # Lista por clase (p.ej. RandomForest) -> tomar la clase positiva
+        sv = sv[-1]
+    sv = np.array(sv)
+    if sv.ndim == 3:
+        # (n_samples, n_features, n_classes) -> clase positiva
+        sv = sv[..., -1]
+    sv = sv.reshape(-1)
+    # Salvaguarda: si por algún motivo la longitud no calza, recortar/rellenar
+    if sv.shape[0] != n_features:
+        sv = np.resize(sv, n_features)
+    return sv
 # >>> SHAP END
 
 
@@ -152,6 +196,12 @@ def _load_all():
         if os.path.exists(paths["features"]):
             with open(paths["features"], "r", encoding="utf-8") as f:
                 FEATURES[dis] = json.load(f)
+        if os.path.exists(paths["metrics"]):
+            try:
+                with open(paths["metrics"], "r", encoding="utf-8") as f:
+                    MODEL_NAMES[dis] = json.load(f).get("best_model")
+            except Exception:
+                pass
     # >>> SHAP START
     for dis in MODELS:
         try:
@@ -171,6 +221,56 @@ def _safe_get(payload: Dict[str, Any], key: str):
     if " " in key and key.replace(" ", "_").lower() in low:
         return low[key.replace(" ", "_").lower()]
     return None
+
+
+# ==========================================
+# CAPA DE INTERPRETACIÓN CLÍNICA (A4)
+# ==========================================
+# Umbrales diagnósticos de referencia, expuestos como una capa SEPARADA y
+# etiquetada que se muestra JUNTO a la probabilidad del modelo, NO encima de
+# ella. La probabilidad reportada es la salida limpia del modelo de ML; estos
+# indicadores no la modifican (a diferencia del antiguo `max()` con números
+# mágicos). Fuentes:
+#   - Glucosa / HbA1c: American Diabetes Association (ADA), Standards of Care.
+#   - Presión arterial sistólica: ACC/AHA 2017 Hypertension Guideline.
+def compute_clinical_flags(glucose_mgdl: float, hba1c: float, systolic: float) -> List[Dict[str, Any]]:
+    flags: List[Dict[str, Any]] = []
+
+    # --- Glucosa plasmática (ADA) ---
+    if glucose_mgdl >= 200:
+        flags.append({"indicator": "glucose", "value": glucose_mgdl, "category": "diabetes",
+                      "source": "ADA", "detail": "Glucosa ≥200 mg/dL: valor compatible con diabetes."})
+    elif glucose_mgdl >= 126:
+        flags.append({"indicator": "glucose", "value": glucose_mgdl, "category": "diabetes",
+                      "source": "ADA", "detail": "Glucosa en ayuno ≥126 mg/dL: criterio de diabetes."})
+    elif glucose_mgdl >= 100:
+        flags.append({"indicator": "glucose", "value": glucose_mgdl, "category": "prediabetes",
+                      "source": "ADA", "detail": "Glucosa en ayuno 100–125 mg/dL: rango de prediabetes."})
+
+    # --- HbA1c (ADA) ---
+    if hba1c >= 6.5:
+        flags.append({"indicator": "hba1c", "value": hba1c, "category": "diabetes",
+                      "source": "ADA", "detail": "HbA1c ≥6.5%: criterio de diabetes."})
+    elif hba1c >= 5.7:
+        flags.append({"indicator": "hba1c", "value": hba1c, "category": "prediabetes",
+                      "source": "ADA", "detail": "HbA1c 5.7–6.4%: rango de prediabetes."})
+
+    # --- Presión arterial sistólica (ACC/AHA 2017) ---
+    if systolic >= 180:
+        flags.append({"indicator": "blood_pressure", "value": systolic, "category": "crisis_hipertensiva",
+                      "source": "ACC/AHA", "detail": "Sistólica ≥180 mmHg: crisis hipertensiva."})
+    elif systolic >= 140:
+        flags.append({"indicator": "blood_pressure", "value": systolic, "category": "hipertension_grado_2",
+                      "source": "ACC/AHA", "detail": "Sistólica ≥140 mmHg: hipertensión grado 2."})
+    elif systolic >= 130:
+        flags.append({"indicator": "blood_pressure", "value": systolic, "category": "hipertension_grado_1",
+                      "source": "ACC/AHA", "detail": "Sistólica 130–139 mmHg: hipertensión grado 1."})
+    elif systolic >= 120:
+        flags.append({"indicator": "blood_pressure", "value": systolic, "category": "presion_elevada",
+                      "source": "ACC/AHA", "detail": "Sistólica 120–129 mmHg: presión elevada."})
+
+    return flags
+
 
 # ==========================================
 # FUNCIÓN AUXILIAR PARA DATOS SINTÉTICOS
@@ -299,10 +399,12 @@ def predict(disease: str):
     for f in feats:
         val = _safe_get(payload, f)
 
-        # Capturamos valores clínicos
+        # Capturamos valores clínicos (para la capa de interpretación ADA/ACC-AHA,
+        # que se reporta APARTE y NO modifica la probabilidad del modelo).
         if f in ["glucose", "blood_glucose_level"]: clinical_glucose = float(val or 0)
         if f == "hba1c_level": clinical_hba1c = float(val or 0)
-        if f == "blood_pressure": clinical_bp = float(val or 0)
+        # Sistólica: hipertensión usa 'blood_pressure'; cardiovascular usa 'ap_hi'.
+        if f in ["blood_pressure", "ap_hi"]: clinical_bp = float(val or 0)
 
         if val is None:
             if f.startswith(("gender_", "smoking_history_", "cholesterol_", "glucose_", "bp_", "ethnicity_", "race_")) or "_" in f:
@@ -324,19 +426,11 @@ def predict(disease: str):
         prob = float(pred)
 
     # >>> SHAP START
-    raw_model_probability = prob  # probabilidad base del modelo (antes de reglas clínicas)
-
     top_features = []
-    explainer = EXPLAINERS.get(disease)
 
-    if explainer is not None:
+    if EXPLAINERS.get(disease) is not None:
         Xt = scaler.transform(X)
-        shap_vals = explainer.shap_values(Xt)
-
-        if isinstance(shap_vals, list):
-            shap_vals = shap_vals[0]
-
-        shap_vals = np.array(shap_vals).reshape(-1)
+        shap_vals = _shap_vector_for_positive_class(disease, Xt, len(feats))
         x_row = X.reshape(-1)
 
         # ============================
@@ -367,71 +461,31 @@ def predict(disease: str):
             })
     # >>> SHAP END
 
-
-
-
     # =========================================================================
-    # REGLAS CLÍNICAS PROGRESIVAS (Dynamic Expert System)
-    # Ahora la probabilidad escala suavemente con la gravedad del síntoma.
+    # CAPA DE INTERPRETACIÓN CLÍNICA (A4) — DESACOPLADA DEL MODELO
+    # La probabilidad reportada es la salida limpia del modelo de ML. Los
+    # umbrales diagnósticos ADA/ACC-AHA se calculan APARTE y se devuelven como
+    # `clinical_flags` para mostrarse junto al número del modelo, sin alterarlo.
     # =========================================================================
-    
-    # --- DIABETES ---
-    if disease == "diabetes":
-        # Glucosa > 200 es diabetes casi segura.
-        if clinical_glucose >= 200:
-             prob = max(prob, 0.96)
-        # Rango Diabético (126 - 200): Escala de 0.85 a 0.95
-        elif clinical_glucose >= 126:
-            extra = (clinical_glucose - 126) * 0.001 # Sube un poco por cada mg/dL extra
-            prob = max(prob, 0.85 + extra)
-        # Prediabetes (100 - 125): Escala de 0.40 a 0.60 (Puente para que no se caiga a 0)
-        elif clinical_glucose >= 100:
-            extra = (clinical_glucose - 100) * 0.008 
-            prob = max(prob, 0.30 + extra)
-        
-        # HbA1c también empuja hacia arriba
-        if clinical_hba1c >= 6.5:
-            extra_a1c = (clinical_hba1c - 6.5) * 0.05
-            prob = max(prob, 0.85 + extra_a1c)
-
-    # --- HIPERTENSIÓN ---
-    elif disease == "hipertension":
-        # Crisis Hipertensiva (>180): Casi 100%
-        if clinical_bp >= 180:
-            prob = max(prob, 0.98)
-            
-        # Hipertensión Grado 2 (140 - 180): Escala de 0.85 a 0.97
-        elif clinical_bp >= 140:
-            # Por cada punto arriba de 140, sumamos 0.003 (ej. 160 -> +0.06)
-            extra = (clinical_bp - 140) * 0.003
-            prob = max(prob, 0.85 + extra)
-            
-        # Hipertensión Grado 1 (130 - 139): Escala de 0.60 a 0.80
-        elif clinical_bp >= 130:
-            extra = (clinical_bp - 130) * 0.02 
-            prob = max(prob, 0.60 + extra)
-            
-        # Elevada (120 - 129): Escala de 0.30 a 0.50 (Para que no se desplome a 0)
-        elif clinical_bp >= 120:
-            extra = (clinical_bp - 120) * 0.02
-            prob = max(prob, 0.30 + extra)
-
-    # Limitar siempre a máximo 1.0 (por si la suma se pasa)
-    prob = min(prob, 1.0)
-    # =========================================================================
-
+    prob = min(max(prob, 0.0), 1.0)
     pred_class = 1 if prob >= 0.5 else 0
-    
+
+    clinical_flags = compute_clinical_flags(clinical_glucose, clinical_hba1c, clinical_bp)
+    clinical_note = " ".join(f["detail"] for f in clinical_flags) or \
+        "Sin indicadores clínicos por encima de umbrales de referencia."
+
     log_prediction_to_db(disease, payload, pred_class, prob)
 
     return jsonify({
         "disease": disease,
+        "model": MODEL_NAMES.get(disease),
         "probability": prob,
         "prediction": pred_class,
         "missing_filled_as_zero": missing,
-        "raw_model_probability": raw_model_probability,
         "top_features": top_features,
-        "explain_note": "Las variables mostradas corresponden a los valores SHAP que explican la probabilidad base del modelo; la probabilidad final puede incluir reglas clínicas."
+        "clinical_flags": clinical_flags,
+        "clinical_note": clinical_note,
+        "explain_note": "La probabilidad es la salida directa del modelo de ML y los valores SHAP la explican. Los indicadores clínicos (ADA/ACC-AHA) se muestran aparte como referencia y NO modifican la probabilidad."
     })
 
 @app.get("/synthetic/<disease>")
