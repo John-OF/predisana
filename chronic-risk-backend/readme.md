@@ -67,7 +67,7 @@ Si no tienes los modelos entrenados (o quieres regenerarlos), corre los scripts 
 # 1. Normaliza los CSV crudos de data_raw/ a un esquema común
 python prepare_datasets.py
 
-# 2. Split estratificado + síntesis CTGAN/TVAE + diccionario de datos
+# 2. Split estratificado + síntesis CTGAN/TVAE
 python curate_and_synthesize.py
 
 # Opciones útiles
@@ -163,14 +163,14 @@ Devuelve una fila aleatoria de los datos sintéticos curados (`data_curated/<dis
 chronic-risk-backend/
 ├── app.py                       # API Flask + carga de modelos + SHAP + reglas clínicas
 ├── prepare_datasets.py          # Normalización de CSVs crudos → esquema común
-├── curate_and_synthesize.py     # Split estratificado + CTGAN/TVAE + diccionario de datos
+├── curate_and_synthesize.py     # Split estratificado + síntesis CTGAN/TVAE
 ├── train_models.py              # Entrenamiento de Regresión Logística por enfermedad
 ├── requirements.txt             # Dependencias (UTF-16)
 ├── runtime.txt                  # python-3.12.8
 ├── medical_history.db           # SQLite generada en runtime (gitignored)
 ├── data_raw/                    # CSVs públicos originales (PIMA, Kaggle, UCI, etc.)
 ├── data_processed/              # Dataset maestro por enfermedad
-├── data_curated/                # Train/test split + sintéticos + diccionario por enfermedad
+├── data_curated/                # Train/test split + sintéticos por enfermedad
 └── models/                      # *_pipeline.pkl + *_features.json + *_metrics.json
 ```
 
