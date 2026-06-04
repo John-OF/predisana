@@ -12,48 +12,6 @@ CURATED_DIR = "data_curated"
 DATASETS = ["diabetes", "hipertension", "cardiovascular"]
 FILENAME = "{name}_dataset.csv"  # dentro de data_processed
 
-# --------- DICCIONARIO DE DESCRIPCIONES ---------
-COLUMN_DESCRIPTIONS = {
-    "age": "Edad del paciente en años.",
-    "gender": "Género biológico del paciente.",
-    "gender_Female": "Variable dummy: Género Femenino (0=No, 1=Sí).",
-    "gender_Male": "Variable dummy: Género Masculino (0=No, 1=Sí).",
-    "height": "Altura del paciente.",
-    "weight": "Peso del paciente.",
-    "bmi": "Índice de Masa Corporal (kg/m²).",
-    "glucose": "Nivel de glucosa en sangre (mg/dL).",
-    "blood_glucose_level": "Nivel de glucosa en sangre (copia para compatibilidad).",
-    "hba1c_level": "Nivel de Hemoglobina Glicosilada (%).",
-    "blood_pressure": "Presión arterial (sistólica/diastólica unificada o predominante).",
-    "insulin": "Nivel de insulina sérica (mu U/ml).",
-    "pregnancies": "Número de embarazos previos.",
-    "skin_thickness": "Grosor del pliegue cutáneo del tríceps (mm).",
-    "diabetes_pedigree": "Función de pedigrí de diabetes (historial genético).",
-    "hypertension": "Historial de hipertensión (0=No, 1=Sí).",
-    "heart_disease": "Historial de enfermedad cardíaca (0=No, 1=Sí).",
-    "smoking_history": "Historial de tabaquismo (categórico).",
-    "smoking_history_current": "Fumador actual.",
-    "smoking_history_never": "Nunca ha fumado.",
-    "smoking_history_former": "Ex-fumador.",
-    "smoking_history_ever": "Alguna vez ha fumado.",
-    "smoking_history_not_current": "No fuma actualmente.",
-    # --- Cardiovascular (cardio_train) ---
-    "ap_hi": "Presión arterial sistólica (mmHg).",
-    "ap_lo": "Presión arterial diastólica (mmHg).",
-    "cholesterol": "Colesterol (ordinal: 1=normal, 2=por encima de lo normal, 3=muy alto).",
-    "gluc": "Glucosa (ordinal: 1=normal, 2=por encima de lo normal, 3=muy alta).",
-    "smoke": "Fumador (0=No, 1=Sí).",
-    "alco": "Consumo de alcohol (0=No, 1=Sí).",
-    "active": "Actividad física habitual (0=No, 1=Sí).",
-    # --- Hipertensión (ENSANUT México) ---
-    "waist_circumference": "Circunferencia de cintura (cm).",
-    "cholesterol_total": "Colesterol total en sangre (mg/dL).",
-    "hdl": "Colesterol HDL ('bueno') (mg/dL).",
-    "ldl": "Colesterol LDL ('malo') (mg/dL).",
-    "triglycerides": "Triglicéridos en sangre (mg/dL).",
-    "target": "Variable objetivo (Clase a predecir: 0=Negativo, 1=Positivo)."
-}
-
 # --------- IMPORTS CON FALLBACK (SDV) ---------
 SDV_AVAILABLE = True
 SDV_API_V1 = False
@@ -84,95 +42,6 @@ def _is_binary(s: pd.Series) -> bool:
         v = v.astype(int).unique()
         return set(v).issubset({0, 1})
     return False
-
-def _get_sql_type(dtype):
-    """Mapea tipos de Pandas a tipos SQL genéricos para la documentación."""
-    s = str(dtype).lower()
-    if "int" in s: return "INT"
-    if "float" in s: return "DECIMAL"
-    if "object" in s or "string" in s: return "VARCHAR"
-    if "bool" in s: return "BOOLEAN"
-    return "UNKNOWN"
-
-# --------- GENERACIÓN DE DICCIONARIO ---------
-def create_data_dictionary(df: pd.DataFrame, dest_folder: str, dataset_name: str):
-    """
-    Genera el diccionario de datos con el formato solicitado por el tutor:
-    Nombre del Campo | Tipo de Dato | Longitud | Descripción | Restricción | Ejemplo
-    """
-    rows = []
-    
-    for col in df.columns:
-        s = df[col]
-        dtype_sql = _get_sql_type(s.dtype)
-        
-        # 1. Longitud
-        # Para texto calculamos el max, para números ponemos N/A
-        length = "N/A"
-        if dtype_sql == "VARCHAR":
-            # Calcular longitud máxima real encontrada
-            max_len = s.astype(str).str.len().max()
-            length = str(max_len)
-            
-        # 2. Descripción
-        # Buscamos en el mapa, si no existe, ponemos algo genérico
-        desc = COLUMN_DESCRIPTIONS.get(col, f"Variable asociada a {col}.")
-        
-        # 3. Restricción
-        constraints = []
-        # Not Null
-        if s.isna().sum() == 0:
-            constraints.append("Not Null")
-        
-        # Tipos de valores
-        if _is_binary(s):
-            constraints.append("Binario (0, 1)")
-        elif dtype_sql in ["INT", "DECIMAL"]:
-            # Si es numérico mostramos rango
-            vmin = float(s.min()) if not s.empty else 0
-            vmax = float(s.max()) if not s.empty else 0
-            constraints.append(f"Rango: [{vmin:.1f} - {vmax:.1f}]")
-        
-        if col == "id": # Si hubiera ID
-            constraints.append("PK")
-            
-        restriction_str = ", ".join(constraints)
-
-        # 4. Ejemplo
-        example_val = s.dropna().iloc[0] if not s.dropna().empty else "N/A"
-        
-        entry = {
-            "Nombre del Campo": col,
-            "Tipo de Dato": dtype_sql,
-            "Longitud": length,
-            "Descripción": desc,
-            "Restricción": restriction_str,
-            "Ejemplo": str(example_val)
-        }
-        rows.append(entry)
-
-    dd = pd.DataFrame(rows)
-    
-    # Guardar CSV
-    dd_csv = os.path.join(dest_folder, f"data_dictionary_{dataset_name}.csv")
-    dd.to_csv(dd_csv, index=False)
-
-    # Guardar Markdown
-    dd_md = os.path.join(dest_folder, f"data_dictionary_{dataset_name}.md")
-    with open(dd_md, "w", encoding="utf-8") as f:
-        f.write(f"# Diccionario de Datos: {dataset_name.capitalize()}\n\n")
-        f.write(f"**Total de registros:** {len(df)}\n\n")
-        # Usamos to_markdown de pandas si está disponible, sino manual
-        try:
-            f.write(dd.to_markdown(index=False))
-        except ImportError:
-            # Fallback manual si falta tabulate
-            f.write("| " + " | ".join(dd.columns) + " |\n")
-            f.write("| " + " | ".join(["---"] * len(dd.columns)) + " |\n")
-            for _, row in dd.iterrows():
-                f.write("| " + " | ".join([str(x) for x in row.values]) + " |\n")
-
-    print(f" Diccionario generado en: {dd_csv}")
 
 def stratified_split(df: pd.DataFrame, test_size: float, seed: int) -> Tuple[pd.DataFrame, pd.DataFrame]:
     from sklearn.model_selection import train_test_split
@@ -264,9 +133,6 @@ def process_one_dataset(name, test_size, seed, model, synth_multiplier, balance,
 
     out_dir = os.path.join(CURATED_DIR, name)
     ensure_dir(out_dir)
-    
-    # AQUI SE LLAMA A LA NUEVA FUNCIÓN
-    create_data_dictionary(df, out_dir, name)
 
     train_df, test_df = stratified_split(df, test_size, seed)
     train_df.to_csv(os.path.join(out_dir, f"{name}_train.csv"), index=False)
