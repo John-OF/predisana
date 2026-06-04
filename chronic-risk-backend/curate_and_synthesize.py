@@ -9,7 +9,7 @@ from typing import Tuple, List
 PROCESSED_DIR = "data_processed"
 CURATED_DIR = "data_curated"
 
-DATASETS = ["diabetes", "hipertension", "obesidad", "cardiovascular"]
+DATASETS = ["diabetes", "hipertension", "cardiovascular"]
 FILENAME = "{name}_dataset.csv"  # dentro de data_processed
 
 # --------- DICCIONARIO DE DESCRIPCIONES ---------

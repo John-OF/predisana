@@ -15,7 +15,7 @@ CURATED_DIR = "data_curated"
 MODELS_DIR = "models"
 os.makedirs(MODELS_DIR, exist_ok=True)
 
-DATASETS = ["diabetes", "hipertension", "obesidad", "cardiovascular"]
+DATASETS = ["diabetes", "hipertension", "cardiovascular"]
 
 ALL_FEATURES = [
     "age","pregnancies","glucose","blood_pressure","skin_thickness","insulin",
@@ -37,11 +37,7 @@ def get_features_for_disease(disease_name):
         if "hypertension" in features:
             features.remove("hypertension")
 
-    if disease_name == "obesidad":
-        if "bmi" in features:
-            features.remove("bmi")
-        
-    elif disease_name == "cardiovascular":
+    if disease_name == "cardiovascular":
         # Aquí sí quitamos heart_disease porque es el objetivo a prevenir (futuro)
         if "heart_disease" in features: features.remove("heart_disease")
         

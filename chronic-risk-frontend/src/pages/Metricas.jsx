@@ -4,7 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import { getMetrics } from '../services/api';
 import { getLabel } from '../utils/translations';
 
-const DISEASES = ['diabetes', 'hipertension', 'obesidad', 'cardiovascular'];
+const DISEASES = ['diabetes', 'hipertension', 'cardiovascular'];
 
 const Metricas = () => {
     const [selectedDisease, setSelectedDisease] = useState('diabetes');

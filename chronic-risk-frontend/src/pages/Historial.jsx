@@ -29,7 +29,6 @@ import {
 const DISEASE_LABELS = {
   diabetes: "Diabetes",
   hipertension: "Hipertensión",
-  obesidad: "Obesidad",
   cardiovascular: "Cardiovascular",
 };
 

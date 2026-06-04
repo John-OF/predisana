@@ -45,11 +45,6 @@ FILES = {
         "features": os.path.join(BASE_MODELS, "hipertension_features.json"),
         "metrics":  os.path.join(BASE_MODELS, "hipertension_metrics.json"),
     },
-    "obesidad": {
-        "pipeline": os.path.join(BASE_MODELS, "obesidad_pipeline.pkl"),
-        "features": os.path.join(BASE_MODELS, "obesidad_features.json"),
-        "metrics":  os.path.join(BASE_MODELS, "obesidad_metrics.json"),
-    },
     "cardiovascular": {
         "pipeline": os.path.join(BASE_MODELS, "cardiovascular_pipeline.pkl"),
         "features": os.path.join(BASE_MODELS, "cardiovascular_features.json"),
@@ -300,16 +295,14 @@ def predict(disease: str):
     clinical_glucose = 0
     clinical_hba1c = 0
     clinical_bp = 0
-    clinical_bmi = 0
 
     for f in feats:
         val = _safe_get(payload, f)
-        
+
         # Capturamos valores clínicos
         if f in ["glucose", "blood_glucose_level"]: clinical_glucose = float(val or 0)
         if f == "hba1c_level": clinical_hba1c = float(val or 0)
         if f == "blood_pressure": clinical_bp = float(val or 0)
-        if f == "bmi": clinical_bmi = float(val or 0)
 
         if val is None:
             if f.startswith(("gender_", "smoking_history_", "cholesterol_", "glucose_", "bp_", "ethnicity_", "race_")) or "_" in f:
@@ -318,41 +311,6 @@ def predict(disease: str):
                 val = 0
                 missing.append(f)
         row.append(val)
-    
-    # Captura clínica directa (aunque NO esté en feats)
-    bmi_in = _safe_get(payload, "bmi")
-    if bmi_in is not None:
-        try:
-            clinical_bmi = float(bmi_in)
-        except:
-            clinical_bmi = 0
-    else:
-        clinical_bmi = 0
-
-    # ==========================================
-    # OBESIDAD: regla clínica si hay BMI
-    # ==========================================
-    if disease == "obesidad" and clinical_bmi > 0:
-        # Regla OMS/criterio clínico
-        if clinical_bmi >= 30:
-            prob = 0.99
-            pred_class = 1
-        else:
-            prob = 0.01
-            pred_class = 0
-
-        log_prediction_to_db(disease, payload, pred_class, prob)
-
-        return jsonify({
-            "disease": disease,
-            "method": "clinical_rule_bmi",
-            "probability": prob,
-            "prediction": pred_class,
-            "missing_filled_as_zero": [],
-            "raw_model_probability": None,
-            "top_features": [],
-            "explain_note": "Para obesidad, si se proporciona BMI, se aplica criterio clínico (BMI ≥ 30). El modelo ML se usa solo cuando no hay BMI."
-        })
     
     X = np.array([row], dtype=float)
     model = MODELS[disease]
@@ -457,11 +415,6 @@ def predict(disease: str):
         elif clinical_bp >= 120:
             extra = (clinical_bp - 120) * 0.02
             prob = max(prob, 0.30 + extra)
-
-    # --- OBESIDAD ---
-    elif disease == "obesidad":
-        # Si no hay BMI, NO aplicar reglas; solo usar probabilidad del modelo
-        pass
 
     # Limitar siempre a máximo 1.0 (por si la suma se pasa)
     prob = min(prob, 1.0)

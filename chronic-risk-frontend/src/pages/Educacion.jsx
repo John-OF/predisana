@@ -37,23 +37,6 @@ const INFO_ENFERMEDADES = {
         sintomas: ["Generalmente asintomática.", "Dolor de cabeza matutino.", "Zumbido en oídos (Tinnitus).", "Sangrado nasal (casos graves)."],
         tratamiento: "Crónico y de por vida. Se trata reduciendo el sodio, controlando el peso y usando fármacos antihipertensivos."
     },
-    obesidad: {
-        titulo: "Obesidad",
-        color: "warning",
-        definicion: "Acumulación anormal o excesiva de grasa que representa un riesgo para la salud. Clínicamente se define con un IMC ≥ 30.",
-        mortalidad: "Aumenta drásticamente el riesgo de mortalidad por todas las causas (cardiovasculares, respiratorias y oncológicas).",
-        poblacion: "Problema creciente en Ecuador, con altas tasas de sobrepeso en población adulta.",
-        organos: ["Sistema cardiovascular", "Hígado (Hígado graso)", "Articulaciones (Rodillas/Columna)", "Sistema respiratorio"],
-        variables_ia: "El IMC (BMI) es la variable central, correlacionada con edad y género.",
-        factores: [
-            "Ingesta calórica superior al gasto energético.",
-            "Entornos obesogénicos (comida ultraprocesada).",
-            "Falta de sueño.",
-            "Factores hormonales."
-        ],
-        sintomas: ["Dificultad para respirar (Disnea)", "Fatiga rápida", "Dolor articular", "Apnea del sueño"],
-        tratamiento: "Reversible. Requiere déficit calórico supervisado, actividad física regular y apoyo psicológico."
-    },
     cardiovascular: {
         titulo: "Riesgo Cardiovascular",
         color: "info",
@@ -128,9 +111,6 @@ const Educacion = () => {
                                 </Nav.Item>
                                 <Nav.Item>
                                     <Nav.Link eventKey="hipertension">💓 Hipertensión</Nav.Link>
-                                </Nav.Item>
-                                <Nav.Item>
-                                    <Nav.Link eventKey="obesidad">⚖️ Obesidad</Nav.Link>
                                 </Nav.Item>
                                 <Nav.Item>
                                     <Nav.Link eventKey="cardiovascular">🚑 Cardiovascular</Nav.Link>

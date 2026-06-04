@@ -6,7 +6,7 @@ import { getLabel } from '../utils/translations';
 import Swal from 'sweetalert2';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from 'recharts';
 
-const DISEASES = ['diabetes', 'hipertension', 'obesidad', 'cardiovascular'];
+const DISEASES = ['diabetes', 'hipertension', 'cardiovascular'];
 
 // --- CONFIGURACIÓN DE LÍMITES CLÍNICOS REALISTAS ---
 const CLINICAL_LIMITS = {

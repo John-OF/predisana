@@ -29,7 +29,6 @@ export const LABELS_ES = {
     // Enfermedades
     diabetes: "Diabetes Tipo 2",
     hipertension: "Hipertensión Arterial",
-    obesidad: "Obesidad",
     cardiovascular: "Riesgo Cardiovascular"
 };
 
