@@ -1,470 +1,258 @@
 # prepare_datasets.py
+# =============================================================================
+# Limpieza de datos POR ENFERMEDAD (arquitectura v2, B1).
+#
+# Cambio respecto a la versión anterior:
+#   - ANTES: se concatenaban ~7 CSVs heterogéneos en UN frame maestro y se
+#     re-derivaba el target de cada enfermedad sobre las MISMAS filas. Eso
+#     producía una "sopa imputada" (insulina/pliegue/pedigree 99.8% en cero,
+#     presión 87.8% imputada, etc.) y modelos sin señal real.
+#   - AHORA: cada enfermedad se limpia desde SU PROPIA fuente, con SU propio
+#     esquema de columnas. Sin COMMON_SCHEMA global, sin imputación cruzada.
+#     La imputación (cuando ocurre) es por mediana DENTRO de un único dataset
+#     real y coherente, no entre fuentes distintas.
+#
+# Fuentes elegidas (ver BITACORA.md → B1):
+#   - diabetes        -> data_raw/diabetes_prediction_dataset.csv   (100k, limpio)
+#   - cardiovascular  -> data_raw/cardio_train.csv                  (70k, sep=';')
+#   - hipertension    -> data_raw/Hipertension_Arterial_Mexico.csv  (4.4k, ENSANUT)
+#
+# Descartados a propósito:
+#   - data_raw/hypertension_dataset.csv  -> RUIDO (target aleatorio, corr ~0.00)
+#   - data_raw/diabetes.csv (PIMA) y Dataset_of_Diabetes.csv -> metían imputación
+#   - data_raw/ObesityDataSet_*.csv -> obesidad fuera del alcance (A1)
+# =============================================================================
+
 import os
 import pandas as pd
 import numpy as np
 
-# ====== CONFIG ======
 RAW_DIR = "data_raw"
 PROCESSED_DIR = "data_processed"
 os.makedirs(PROCESSED_DIR, exist_ok=True)
 
-# Archivos CSV esperados
-CSV_FILES = [
-    "diabetes.csv",
-    "diabetes_prediction_dataset.csv",
-    "Dataset_of_Diabetes.csv",
-    "Hipertension_Arterial_Mexico.csv",
-    "hypertension_dataset.csv",
-    "ObesityDataSet_raw_and_data_sinthetic.csv",
-    "cardio_train.csv",
-]
 
-# Esquema común.
-# NOTA: Mantenemos 'blood_glucose_level' para compatibilidad con train_models,
-# pero será una copia exacta de 'glucose'.
-COMMON_SCHEMA = [
-    "age",
-    "pregnancies",
-    "glucose",
-    "blood_pressure",
-    "skin_thickness",
-    "insulin",
-    "bmi",
-    "diabetes_pedigree",
-    "hypertension",
-    "heart_disease",
-    "hba1c_level",
-    "blood_glucose_level", 
-    "gender_Female",
-    "gender_Male",
-    "smoking_history_current",
-    "smoking_history_former",
-    "smoking_history_never",
-    "smoking_history_ever",
-    "smoking_history_not current",
-    "target"
-]
+# =============================================================================
+# Utilidades comunes
+# =============================================================================
+def _read_csv(path, sep=","):
+    """Lectura robusta (utf-8 -> latin-1)."""
+    try:
+        return pd.read_csv(path, sep=sep, encoding="utf-8")
+    except UnicodeDecodeError:
+        return pd.read_csv(path, sep=sep, encoding="latin-1")
 
-# Valores por defecto médicos (SÓLO para casos de emergencia donde falte TODA la columna)
-MEDICAL_DEFAULTS = {
-    "glucose": 100.0,
-    "hba1c_level": 5.5,
-    "bmi": 25.0,
-    "blood_pressure": 120.0,
-    "age": 40.0
-}
 
-# =========================================================
-# 1. CARGA
-# =========================================================
-def load_csvs():
-    loaded = []
-    for name in CSV_FILES:
-        path = os.path.join(RAW_DIR, name)
-        if not os.path.exists(path):
-            print(f"No existe: {name}")
-            continue
+def _clip(series, lo, hi):
+    """Recorta a un rango fisiológico plausible; fuera de rango -> NaN."""
+    s = pd.to_numeric(series, errors="coerce")
+    return s.where((s >= lo) & (s <= hi), np.nan)
 
-        df = None
-        try:
-            df = pd.read_csv(path)
-        except UnicodeDecodeError:
-            try:
-                df = pd.read_csv(path, encoding="latin-1")
-            except:
-                pass
-        
-        # Intento con separador ;
-        if df is not None and df.shape[1] <= 1:
-            try:
-                df = pd.read_csv(path, sep=";", encoding="latin-1")
-            except:
-                pass
 
-        if df is None:
-            print(f"No se pudo cargar: {name}")
-            continue
-
-        print(f"Cargado: {name} -> {df.shape}")
-        loaded.append((name, df))
-    return loaded
-
-# =========================================================
-# 2. DETECTORES
-# =========================================================
-def is_pima_like(df):
-    needed = {"Pregnancies", "Glucose", "BloodPressure", "BMI", "Age", "Outcome"}
-    return needed.issubset(df.columns)
-
-def is_prediction_like(df):
-    lower = {c.lower() for c in df.columns}
-    return {"age", "bmi", "hypertension"}.issubset(lower) and ("diabetes" in lower)
-
-def is_lab_diabetes_like(df):
-    cols = {c.lower().strip() for c in df.columns}
-    return ("class" in cols or "clas" in cols or "status" in cols) and \
-           any(x in cols for x in ["hba1c", "hb1ac", "valor_hemoglobina_glucosilada"])
-
-def is_mexican_hypertension(df):
-    cols = {c.lower().strip() for c in df.columns}
-    return "riesgo_hipertension" in cols or ("tension_arterial" in cols and "edad" in cols)
-
-def is_english_hypertension(df):
-    cols = {c.lower().strip() for c in df.columns}
-    return "hypertension" in cols and ("age" in cols or "bmi" in cols)
-
-def is_obesity_uci(df):
-    cols = {c.lower().strip() for c in df.columns}
-    return "nobeyesdad" in cols or "obesity" in cols
-
-def is_cardio_kaggle(df):
-    cols = {c.lower().strip() for c in df.columns}
-    return "cardio" in cols and "ap_hi" in cols
-
-# =========================================================
-# 3. NORMALIZADORES
-# =========================================================
-
-def init_df(rows):
-    """Crea un DF vacío con NaNs en lugar de ceros"""
-    df = pd.DataFrame(np.nan, index=range(rows), columns=COMMON_SCHEMA)
-    # Las dummies sí pueden ser 0
-    dummies = [c for c in COMMON_SCHEMA if "gender" in c or "smoking" in c or c in ["hypertension", "heart_disease", "target"]]
-    df[dummies] = 0
+def _impute_median(df, cols):
+    """Imputa por mediana DENTRO de este único dataset real (no cruzada)."""
+    for c in cols:
+        if c in df.columns:
+            med = df[c].median()
+            n_na = int(df[c].isna().sum())
+            if n_na > 0 and pd.notna(med):
+                df[c] = df[c].fillna(med)
+                print(f"      -{c}: {n_na} nulos -> mediana {med:.2f}")
     return df
 
-def normalize_pima(df):
-    out = init_df(len(df))
-    
-    out["pregnancies"] = df["Pregnancies"]
-    out["glucose"] = df["Glucose"].replace(0, np.nan) # Corregir ceros fisiológicos
-    out["blood_pressure"] = df["BloodPressure"].replace(0, np.nan)
-    out["skin_thickness"] = df["SkinThickness"].replace(0, np.nan)
-    out["insulin"] = df["Insulin"].replace(0, np.nan)
-    out["bmi"] = df["BMI"].replace(0, np.nan)
-    out["diabetes_pedigree"] = df["DiabetesPedigreeFunction"]
-    out["age"] = df["Age"]
-    out["target"] = df["Outcome"]
-    
-    # PIMA no tiene HbA1c, se deja como NaN para imputar luego
+
+def _report(name, df, target="target"):
+    n = len(df)
+    pos = int(df[target].sum())
+    na = int(df.isna().sum().sum())
+    print(f"   => {name}: filas={n}  positivos={pos} ({100*pos/n:.1f}%)  "
+          f"cols={df.shape[1]}  NaN_restantes={na}")
+
+
+# =============================================================================
+# DIABETES  <- diabetes_prediction_dataset.csv (100k)
+# Columns: gender, age, hypertension, heart_disease, smoking_history, bmi,
+#          HbA1c_level, blood_glucose_level, diabetes
+# =============================================================================
+def build_diabetes():
+    print("\n=== DIABETES (diabetes_prediction_dataset.csv) ===")
+    src = _read_csv(os.path.join(RAW_DIR, "diabetes_prediction_dataset.csv"))
+    src.columns = [c.strip().lower() for c in src.columns]
+
+    out = pd.DataFrame()
+    out["age"] = _clip(src["age"], 0, 120)
+    out["bmi"] = _clip(src["bmi"], 10, 70)
+    out["hba1c_level"] = _clip(src["hba1c_level"], 3.0, 15.0)
+    out["blood_glucose_level"] = _clip(src["blood_glucose_level"], 50, 400)
+    # 'glucose' NO se almacena aquí (sería un duplicado colineal de blood_glucose_level).
+    # app.py /predict ya hace el espejo glucose<->blood_glucose_level en el input.
+
+    # Comorbilidades (predictoras, no leakage: el target es diabetes)
+    out["hypertension"] = pd.to_numeric(src["hypertension"], errors="coerce").fillna(0).astype(int)
+    out["heart_disease"] = pd.to_numeric(src["heart_disease"], errors="coerce").fillna(0).astype(int)
+
+    # Género (one-hot; 'Other' -> ambos 0)
+    g = src["gender"].astype(str).str.lower()
+    out["gender_Female"] = (g == "female").astype(int)
+    out["gender_Male"] = (g == "male").astype(int)
+
+    # Tabaquismo (one-hot; 'No Info' -> todas 0 = desconocido)
+    s = src["smoking_history"].astype(str).str.lower().str.strip()
+    out["smoking_history_never"] = (s == "never").astype(int)
+    out["smoking_history_current"] = (s == "current").astype(int)
+    out["smoking_history_former"] = (s == "former").astype(int)
+    out["smoking_history_ever"] = (s == "ever").astype(int)
+    out["smoking_history_not_current"] = (s == "not current").astype(int)
+
+    out["target"] = pd.to_numeric(src["diabetes"], errors="coerce").fillna(0).astype(int)
+
+    # Imputación por mediana (este dataset no tiene nulos, pero por si el clip generó alguno)
+    out = _impute_median(out, ["age", "bmi", "hba1c_level", "blood_glucose_level"])
+    out = out.dropna(subset=["target"]).reset_index(drop=True)
+
+    _report("diabetes", out)
     return out
 
-def normalize_prediction(df):
-    # Convertir columnas a minúsculas y quitar espacios
-    df.columns = [c.strip().lower() for c in df.columns]
-    out = init_df(len(df))
 
-    # Columnas básicas
-    out["age"] = df["age"] if "age" in df else np.nan
-    out["bmi"] = df["bmi"] if "bmi" in df else np.nan
-    
-    # Asignaciones SEGURAS (Evitan el KeyError 'heart_disease')
-    out["hypertension"] = df["hypertension"] if "hypertension" in df else 0
-    out["heart_disease"] = df["heart_disease"] if "heart_disease" in df else 0
-    out["hba1c_level"] = df["hba1c_level"] if "hba1c_level" in df else np.nan
-    
-    # Glucosa: puede venir como blood_glucose_level o no venir
-    if "blood_glucose_level" in df:
-        out["glucose"] = df["blood_glucose_level"]
-    elif "glucose" in df:
-        out["glucose"] = df["glucose"]
-    else:
-        out["glucose"] = np.nan
+# =============================================================================
+# CARDIOVASCULAR  <- cardio_train.csv (70k, sep=';')
+# Columns: id, age(días), gender(1/2), height(cm), weight(kg), ap_hi, ap_lo,
+#          cholesterol(1-3), gluc(1-3), smoke, alco, active, cardio
+# =============================================================================
+def build_cardiovascular():
+    print("\n=== CARDIOVASCULAR (cardio_train.csv) ===")
+    src = _read_csv(os.path.join(RAW_DIR, "cardio_train.csv"), sep=";")
+    src.columns = [c.strip().lower() for c in src.columns]
 
-    # Target
-    if "diabetes" in df:
-        out["target"] = df["diabetes"]
-    else:
-        out["target"] = 0
+    out = pd.DataFrame()
+    # Edad viene en DÍAS -> años
+    out["age"] = (pd.to_numeric(src["age"], errors="coerce") / 365.25).round(1)
 
-    # Gender
-    if "gender" in df:
-        g = df["gender"].astype(str).str.lower()
-        out["gender_Female"] = (g == "female").astype(int)
-        out["gender_Male"] = (g == "male").astype(int)
+    # IMC derivado de altura/peso (con saneamiento)
+    h_cm = _clip(src["height"], 120, 220)        # cm plausibles
+    w_kg = _clip(src["weight"], 30, 250)         # kg plausibles
+    bmi = w_kg / (h_cm / 100.0) ** 2
+    out["bmi"] = _clip(bmi, 12, 70)
 
-    # Smoking
-    if "smoking_history" in df:
-        s = df["smoking_history"].astype(str).str.lower()
-        out["smoking_history_current"] = (s == "current").astype(int)
-        out["smoking_history_former"] = (s == "former").astype(int)
-        out["smoking_history_never"] = (s == "never").astype(int)
-        out["smoking_history_ever"] = ((s == "current") | (s == "former") | (s == "ever")).astype(int) 
-        out["smoking_history_not current"] = (s == "not current").astype(int)
+    # Presión arterial: el crudo trae errores groseros (ap_hi hasta 16020, negativos)
+    out["ap_hi"] = _clip(src["ap_hi"], 70, 250)  # sistólica
+    out["ap_lo"] = _clip(src["ap_lo"], 40, 150)  # diastólica
 
+    # Ordinales clínicos (1=normal, 2=alto, 3=muy alto) — se preservan como orden
+    out["cholesterol"] = pd.to_numeric(src["cholesterol"], errors="coerce")
+    out["gluc"] = pd.to_numeric(src["gluc"], errors="coerce")
+
+    # Binarias de estilo de vida
+    out["smoke"] = pd.to_numeric(src["smoke"], errors="coerce").fillna(0).astype(int)
+    out["alco"] = pd.to_numeric(src["alco"], errors="coerce").fillna(0).astype(int)
+    out["active"] = pd.to_numeric(src["active"], errors="coerce").fillna(0).astype(int)
+
+    # Género (cardio dataset: 1=mujer, 2=hombre)
+    out["gender_Female"] = (pd.to_numeric(src["gender"], errors="coerce") == 1).astype(int)
+    out["gender_Male"] = (pd.to_numeric(src["gender"], errors="coerce") == 2).astype(int)
+
+    out["target"] = pd.to_numeric(src["cardio"], errors="coerce").fillna(0).astype(int)
+
+    # Descartar filas con presión incoherente (diastólica >= sistólica) o presión perdida
+    before = len(out)
+    out = out[out["ap_hi"].notna() & out["ap_lo"].notna()]
+    out = out[out["ap_hi"] > out["ap_lo"]]
+    print(f"      -presión incoherente/ausente descartada: {before - len(out)} filas")
+
+    out = _impute_median(out, ["age", "bmi", "cholesterol", "gluc"])
+    out = out.dropna(subset=["target"]).reset_index(drop=True)
+
+    _report("cardiovascular", out)
     return out
 
-def normalize_lab_diabetes(df):
-    df.columns = [c.strip().lower() for c in df.columns]
-    out = init_df(len(df))
-    
-    out["age"] = df["age"] if "age" in df else np.nan
-    out["bmi"] = df["bmi"] if "bmi" in df else np.nan
-    
-    # HbA1c
-    if "hba1c" in df: out["hba1c_level"] = df["hba1c"]
-    elif "valor_hemoglobina_glucosilada" in df: out["hba1c_level"] = df["valor_hemoglobina_glucosilada"]
-    
-    # Glucose (Este dataset a veces no tiene glucosa, dejar NaN)
-    # Gender
-    if "gender" in df:
-        g = df["gender"].astype(str).str.lower()
-        out["gender_Female"] = g.str.startswith("f").astype(int)
-        out["gender_Male"] = g.str.startswith("m").astype(int)
 
-    # Target
-    if "class" in df:
-        out["target"] = (df["class"].astype(str).str.upper() != "N").astype(int)
-    elif "status" in df:
-        out["target"] = (df["status"].astype(str).str.lower() != "normal").astype(int)
+# =============================================================================
+# HIPERTENSIÓN  <- Hipertension_Arterial_Mexico.csv (ENSANUT, 4.4k)
+# Survey con 36 columnas; seleccionamos las con señal y descartamos el resto.
+# Target: riesgo_hipertension (0/1).
+# =============================================================================
+def build_hipertension():
+    print("\n=== HIPERTENSIÓN (Hipertension_Arterial_Mexico.csv) ===")
+    src = _read_csv(os.path.join(RAW_DIR, "Hipertension_Arterial_Mexico.csv"))
+    src.columns = [c.strip().lower() for c in src.columns]
 
-    return out
+    # Mapa columna_origen -> nombre_destino (solo variables con sentido clínico)
+    colmap = {
+        "edad": "age",
+        "masa_corporal": "bmi",
+        "peso": "weight",
+        "medida_cintura": "waist_circumference",
+        "tension_arterial": "blood_pressure",
+        "resultado_glucosa": "glucose",
+        "valor_hemoglobina_glucosilada": "hba1c_level",
+        "valor_colesterol_total": "cholesterol_total",
+        "valor_colesterol_hdl": "hdl",
+        "valor_colesterol_ldl": "ldl",
+        "valor_trigliceridos": "triglycerides",
+        "valor_insulina": "insulin",
+    }
 
-def normalize_mexican_hypertension(df):
-    df.columns = [c.strip().lower() for c in df.columns]
-    out = init_df(len(df))
+    out = pd.DataFrame()
+    for srccol, dst in colmap.items():
+        if srccol in src.columns:
+            out[dst] = pd.to_numeric(src[srccol], errors="coerce")
 
-    out["age"] = df["edad"] if "edad" in df else np.nan
-    out["bmi"] = df["masa_corporal"] if "masa_corporal" in df else np.nan
-    out["glucose"] = df["resultado_glucosa"] if "resultado_glucosa" in df else np.nan
-    out["hba1c_level"] = df["valor_hemoglobina_glucosilada"] if "valor_hemoglobina_glucosilada" in df else np.nan
+    # Saneamiento de rangos fisiológicos
+    if "age" in out: out["age"] = _clip(out["age"], 0, 120)
+    if "bmi" in out: out["bmi"] = _clip(out["bmi"], 12, 70)
+    if "blood_pressure" in out: out["blood_pressure"] = _clip(out["blood_pressure"], 70, 260)
+    if "glucose" in out: out["glucose"] = _clip(out["glucose"], 40, 500)
+    if "hba1c_level" in out: out["hba1c_level"] = _clip(out["hba1c_level"], 3.0, 18.0)
+    if "waist_circumference" in out: out["waist_circumference"] = _clip(out["waist_circumference"], 40, 200)
+    if "weight" in out: out["weight"] = _clip(out["weight"], 25, 250)
 
-    if "sexo" in df:
-        # Asumiendo 1=H, 2=M según tu código anterior
-        out["gender_Male"] = (df["sexo"] == 1).astype(int)
-        out["gender_Female"] = (df["sexo"] == 2).astype(int)
-
-    if "riesgo_hipertension" in df:
-        rh = pd.to_numeric(df["riesgo_hipertension"], errors='coerce').fillna(0)
-        out["hypertension"] = (rh == 1).astype(int)
-        out["target"] = out["hypertension"]
-
-    return out
-
-def normalize_english_hypertension(df):
-    df.columns = [c.strip().lower() for c in df.columns]
-    out = init_df(len(df))
-    
-    out["age"] = df["age"] if "age" in df else np.nan
-    out["bmi"] = df["bmi"] if "bmi" in df else np.nan
-    out["glucose"] = df["glucose"] if "glucose" in df else np.nan
-    
-    if "gender" in df:
-        g = df["gender"].astype(str).str.lower()
-        out["gender_Female"] = (g == "female").astype(int)
-        out["gender_Male"] = (g == "male").astype(int)
-
-    if "hypertension" in df:
-        h = df["hypertension"].astype(str).str.lower()
-        out["hypertension"] = h.apply(lambda x: 1 if x in ["1","yes","true","high"] else 0)
-        out["target"] = out["hypertension"]
-        
-    return out
-
-def normalize_obesity_uci(df):
-    df.columns = [c.strip().lower() for c in df.columns]
-    out = init_df(len(df))
-
-    out["age"] = df["age"] if "age" in df else np.nan
-    
-    # Calcular BMI
-    if "height" in df and "weight" in df:
-        h = df["height"].astype(float)
-        w = df["weight"].astype(float)
-        if h.mean() > 3: h = h / 100.0 # Ajuste cm a metros
-        out["bmi"] = w / (h**2)
-
-    if "gender" in df:
-        g = df["gender"].astype(str).str.lower()
-        out["gender_Female"] = g.str.startswith("f").astype(int)
-        out["gender_Male"] = g.str.startswith("m").astype(int)
-
-    # Target
-    if "nobeyesdad" in df:
-        cat = df["nobeyesdad"].astype(str).str.lower()
-        out["target"] = cat.apply(lambda x: 1 if "overweight" in x or "obesity" in x else 0)
-    else:
-        out["target"] = (out["bmi"] >= 30).astype(int)
-
-    return out
-
-def normalize_cardio_kaggle(df):
-    df.columns = [c.strip().lower() for c in df.columns]
-    out = init_df(len(df))
-
-    # Edad viene en días
-    if "age" in df:
-        out["age"] = (df["age"] / 365.25).round(1)
-
-    # BMI
-    if "height" in df and "weight" in df:
-        h = df["height"].astype(float) / 100.0
-        w = df["weight"].astype(float)
-        out["bmi"] = w / (h**2)
-
-    if "ap_hi" in df:
-        out["blood_pressure"] = df["ap_hi"].replace(0, np.nan)
-
-    # Glucosa (1,2,3 -> mapear a valores reales)
-    if "gluc" in df:
-        out["glucose"] = df["gluc"].map({1: 90, 2: 130, 3: 180})
-
-    if "gender" in df:
-        # Cardio dataset: 1=Female, 2=Male usualmente, a veces al revés, 
-        # asumiremos 1=Female por consistencia con tu script previo
-        out["gender_Female"] = (df["gender"] == 1).astype(int)
-        out["gender_Male"] = (df["gender"] == 2).astype(int)
-    
-    if "smoke" in df:
-        out["smoking_history_current"] = df["smoke"].fillna(0).astype(int)
-        out["smoking_history_ever"] = df["smoke"].fillna(0).astype(int)
-
-    if "cardio" in df:
-        out["target"] = df["cardio"]
-
-    return out
-
-def normalize_unknown(df):
-    return init_df(len(df))
-
-# =========================================================
-# 4. POST-PROCESAMIENTO E IMPUTACIÓN
-# =========================================================
-def fill_missing_values(df):
-    """
-    Rellena NaNs con la Mediana de la columna.
-    Si la columna está vacía entera, usa MEDICAL_DEFAULTS.
-    """
-    print("Ejecutando imputación de datos faltantes...")
-    
-    physiological_cols = ["glucose", "hba1c_level", "bmi", "blood_pressure", "age"]
-    
-    for col in physiological_cols:
-        # 1. Si hay ceros donde no debería, convertirlos a NaN
-        if col in df.columns:
-            # Solo tratar 0 como NaN en variables continuas, no binarias
-            count_zeros = (df[col] == 0).sum()
-            if count_zeros > 0:
-                print(f"   - {col}: {count_zeros} ceros convertidos a NaN")
-                df[col] = df[col].replace(0, np.nan)
-
-            # 2. Calcular mediana disponible
-            median_val = df[col].median()
-            
-            # 3. Si es NaN (toda la columna vacía), usar default global
-            if pd.isna(median_val):
-                median_val = MEDICAL_DEFAULTS.get(col, 0)
-                print(f"   - {col}: Vacía. Usando default médico -> {median_val}")
-            else:
-                print(f"   - {col}: Rellenando nulos con Mediana -> {median_val:.2f}")
-
-            # 4. Rellenar
-            df[col] = df[col].fillna(median_val)
-    
-    return df
-
-def finalize_schema(df):
-    # Asegurar tipos
-    df = df.copy()
-    
-    # Clonar glucose a blood_glucose_level para compatibilidad con train_models.py
-    df["blood_glucose_level"] = df["glucose"]
-    
-    # Asegurar que no quedan NaNs
-    df = df.fillna(0)
-    
-    return df
-
-# =========================================================
-# 5. MAIN
-# =========================================================
-def main():
-    loaded = load_csvs()
-    normalized = []
-
-    for name, df in loaded:
-        if is_pima_like(df):
-            print(f"➡️ {name} es PIMA")
-            nd = normalize_pima(df)
-        elif is_prediction_like(df):
-            print(f"➡️ {name} es PREDICTION")
-            nd = normalize_prediction(df)
-        elif is_lab_diabetes_like(df):
-            print(f"➡️ {name} es LAB-DIABETES")
-            nd = normalize_lab_diabetes(df)
-        elif is_mexican_hypertension(df):
-            print(f"➡️ {name} es HIPERTENSION-MX")
-            nd = normalize_mexican_hypertension(df)
-        elif is_english_hypertension(df):
-            print(f"➡️ {name} es HIPERTENSION-EN")
-            nd = normalize_english_hypertension(df)
-        elif is_obesity_uci(df):
-            print(f"➡️ {name} es OBESIDAD-UCI")
-            nd = normalize_obesity_uci(df)
-        elif is_cardio_kaggle(df):
-            print(f"➡️ {name} es CARDIO-KAGGLE")
-            nd = normalize_cardio_kaggle(df)
+    # Descartar columnas demasiado vacías (>40% NaN) para no reintroducir "sopa"
+    keep = []
+    for c in out.columns:
+        na_rate = out[c].isna().mean()
+        if na_rate > 0.40:
+            print(f"      -descartada '{c}' por {100*na_rate:.0f}% NaN")
         else:
-            print(f"➡️ {name} es DESCONOCIDO")
-            nd = normalize_unknown(df)
+            keep.append(c)
+    out = out[keep]
 
-        normalized.append(nd)
+    # Género (sexo: 1=hombre, 2=mujer según el survey)
+    if "sexo" in src.columns:
+        sexo = pd.to_numeric(src["sexo"], errors="coerce")
+        out["gender_Male"] = (sexo == 1).astype(int)
+        out["gender_Female"] = (sexo == 2).astype(int)
 
-    if not normalized:
-        print("No se generaron datos.")
-        return
+    # Target
+    rh = pd.to_numeric(src["riesgo_hipertension"], errors="coerce")
+    out["target"] = (rh >= 0.5).astype(int)
 
-    # Unir todo en un gran dataset maestro
-    full_df = pd.concat(normalized, ignore_index=True)
-    
-    # Imputar valores faltantes
-    full_df = fill_missing_values(full_df)
-    full_df = finalize_schema(full_df)
+    # Imputación por mediana dentro de este único dataset real
+    num_cols = [c for c in out.columns if c not in ("target", "gender_Male", "gender_Female")]
+    out = _impute_median(out, num_cols)
+    out = out.dropna(subset=["target"]).reset_index(drop=True)
 
-    # Forzar que el 'target' sea numérico antes de usarlo
-    # Si hay texto ("positive", "yes", etc) que se nos pasó, esto lo intenta convertir.
-    # Si falla, pone NaN y luego 0.
-    full_df["target"] = pd.to_numeric(full_df["target"], errors='coerce').fillna(0)
+    _report("hipertension", out)
+    return out
 
-    print(f"\n Dataset Maestro Generado: {full_df.shape}")
-    print(full_df.describe().loc[['min', 'max', 'mean']])
 
-    # =====================================================
-    # GENERACIÓN DE DATASETS ESPECÍFICOS
-    # =====================================================
+# =============================================================================
+# MAIN
+# =============================================================================
+def main():
+    builders = {
+        "diabetes": build_diabetes,
+        "cardiovascular": build_cardiovascular,
+        "hipertension": build_hipertension,
+    }
+    print("Generando datasets limpios POR ENFERMEDAD (sin frame maestro)...")
+    for name, fn in builders.items():
+        df = fn()
+        path = os.path.join(PROCESSED_DIR, f"{name}_dataset.csv")
+        df.to_csv(path, index=False)
+        print(f"   guardado -> {path}")
 
-    # 1. Diabetes (Target original)
-    df_diab = full_df.copy()
-    # Ahora ya es seguro comparar con 0.5 porque garantizamos que es numérico
-    df_diab["target"] = (df_diab["target"] >= 0.5).astype(int)
-    df_diab.to_csv(os.path.join(PROCESSED_DIR, "diabetes_dataset.csv"), index=False)
-    print("diabetes_dataset.csv guardado.")
+    print("\nListo. Cada enfermedad tiene su propio esquema, sin imputación cruzada.")
 
-    # 2. Hipertensión (Target = columna hypertension)
-    df_hyp = full_df.copy()
-    # Aseguramos también que hypertension sea entero
-    df_hyp["hypertension"] = pd.to_numeric(df_hyp["hypertension"], errors='coerce').fillna(0)
-    df_hyp["target"] = (df_hyp["hypertension"] >= 0.5).astype(int)
-    df_hyp.to_csv(os.path.join(PROCESSED_DIR, "hipertension_dataset.csv"), index=False)
-    print("hipertension_dataset.csv guardado.")
-
-    # 3. Obesidad (Target = BMI >= 30)
-    df_obe = full_df.copy()
-    df_obe["target"] = (df_obe["bmi"] >= 30).astype(int)
-    df_obe.to_csv(os.path.join(PROCESSED_DIR, "obesidad_dataset.csv"), index=False)
-    print("obesidad_dataset.csv guardado.")
-
-    # 4. Cardiovascular (Target = heart_disease O original)
-    df_cardio = full_df.copy()
-    
-    # Asegurar numéricos también aquí
-    df_cardio["heart_disease"] = pd.to_numeric(df_cardio["heart_disease"], errors='coerce').fillna(0)
-    
-    # Lógica: Si heart_disease es 1 O el target original era 1 (y cardio es relevante), es enfermo.
-    df_cardio["target"] = ((df_cardio["heart_disease"] == 1) | (df_cardio["target"] == 1)).astype(int)
-    
-    df_cardio.to_csv(os.path.join(PROCESSED_DIR, "cardiovascular_dataset.csv"), index=False)
-    print("cardiovascular_dataset.csv guardado.")
 
 if __name__ == "__main__":
     main()
