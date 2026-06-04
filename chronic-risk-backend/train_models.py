@@ -24,6 +24,26 @@ os.makedirs(MODELS_DIR, exist_ok=True)
 
 DATASETS = ["diabetes", "hipertension", "cardiovascular"]
 
+# Features descartadas por baja "respondibilidad" (decision de alcance 2026-06-04).
+# El simulador es educativo y de autoevaluacion: prioriza inputs que una persona
+# comun puede responder (N1 autorreporte: edad, sexo, peso, talla, habitos;
+# N2 medicion casera/farmacia: presion, cintura) y descarta las que exigen
+# laboratorio (extraccion de sangre + orden medica). Las columnas siguen en los
+# CSV (utiles para el case-study/diccionario); solo se excluyen del MODELO.
+# Costo medido por ablation (CV AUC, mismo protocolo que abajo):
+#   - diabetes: fuera HbA1c (lab puro); se conserva glucosa, semi-accesible via
+#       glucometro/farmacia. 0.974 -> 0.926. (Quitar ambos labs caia a 0.819.)
+#   - hipertension: fuera los 7 labs (juntos pesaban ~9% de importancia).
+#       0.955 -> 0.946, practicamente gratis. Quedan inputs 100% respondibles.
+#   - cardiovascular: nada que quitar; colesterol/glucosa ya son ordinales
+#       ("te dijeron que lo tienes alto"), no valores de laboratorio.
+DROP_NON_RESPONDABLE = {
+    "diabetes": ["hba1c_level"],
+    "hipertension": ["glucose", "hba1c_level", "cholesterol_total", "hdl",
+                     "ldl", "triglycerides", "insulin"],
+    "cardiovascular": [],
+}
+
 # Validacion cruzada para la seleccion de modelo
 CV_FOLDS = 5
 SEED = 42
@@ -31,14 +51,16 @@ SEED = 42
 
 def get_features_for_disease(name: str, df: pd.DataFrame):
     """
-    Las features son todas las columnas del dataset propio de la enfermedad,
-    menos el target. Con los esquemas por-enfermedad (B1) ya no hay columnas de
-    leakage que recortar: cada dataset trae solo features legitimas para SU
-    target (p.ej. diabetes conserva hypertension/heart_disease como comorbilidades;
-    hipertension conserva blood_pressure porque el target es un score de riesgo,
-    no la tension medida).
+    Las features son las columnas del dataset propio de la enfermedad, menos el
+    target y menos las descartadas por respondibilidad (DROP_NON_RESPONDABLE).
+    Con los esquemas por-enfermedad (B1) ya no hay columnas de leakage que
+    recortar: cada dataset trae solo features legitimas para SU target (p.ej.
+    diabetes conserva hypertension/heart_disease como comorbilidades; hipertension
+    conserva blood_pressure porque el target es un score de riesgo, no la tension
+    medida). El unico recorte vigente es el de laboratorio (no respondible).
     """
-    return [c for c in df.columns if c != "target"]
+    drop = set(DROP_NON_RESPONDABLE.get(name, []))
+    return [c for c in df.columns if c != "target" and c not in drop]
 
 
 def build_models() -> dict:

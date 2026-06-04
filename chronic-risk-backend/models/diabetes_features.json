@@ -1,1 +1,1 @@
-["age", "bmi", "hba1c_level", "blood_glucose_level", "hypertension", "heart_disease", "gender_Female", "gender_Male", "smoking_history_never", "smoking_history_current", "smoking_history_former", "smoking_history_ever", "smoking_history_not_current"]
+["age", "bmi", "blood_glucose_level", "hypertension", "heart_disease", "gender_Female", "gender_Male", "smoking_history_never", "smoking_history_current", "smoking_history_former", "smoking_history_ever", "smoking_history_not_current"]

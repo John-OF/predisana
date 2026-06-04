@@ -1,1 +1,1 @@
-["age", "bmi", "weight", "waist_circumference", "blood_pressure", "glucose", "hba1c_level", "cholesterol_total", "hdl", "ldl", "triglycerides", "insulin", "gender_Male", "gender_Female"]
+["age", "bmi", "weight", "waist_circumference", "blood_pressure", "gender_Male", "gender_Female"]
