@@ -1,14 +1,14 @@
 // src/App.jsx
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import MyNavbar from './components/MyNavbar';
 import { Container } from 'react-bootstrap';
+import MyNavbar from './components/MyNavbar';
+import Logo from './components/Logo';
 
 import Home from './pages/Home';
 import Simulacion from './pages/Simulacion';
 import Metricas from './pages/Metricas';
 import Aviso from './pages/Aviso';
 import Educacion from './pages/Educacion';
-import Historial from "./pages/Historial";
 
 const NotFound = () => (
   <div className="p-5 text-center">
@@ -29,27 +29,27 @@ function App() {
             <Route path="/simulacion" element={<Simulacion />} />
             <Route path="/metricas" element={<Metricas />} />
             <Route path="/aviso" element={<Aviso />} />
-            <Route path="/historial" element={<Historial />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </main>
 
-        <footer className="cr-footer py-5 mt-auto">
-          <Container className="text-center">
-            <div className="footer-brand mb-3">
-              <img className="footer-logo" src="/icon.jpeg" alt="Predisana" />
-              <div className="text-start">
-                <h5 className="footer-title">Predisana</h5>
-                <div className="footer-sub">Plataforma de predicción de enfermedades crónicas basada en Machine Learning</div>
+        <footer className="ps-footer mt-auto">
+          <Container>
+            <div className="foot-in d-flex flex-wrap justify-content-between align-items-center gap-3">
+              <div className="foot-brand">
+                <Logo className="ps-logo" size={34} />
+                <div>
+                  <p className="foot-title">Predisana</p>
+                  <div className="text-faint">Proyecto desarrollado para cliente privado · IA explicable en salud</div>
+                </div>
+              </div>
+              <div className="mono text-faint" style={{ fontSize: '.8rem' }}>
+                React 19 · Vite · LightGBM · SHAP
               </div>
             </div>
-
-            <div className="footer-meta">
-              Universidad de Guayaquil | Carrera de Software © {new Date().getFullYear()}
-            </div>
-
-            <div className="footer-note">
-              Este sistema es puramente educativo y <strong>NO</strong> sustituye un diagnóstico médico.
+            <div className="text-faint mt-3" style={{ fontSize: '.85rem' }}>
+              Herramienta educativa. <strong>No</strong> sustituye un diagnóstico médico profesional.
+              © {new Date().getFullYear()} Predisana.
             </div>
           </Container>
         </footer>

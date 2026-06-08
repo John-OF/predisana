@@ -1,356 +1,360 @@
-/* src/index.css */
+/* ============================================================
+   PREDISANA — Sistema visual "Pulso Sereno"
+   Dirección: clínica-minimalista, data-driven, confiable y serena.
+   Tipografías: Fraunces (display) + Archivo (cuerpo) + Spline Sans Mono (datos)
+   ============================================================ */
 
 :root{
-  --cr-navy: #0b1220;
-  --cr-navy-2: #0a1930;
-  --cr-blue: #1e6bff;
-  --cr-cyan: #2dd4ff;
-  --cr-green: #22c55e;
-  --cr-text: #0f172a;
-  --cr-muted: rgba(15, 23, 42, .72);
+  /* ---- Marca (constantes en ambos temas) ---- */
+  --teal-900:#0a3b3a; --teal-700:#0f6e6a; --teal-500:#16a39c; --teal-300:#6fd3cc; --teal-100:#d6f4f1;
+  --sage-500:#5b9a7a; --sage-300:#a8d4bd;
 
-  --cr-card-bg: rgba(255,255,255,.92);
-  --cr-card-border: rgba(15, 23, 42, .08);
+  /* ---- Semánticos de riesgo (serenos, NO de pánico) ---- */
+  --risk-low:#4fae8c;  --risk-low-bg:#e3f4ec;
+  --risk-mid:#d8a64a;  --risk-mid-bg:#f7efda;
+  --risk-high:#c8736a; --risk-high-bg:#f6e3e0;
 
-  --cr-radius: 18px;
-  --cr-shadow: 0 18px 45px rgba(2, 6, 23, .10);
-  --cr-shadow-soft: 0 10px 25px rgba(2, 6, 23, .08);
+  --radius:18px;
+  --nav-h:68px;
 
-  --nav-h: 72px;
+  --font-display:'Fraunces',Georgia,serif;
+  --font-body:'Archivo',system-ui,-apple-system,sans-serif;
+  --font-mono:'Spline Sans Mono','SFMono-Regular',monospace;
 }
 
-*{ box-sizing: border-box; }
-
-html, body{
-  height: 100%;
+[data-theme="light"]{
+  --bg:#f4f7f6; --surface:#ffffff; --surface-2:#f0f5f3; --border:#e2ebe8;
+  --text:#0c1f24; --text-soft:#3a565c; --text-faint:#6f8a90;
+  --accent:#0f6e6a; --accent-soft:#16a39c; --halo:rgba(22,163,156,.10);
+  --shadow:0 1px 2px rgba(12,31,36,.04),0 8px 24px rgba(12,31,36,.06);
+  --on-accent:#ffffff;
 }
+[data-theme="dark"]{
+  --bg:#081416; --surface:#0f2426; --surface-2:#13302f; --border:#1c3a39;
+  --text:#e7f2ef; --text-soft:#a9c5c1; --text-faint:#6f928c;
+  --accent:#6fd3cc; --accent-soft:#16a39c; --halo:rgba(111,211,204,.12);
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 32px rgba(0,0,0,.4);
+  --on-accent:#081416;
+}
+
+/* ============================================================
+   Puente con Bootstrap: re-mapear sus variables a nuestros tokens
+   para que react-bootstrap (Card, Button, Table, Nav, Accordion…)
+   herede "Pulso Sereno" sin reescribir cada componente.
+   ============================================================ */
+:root{
+  --bs-primary:#0f6e6a;
+  --bs-primary-rgb:15,110,106;
+  --bs-border-radius:13px;
+  --bs-border-radius-lg:18px;
+  --bs-font-sans-serif:var(--font-body);
+}
+body{
+  --bs-body-bg:var(--bg);
+  --bs-body-color:var(--text);
+  --bs-body-font-family:var(--font-body);
+  --bs-border-color:var(--border);
+  --bs-secondary-color:var(--text-soft);
+  --bs-tertiary-bg:var(--surface-2);
+  --bs-emphasis-color:var(--text);
+  --bs-link-color:var(--accent);
+  --bs-link-hover-color:var(--accent-soft);
+  --bs-heading-color:var(--text);
+}
+
+*{ box-sizing:border-box; }
+html{ scroll-behavior:smooth; }
+html,body{ height:100%; }
 
 body{
-  margin: 0;
-  color: var(--cr-text);
-  background:
-    radial-gradient(900px 600px at 12% 10%, rgba(45,212,255,.20), transparent 60%),
-    radial-gradient(900px 600px at 88% 20%, rgba(30,107,255,.14), transparent 55%),
-    linear-gradient(180deg, rgba(255,255,255,.86), rgba(255,255,255,.94)),
-    url('/fondo3.jpeg');
-  background-size: cover;
-  background-position: center;
-  background-attachment: fixed;
+  margin:0;
+  font-family:var(--font-body);
+  color:var(--text);
+  background:var(--bg);
+  line-height:1.55;
+  -webkit-font-smoothing:antialiased;
+  transition:background .4s,color .4s;
+  background-image:
+    radial-gradient(60% 50% at 80% -5%,var(--halo),transparent 70%),
+    radial-gradient(50% 40% at 0% 100%,var(--halo),transparent 70%);
+  background-attachment:fixed;
 }
+#root{ min-height:100%; }
 
-#root{
-  min-height: 100%;
+h1,h2,h3,h4,h5{
+  font-family:var(--font-display);
+  font-weight:500;
+  letter-spacing:-.01em;
+  line-height:1.12;
+  color:var(--text);
 }
+.mono{ font-family:var(--font-mono); }
+strong{ color:var(--text); }
 
-/* Para que el contenido no quede escondido detrás del navbar fixed */
-.cr-main{
-  padding-top: var(--nav-h);
+/* El navbar es sticky (ocupa flujo normal), no requiere padding superior. */
+.cr-main{ padding-top:0; }
+
+::selection{ background:var(--halo); }
+
+/* ============================================================
+   NAVBAR
+   ============================================================ */
+.ps-nav{
+  position:sticky; top:0; z-index:1030;
+  backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+  background:color-mix(in srgb,var(--bg) 80%,transparent);
+  border-bottom:1px solid var(--border);
+  min-height:var(--nav-h);
 }
-
-/* =========================================================
-   NAVBAR (transparente -> sólido al hacer scroll)
-========================================================= */
-.custom-navbar{
-  background: rgba(10, 25, 48, .12);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(255,255,255,.10);
-  transition: background .25s ease, box-shadow .25s ease, border-color .25s ease;
+.ps-brand{
+  display:flex; align-items:center; gap:11px;
+  font-family:var(--font-display); font-size:1.32rem; font-weight:600;
+  letter-spacing:-.02em; color:var(--text) !important; text-decoration:none;
 }
-
-.custom-navbar.nav-scrolled{
-  background: rgba(10, 25, 48, .92);
-  box-shadow: 0 10px 30px rgba(0,0,0,.20);
-  border-bottom: 1px solid rgba(255,255,255,.12);
+.ps-brand .ps-logo{ color:var(--accent); flex:none; }
+.ps-nav .navlink{
+  font-size:.92rem; color:var(--text-soft) !important; text-decoration:none;
+  padding:8px 14px !important; border-radius:9px; font-weight:500; transition:.2s;
 }
+.ps-nav .navlink:hover{ color:var(--text) !important; background:var(--surface-2); }
+.ps-nav .navlink.active{ color:var(--accent) !important; background:var(--halo); font-weight:600; }
+.ps-nav .navbar-toggler{ border-color:var(--border); }
 
-.custom-navbar .navbar-brand{
-  letter-spacing: .2px;
+.theme-btn{
+  width:42px; height:42px; border:1px solid var(--border); background:var(--surface);
+  border-radius:11px; cursor:pointer; display:grid; place-items:center;
+  color:var(--text); transition:.2s; flex:none;
 }
+.theme-btn:hover{ border-color:var(--accent); color:var(--accent); }
 
-.custom-navbar .navlink{
-  color: rgba(255,255,255,.85) !important;
-  position: relative;
-  padding-top: .8rem;
-  padding-bottom: .8rem;
+/* ============================================================
+   TIPOGRAFÍA DE SECCIÓN / HELPERS
+   ============================================================ */
+.ps-eyebrow{
+  display:inline-flex; align-items:center; gap:8px;
+  font-size:.78rem; font-weight:600; letter-spacing:.08em; text-transform:uppercase;
+  color:var(--accent); background:var(--halo); padding:7px 14px; border-radius:100px;
 }
+.ps-sec-head{ margin-bottom:38px; max-width:62ch; }
+.ps-sec-head h2{ font-size:clamp(1.9rem,4vw,2.7rem); margin-top:14px; }
+.ps-sec-head p{ color:var(--text-soft); margin-top:12px; font-size:1.05rem; }
+.text-soft{ color:var(--text-soft) !important; }
+.text-faint{ color:var(--text-faint) !important; }
 
-.custom-navbar .navlink:hover{
-  color: #fff !important;
-}
-
-.custom-navbar .navlink.active{
-  color: #fff !important;
-  font-weight: 700;
-}
-
-.custom-navbar .navlink.active::after{
-  content:"";
-  position:absolute;
-  left: 14px;
-  right: 14px;
-  bottom: 6px;
-  height: 3px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, var(--cr-cyan), var(--cr-blue));
-  opacity: .95;
-}
-
-.custom-navbar .navbar-toggler{
-  border-color: rgba(255,255,255,.25);
-}
-
-/* =========================================================
-   WRAPPER GLOBAL POR PÁGINA
-========================================================= */
-.cr-page{
-  padding-top: 0; /* ya lo maneja .cr-main */
-  padding-bottom: 2.2rem;
-}
-
-/* =========================================================
-   HERO (Home)
-========================================================= */
-.cr-hero{
-  position: relative;
-  padding: 88px 0 68px; /* se suma al nav fijo porque el main ya tiene padding-top */
-  margin-top: 0;
-  overflow: hidden;
-  background-image: url('/fondo4.jpeg');
-  background-size: cover;
-  background-position: center;
-  border-bottom: 1px solid rgba(15,23,42,.06);
-}
-
-.cr-hero::before{
-  content:"";
-  position:absolute;
-  inset:0;
-  background:
-    linear-gradient(90deg, rgba(10,25,48,.86) 0%, rgba(10,25,48,.64) 38%, rgba(10,25,48,.20) 70%, rgba(10,25,48,.06) 100%),
-    radial-gradient(900px 500px at 18% 40%, rgba(45,212,255,.22), transparent 60%);
-}
-
-.cr-hero .container{
-  position: relative;
-  z-index: 1;
-}
-
-.cr-hero .hero-badge{
-  display:inline-flex;
-  align-items:center;
-  gap:.5rem;
-  padding: .45rem .75rem;
-  border-radius: 999px;
-  background: rgba(255,255,255,.12);
-  border: 1px solid rgba(255,255,255,.16);
-  color: rgba(255,255,255,.92);
-  font-weight: 600;
-}
-
-.cr-hero h1{
-  color: #fff;
-  text-shadow: 0 10px 35px rgba(0,0,0,.25);
-}
-
-.cr-hero .hero-lead{
-  color: rgba(255,255,255,.82);
-  max-width: 58ch;
-}
-
-.cr-hero .hero-illustration{
-  font-size: 7.5rem;
-  filter: drop-shadow(0 18px 30px rgba(0,0,0,.25));
-}
-
-/* =========================================================
-   BOTONES (afinados)
-========================================================= */
-.btn{
-  border-radius: 12px !important;
-}
-
+/* ============================================================
+   BOTONES
+   ============================================================ */
+.btn{ border-radius:13px !important; font-weight:600; }
+.btn-lg{ padding:14px 26px !important; }
 .btn-primary{
-  background: linear-gradient(90deg, #1e6bff, #2dd4ff) !important;
-  border: none !important;
-  box-shadow: 0 12px 28px rgba(30,107,255,.22);
+  background:var(--accent) !important; border:none !important; color:var(--on-accent) !important;
+  box-shadow:none;
 }
-
-.btn-primary:hover{
-  filter: brightness(1.03);
+.btn-primary:hover{ transform:translateY(-2px); box-shadow:0 10px 26px var(--halo); }
+.btn-ghost,.btn-outline-primary{
+  background:var(--surface) !important; color:var(--text) !important;
+  border:1px solid var(--border) !important;
 }
+.btn-ghost:hover,.btn-outline-primary:hover{ border-color:var(--accent) !important; color:var(--accent) !important; }
 
-.btn-success{
-  background: linear-gradient(90deg, #16a34a, #22c55e) !important;
-  border: none !important;
-  box-shadow: 0 12px 28px rgba(34,197,94,.18);
+/* Mantener variantes de color de Bootstrap pero suavizadas */
+.btn-success{ background:var(--risk-low) !important; border:none !important; color:#fff !important; }
+.btn-warning{ background:var(--risk-mid) !important; border:none !important; color:#1f1a08 !important; }
+
+/* ============================================================
+   CARDS (re-skin de react-bootstrap .card + clase propia .ps-card)
+   ============================================================ */
+.card,.ps-card{
+  background:var(--surface) !important;
+  border:1px solid var(--border) !important;
+  border-radius:var(--radius) !important;
+  box-shadow:var(--shadow);
+  color:var(--text);
 }
-
-.btn-outline-light{
-  border-color: rgba(255,255,255,.32) !important;
-  color: rgba(255,255,255,.92) !important;
-}
-
-.btn-outline-light:hover{
-  background: rgba(255,255,255,.12) !important;
-}
-
-/* =========================================================
-   CARDS (glass/clean)
-========================================================= */
-.card{
-  border-radius: var(--cr-radius) !important;
-  box-shadow: var(--cr-shadow-soft);
-}
-
-/* NO tocar cards con bg-* (para no romper métricas/alerts) */
-.card:not(.bg-primary):not(.bg-success):not(.bg-danger):not(.bg-warning):not(.bg-info):not(.bg-dark){
-  background: var(--cr-card-bg);
-  border: 1px solid var(--cr-card-border);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-}
-
+.ps-card{ padding:28px; }
+.hover-effect,.ps-card{ transition:transform .25s ease,border-color .25s ease,box-shadow .25s ease; }
+.hover-effect:hover,.ps-card-hover:hover{ transform:translateY(-3px); border-color:var(--accent-soft) !important; }
 .card-header{
-  border-top-left-radius: var(--cr-radius) !important;
-  border-top-right-radius: var(--cr-radius) !important;
+  background:var(--surface-2) !important; color:var(--text) !important;
+  border-bottom:1px solid var(--border) !important; font-weight:600;
+}
+.text-muted{ color:var(--text-faint) !important; }
+
+/* Card destacada (acento) — gana sobre el background !important de .card */
+.ps-card-accent{ background:var(--accent) !important; border-color:var(--accent) !important; }
+.ps-card-accent,.ps-card-accent *{ color:var(--on-accent) !important; }
+
+/* Ícono redondeado dentro de card (feature) */
+.ps-ic{
+  width:46px; height:46px; border-radius:12px; background:var(--halo);
+  display:grid; place-items:center; color:var(--accent); margin-bottom:16px;
+}
+.ps-tag{
+  display:inline-block; font-size:.74rem; font-weight:600; color:var(--accent);
+  background:var(--halo); padding:4px 10px; border-radius:7px; letter-spacing:.03em;
+  text-transform:uppercase;
 }
 
-.hover-effect{
-  transition: transform .18s ease, box-shadow .18s ease;
+/* ============================================================
+   HERO
+   ============================================================ */
+.ps-hero{ padding:80px 0 56px; position:relative; }
+.ps-hero h1{ font-size:clamp(2.4rem,5.4vw,4rem); max-width:16ch; margin:22px 0; }
+.ps-hero h1 em{ font-style:italic; color:var(--accent); }
+.ps-hero .lead{ font-size:1.18rem; color:var(--text-soft); max-width:54ch; }
+.ps-disclaimer{
+  margin-top:28px; font-size:.86rem; color:var(--text-faint);
+  display:flex; align-items:center; gap:8px;
 }
-.hover-effect:hover{
-  transform: translateY(-4px);
-  box-shadow: var(--cr-shadow);
+.ps-hero-visual{ width:100%; max-width:380px; color:var(--accent); }
+
+/* ============================================================
+   SIMULADOR — sliders, chips, gauge, SHAP, capa clínica
+   ============================================================ */
+.ps-field{ margin-bottom:20px; }
+.ps-field label{
+  display:flex; justify-content:space-between; align-items:center;
+  font-size:.9rem; font-weight:600; margin-bottom:9px; color:var(--text);
+}
+.ps-field .val{ font-family:var(--font-mono); color:var(--accent); font-weight:500; }
+
+input[type=range]{
+  width:100%; -webkit-appearance:none; appearance:none; height:6px; border-radius:6px;
+  background:var(--surface-2); outline:none; cursor:pointer;
+}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none; appearance:none; width:22px; height:22px; border-radius:50%;
+  background:var(--accent); cursor:pointer; border:4px solid var(--surface);
+  box-shadow:0 0 0 1px var(--accent);
+}
+input[type=range]::-moz-range-thumb{
+  width:18px; height:18px; border-radius:50%; background:var(--accent);
+  border:4px solid var(--surface); box-shadow:0 0 0 1px var(--accent);
 }
 
-/* Home - cards de acceso rápido */
-.cr-action-card .card-body{
-  padding: 1.6rem;
+.ps-chips{ display:flex; gap:8px; flex-wrap:wrap; }
+.ps-chip{
+  font-size:.88rem; font-weight:500; padding:9px 16px; border-radius:10px;
+  border:1px solid var(--border); background:var(--surface); color:var(--text);
+  cursor:pointer; transition:.2s;
 }
-.cr-action-icon{
-  width: 54px;
-  height: 54px;
-  border-radius: 16px;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  background: linear-gradient(135deg, rgba(30,107,255,.14), rgba(45,212,255,.20));
-  border: 1px solid rgba(30,107,255,.18);
-  font-size: 28px;
-  margin-bottom: .8rem;
-}
+.ps-chip:hover{ border-color:var(--accent); }
+.ps-chip.on{ background:var(--accent); color:var(--on-accent); border-color:var(--accent); }
 
-/* =========================================================
-   Tabs / Nav (Simulación, Métricas, Educación)
-========================================================= */
-.nav-tabs .nav-link{
-  border: none !important;
-  color: rgba(15,23,42,.65) !important;
-  border-radius: 12px 12px 0 0 !important;
-}
+/* gauge circular */
+.ps-gauge-wrap{ text-align:center; margin-bottom:22px; }
+.ps-gauge{ position:relative; width:200px; height:200px; margin:0 auto; }
+.ps-gauge svg{ transform:rotate(-90deg); }
+.ps-gauge-num{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+.ps-gauge-num b{ font-family:var(--font-display); font-size:2.8rem; font-weight:500; line-height:1; color:var(--text); }
+.ps-gauge-num span{ font-size:.78rem; color:var(--text-faint); font-weight:600; letter-spacing:.05em; text-transform:uppercase; margin-top:4px; }
+.ps-risk-pill{ display:inline-block; padding:6px 16px; border-radius:100px; font-weight:600; font-size:.9rem; margin-top:14px; }
 
-.nav-tabs .nav-link.active{
-  color: var(--cr-text) !important;
-  font-weight: 700;
-  background: rgba(30,107,255,.10) !important;
+/* barras SHAP */
+.ps-shap-row{ display:flex; align-items:center; gap:12px; margin-bottom:12px; font-size:.9rem; }
+.ps-shap-row .lbl{ width:130px; color:var(--text-soft); flex:none; font-weight:500; text-align:right; }
+.ps-shap-track{ flex:1; height:24px; background:var(--surface-2); border-radius:7px; position:relative; overflow:hidden; }
+.ps-shap-bar{
+  height:100%; border-radius:7px; display:flex; align-items:center; justify-content:flex-end;
+  padding-right:9px; color:#fff; font-family:var(--font-mono); font-size:.78rem; font-weight:500;
+  transition:width .4s ease;
 }
+.ps-shap-pos{ background:var(--risk-high); }
+.ps-shap-neg{ background:var(--risk-low); }
 
-.nav-pills .nav-link{
-  border-radius: 12px !important;
+/* capa clínica de referencia */
+.ps-clinic{
+  margin-top:22px; border-left:3px solid var(--accent); background:var(--surface-2);
+  border-radius:0 14px 14px 0; padding:18px 22px;
 }
+.ps-clinic h4{ font-size:1.05rem; margin-bottom:6px; display:flex; align-items:center; gap:8px; }
+.ps-clinic p{ font-size:.9rem; color:var(--text-soft); margin:0; }
+.ps-clinic .ref{ font-family:var(--font-mono); font-size:.76rem; color:var(--accent); margin-top:10px; }
 
-/* =========================================================
-   Accordion (Home)
-========================================================= */
+/* ============================================================
+   MÉTRICAS — KPIs + leaderboard
+   ============================================================ */
+.ps-kpi{ background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:22px; box-shadow:var(--shadow); height:100%; }
+.ps-kpi .k-lbl{ font-size:.82rem; color:var(--text-faint); font-weight:600; letter-spacing:.04em; text-transform:uppercase; }
+.ps-kpi .k-val{ font-family:var(--font-display); font-size:2.3rem; font-weight:500; margin:6px 0 2px; color:var(--text); }
+.ps-kpi .k-sub{ font-size:.82rem; color:var(--risk-low); font-weight:600; }
+
+.table{
+  --bs-table-bg:var(--surface); --bs-table-color:var(--text);
+  border:1px solid var(--border); border-radius:16px; overflow:hidden;
+  box-shadow:var(--shadow); margin-bottom:0;
+}
+.table th{
+  font-size:.78rem; text-transform:uppercase; letter-spacing:.05em;
+  color:var(--text-faint) !important; font-weight:600; background:var(--surface-2) !important;
+  border-bottom:1px solid var(--border);
+}
+.table td,.table th{ padding:15px 20px; border-color:var(--border); vertical-align:middle; }
+td.num{ font-family:var(--font-mono); font-weight:500; }
+tr.winner{ background:var(--halo) !important; }
+.ps-medal{
+  display:inline-block; font-size:.72rem; background:var(--accent); color:var(--on-accent);
+  padding:2px 8px; border-radius:6px; margin-left:8px; font-weight:600;
+}
+.ps-mini-bar{ height:8px; border-radius:5px; background:var(--accent); min-width:8px; }
+
+/* ============================================================
+   ACCORDION / TABS / NAV-PILLS (re-skin Bootstrap)
+   ============================================================ */
 .accordion{
-  border-radius: var(--cr-radius);
-  overflow:hidden;
-  box-shadow: var(--cr-shadow-soft);
+  --bs-accordion-bg:var(--surface);
+  --bs-accordion-color:var(--text);
+  --bs-accordion-border-color:var(--border);
+  --bs-accordion-active-bg:var(--halo);
+  --bs-accordion-active-color:var(--accent);
+  --bs-accordion-btn-color:var(--text);
+  --bs-accordion-btn-focus-box-shadow:0 0 0 .2rem var(--halo);
+  border-radius:var(--radius); overflow:hidden; box-shadow:var(--shadow);
 }
+.nav-tabs{ --bs-nav-tabs-border-color:var(--border); border-bottom:1px solid var(--border); }
+.nav-tabs .nav-link{ border:none !important; color:var(--text-soft) !important; border-radius:10px 10px 0 0 !important; font-weight:500; }
+.nav-tabs .nav-link.active{ color:var(--accent) !important; background:var(--halo) !important; font-weight:600; }
+.nav-pills .nav-link{ border-radius:10px !important; color:var(--text-soft) !important; }
+.nav-pills .nav-link.active{ background:var(--accent) !important; color:var(--on-accent) !important; }
 
-.accordion-button{
-  font-weight: 700;
+/* ============================================================
+   FORM CONTROLS (re-skin)
+   ============================================================ */
+.form-control,.form-select{
+  background:var(--surface); border:1px solid var(--border); color:var(--text); border-radius:11px;
 }
+.form-control:focus,.form-select:focus{ border-color:var(--accent); box-shadow:0 0 0 .2rem var(--halo); }
+.form-label{ font-weight:600; font-size:.9rem; color:var(--text); }
 
-.accordion-button:not(.collapsed){
-  background: rgba(30,107,255,.10);
-  color: var(--cr-text);
+/* ============================================================
+   Utilidades de superficie de Bootstrap → tokens del tema
+   (bg-white / bg-light / table-light son colores fijos; aquí
+   se vuelven adaptables a claro/oscuro)
+   ============================================================ */
+.bg-white{ background:var(--surface) !important; color:var(--text); }
+.bg-light{ background:var(--surface-2) !important; color:var(--text); }
+.table-light,.table-light>th,.table-light>td{
+  --bs-table-bg:var(--surface-2); --bs-table-color:var(--text); color:var(--text);
 }
+.rounded-3.border,.rounded.border{ border-color:var(--border) !important; }
+hr{ border-color:var(--border); opacity:.6; }
+code{ color:var(--accent); background:var(--surface-2); padding:.1em .35em; border-radius:6px; }
 
-/* =========================================================
-   FOOTER (como prototipo)
-========================================================= */
-.cr-footer{
-  position: relative;
-  background:
-    linear-gradient(180deg, rgba(10,25,48,.88), rgba(10,25,48,.96)),
-    url('/fondo5.jpeg');
-  background-size: cover;
-  background-position: center;
-  color: rgba(255,255,255,.86);
-  border-top: 1px solid rgba(255,255,255,.10);
+/* ============================================================
+   FOOTER
+   ============================================================ */
+.ps-footer{
+  border-top:1px solid var(--border); margin-top:60px; padding:38px 0;
+  color:var(--text-faint); font-size:.88rem; background:var(--surface);
 }
+.ps-footer .foot-brand{ display:flex; align-items:center; gap:11px; color:var(--text); }
+.ps-footer .foot-brand .ps-logo{ color:var(--accent); }
+.ps-footer .foot-title{ font-family:var(--font-display); font-size:1.2rem; font-weight:600; margin:0; }
 
-.cr-footer::before{
-  content:"";
-  position:absolute;
-  inset:0;
-  background:
-    radial-gradient(700px 500px at 20% 20%, rgba(45,212,255,.18), transparent 60%),
-    radial-gradient(700px 500px at 80% 35%, rgba(30,107,255,.16), transparent 55%);
-  pointer-events:none;
-}
-
-.cr-footer .container{
-  position: relative;
-  z-index: 1;
-}
-
-.cr-footer .footer-brand{
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  gap:.8rem;
-}
-
-.cr-footer .footer-logo{
-  width: 46px;
-  height: 46px;
-  border-radius: 999px;
-  border: 1px solid rgba(45,212,255,.35);
-  box-shadow: 0 12px 30px rgba(0,0,0,.18);
-}
-
-.cr-footer .footer-title{
-  margin: 0;
-  font-weight: 800;
-  letter-spacing: .2px;
-}
-
-.cr-footer .footer-sub{
-  margin: .4rem 0 0;
-  color: rgba(255,255,255,.72);
-}
-
-.cr-footer .footer-meta{
-  margin-top: 1.2rem;
-  color: rgba(255,255,255,.70);
-  font-size: .95rem;
-}
-
-.cr-footer .footer-note{
-  margin-top: .6rem;
-  color: rgba(255,255,255,.62);
-  font-size: .9rem;
-}
-
-/* Ajustes responsive */
-@media (max-width: 992px){
-  .cr-hero{
-    padding: 72px 0 56px;
-  }
-  .cr-hero .hero-illustration{
-    font-size: 6rem;
-  }
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+@media (max-width:860px){
+  .ps-sim-grid{ grid-template-columns:1fr !important; }
+  .ps-shap-row .lbl{ width:96px; }
 }

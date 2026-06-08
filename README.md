@@ -6,8 +6,8 @@ clínicos, con un enfoque **educativo y explicable**: cada predicción se
 acompaña de los factores que más influyeron (SHAP) y de reglas clínicas
 transparentes.
 
-> ⚠️ Proyecto con fines educativos y de portafolio. **No** es una herramienta
-> de diagnóstico médico.
+> ⚠️ Proyecto desarrollado para un cliente privado, con fines educativos y
+> demostrativos. **No** es una herramienta de diagnóstico médico.
 
 ## Arquitectura
 

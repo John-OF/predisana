@@ -1,133 +1,178 @@
 import { useState, useEffect } from 'react';
-import { Container, Card, Nav, Table, Row, Col, Spinner, Alert } from 'react-bootstrap';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { Container, Nav, Table, Row, Col, Spinner, Alert } from 'react-bootstrap';
 import { getMetrics } from '../services/api';
 import { getLabel } from '../utils/translations';
 
 const DISEASES = ['diabetes', 'hipertension', 'cardiovascular'];
 
+const MODEL_LABELS = {
+  logistic_regression: 'Regresión Logística',
+  logreg: 'Regresión Logística',
+  random_forest: 'Random Forest',
+  lightgbm: 'LightGBM',
+  xgboost: 'XGBoost',
+};
+const prettyModel = (m) => MODEL_LABELS[m] || (m ? String(m) : '—');
+const pct = (x, d = 1) => (x == null ? '—' : `${(x * 100).toFixed(d)}%`);
+
 const Metricas = () => {
-    const [selectedDisease, setSelectedDisease] = useState('diabetes');
-    const [metrics, setMetrics] = useState(null);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState(null);
+  const [selectedDisease, setSelectedDisease] = useState('diabetes');
+  const [metrics, setMetrics] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
-    useEffect(() => {
-        const fetchData = async () => {
-            setLoading(true);
-            setError(null);
-            try {
-                const { data } = await getMetrics(selectedDisease);
-                setMetrics(data);
-            } catch (err) {
-                console.error(err);
-                setError("No se pudieron cargar las métricas del modelo.");
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetchData();
-    }, [selectedDisease]);
-
-    // Prepara datos para el gráfico (Precision, Recall, F1)
-    const getChartData = () => {
-        if (!metrics || !metrics.report) return [];
-        // El reporte trae claves "0" (Sano), "1" (Riesgo), "accuracy", etc.
-        const class0 = metrics.report["0"];
-        const class1 = metrics.report["1"];
-        
-        return [
-            { name: 'Clase 0 (Bajo Riesgo)', precision: class0.precision, recall: class0.recall, f1: class0['f1-score'] },
-            { name: 'Clase 1 (Alto Riesgo)', precision: class1.precision, recall: class1.recall, f1: class1['f1-score'] },
-        ];
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const { data } = await getMetrics(selectedDisease);
+        setMetrics(data);
+      } catch (err) {
+        console.error(err);
+        setError('No se pudieron cargar las métricas del modelo.');
+      } finally {
+        setLoading(false);
+      }
     };
+    fetchData();
+  }, [selectedDisease]);
 
-    return (
-        <Container className="py-4">
-            <h2 className="mb-4">Métricas de Rendimiento de los Modelos</h2>
-            
-            <Card className="mb-4">
-                <Card.Header>
-                    <Nav variant="tabs" defaultActiveKey="diabetes">
-                        {DISEASES.map(d => (
-                            <Nav.Item key={d}>
-                                <Nav.Link 
-                                    active={selectedDisease === d}
-                                    onClick={() => setSelectedDisease(d)}
-                                    className="text-capitalize"
-                                >
-                                    {getLabel(d)}
-                                </Nav.Link>
-                            </Nav.Item>
-                        ))}
-                    </Nav>
-                </Card.Header>
-                <Card.Body>
-                    {loading && <div className="text-center py-5"><Spinner animation="border" /></div>}
-                    {error && <Alert variant="danger">{error}</Alert>}
-                    
-                    {metrics && !loading && (
-                        <div>
-                            <Row className="mb-4">
-                                <Col md={4}>
-                                    <Card className="text-center bg-light border-0 h-100">
-                                        <Card.Body>
-                                            <h6>AUC (Área Bajo la Curva)</h6>
-                                            <h2 className="text-primary fw-bold">{(metrics.auc * 100).toFixed(1)}%</h2>
-                                            <small className="text-muted">Capacidad de distinción global</small>
-                                        </Card.Body>
-                                    </Card>
-                                </Col>
-                                <Col md={4}>
-                                    <Card className="text-center bg-light border-0 h-100">
-                                        <Card.Body>
-                                            <h6>Exactitud (Accuracy)</h6>
-                                            <h2 className="text-success fw-bold">
-                                                {(metrics.report.accuracy * 100).toFixed(1)}%
-                                            </h2>
-                                            <small className="text-muted">Predicciones correctas totales</small>
-                                        </Card.Body>
-                                    </Card>
-                                </Col>
-                                <Col md={4}>
-                                    <Card className="text-center bg-light border-0 h-100">
-                                        <Card.Body>
-                                            <h6>Features Utilizados</h6>
-                                            <h2 className="text-info fw-bold">{metrics.features ? metrics.features.length : 0}</h2>
-                                            <small className="text-muted">Variables de entrada</small>
-                                        </Card.Body>
-                                    </Card>
-                                </Col>
-                            </Row>
+  const leaderboard = metrics?.leaderboard || [];
+  const bestModel = metrics?.best_model;
+  const maxAuc = Math.max(...leaderboard.map(r => r.cv_auc_mean || 0), 0.0001);
+  const report = metrics?.report;
+  const classPos = report?.['1'];
 
-                            <h5 className="mb-3">Detalle por Clase (Reporte de Clasificación)</h5>
-                            <div style={{ height: 300, width: '100%' }}>
-                                <ResponsiveContainer>
-                                    <BarChart data={getChartData()} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                                        <CartesianGrid strokeDasharray="3 3" />
-                                        <XAxis dataKey="name" />
-                                        <YAxis domain={[0, 1]} />
-                                        <Tooltip />
-                                        <Legend />
-                                        <Bar dataKey="precision" name="Precisión" fill="#8884d8" />
-                                        <Bar dataKey="recall" name="Sensibilidad (Recall)" fill="#82ca9d" />
-                                        <Bar dataKey="f1" name="F1-Score" fill="#ffc658" />
-                                    </BarChart>
-                                </ResponsiveContainer>
-                            </div>
+  return (
+    <Container className="py-5">
+      <div className="ps-sec-head">
+        <span className="ps-eyebrow">Métricas</span>
+        <h2>Rendimiento de los modelos</h2>
+        <p>Comparativa honesta de algoritmos. La probabilidad servida corresponde exactamente a este AUC (sin reglas que la inflen).</p>
+      </div>
 
-                            <div className="mt-4">
-                                <h6>Variables utilizadas en este modelo:</h6>
-                                <p className="text-muted small">
-                                    {metrics.features.map(f => getLabel(f)).join(', ')}.
-                                </p>
-                            </div>
-                        </div>
-                    )}
-                </Card.Body>
-            </Card>
-        </Container>
-    );
+      <Nav variant="tabs" className="mb-4">
+        {DISEASES.map(d => (
+          <Nav.Item key={d}>
+            <Nav.Link active={selectedDisease === d} onClick={() => setSelectedDisease(d)} className="text-capitalize px-4">
+              {getLabel(d)}
+            </Nav.Link>
+          </Nav.Item>
+        ))}
+      </Nav>
+
+      {loading && <div className="text-center py-5"><Spinner animation="border" variant="primary" /></div>}
+      {error && <Alert variant="danger">{error}</Alert>}
+
+      {metrics && !loading && (
+        <>
+          {/* KPIs */}
+          <Row className="g-3 mb-4">
+            <Col sm={6} lg={3}>
+              <div className="ps-kpi">
+                <div className="k-lbl">AUC (test)</div>
+                <div className="k-val">{(metrics.auc ?? metrics.auc_test ?? 0).toFixed(3)}</div>
+                <div className="k-sub">{prettyModel(bestModel)}</div>
+              </div>
+            </Col>
+            <Col sm={6} lg={3}>
+              <div className="ps-kpi">
+                <div className="k-lbl">Sensibilidad</div>
+                <div className="k-val">{classPos ? pct(classPos.recall) : '—'}</div>
+                <div className="k-sub">recall · clase riesgo</div>
+              </div>
+            </Col>
+            <Col sm={6} lg={3}>
+              <div className="ps-kpi">
+                <div className="k-lbl">Exactitud</div>
+                <div className="k-val">{report ? pct(report.accuracy) : '—'}</div>
+                <div className="k-sub">accuracy global</div>
+              </div>
+            </Col>
+            <Col sm={6} lg={3}>
+              <div className="ps-kpi">
+                <div className="k-lbl">Variables</div>
+                <div className="k-val">{metrics.features ? metrics.features.length : 0}</div>
+                <div className="k-sub">features de entrada</div>
+              </div>
+            </Col>
+          </Row>
+
+          {/* Leaderboard */}
+          <h3 style={{ fontSize: '1.3rem', marginBottom: '14px' }}>Leaderboard de algoritmos</h3>
+          <p className="text-soft small mb-3">Selección por AUC en validación cruzada (5-fold) sobre el conjunto de entrenamiento.</p>
+          <div className="table-responsive mb-5">
+            <Table className="align-middle">
+              <thead>
+                <tr>
+                  <th>Modelo</th>
+                  <th>AUC (CV)</th>
+                  <th>± Desv.</th>
+                  <th style={{ width: '32%' }}>Comparativa</th>
+                </tr>
+              </thead>
+              <tbody>
+                {leaderboard.map((row) => {
+                  const isWinner = row.model === bestModel;
+                  const w = Math.round(((row.cv_auc_mean || 0) / maxAuc) * 100);
+                  return (
+                    <tr key={row.model} className={isWinner ? 'winner' : ''}>
+                      <td>
+                        {prettyModel(row.model)}
+                        {isWinner && <span className="ps-medal">GANADOR</span>}
+                      </td>
+                      <td className="num">{(row.cv_auc_mean ?? 0).toFixed(4)}</td>
+                      <td className="num text-faint">±{(row.cv_auc_std ?? 0).toFixed(4)}</td>
+                      <td>
+                        <div className="ps-mini-bar" style={{ width: `${w}%`, opacity: isWinner ? 1 : 0.5 }} />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </Table>
+          </div>
+
+          {/* Reporte por clase */}
+          {report && (
+            <>
+              <h3 style={{ fontSize: '1.3rem', marginBottom: '14px' }}>Detalle por clase (conjunto de test)</h3>
+              <div className="table-responsive">
+                <Table className="align-middle">
+                  <thead>
+                    <tr>
+                      <th>Clase</th>
+                      <th>Precisión</th>
+                      <th>Sensibilidad</th>
+                      <th>F1</th>
+                      <th>Soporte</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {['0', '1'].map((c) => report[c] && (
+                      <tr key={c}>
+                        <td>{c === '1' ? 'Riesgo (positiva)' : 'Bajo riesgo (negativa)'}</td>
+                        <td className="num">{pct(report[c].precision)}</td>
+                        <td className="num">{pct(report[c].recall)}</td>
+                        <td className="num">{pct(report[c]['f1-score'])}</td>
+                        <td className="num text-faint">{Math.round(report[c].support)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+              </div>
+
+              <div className="mt-4">
+                <h5 style={{ fontSize: '1.05rem' }}>Variables del modelo</h5>
+                <p className="text-soft small mb-0">{metrics.features.map(f => getLabel(f)).join(', ')}.</p>
+              </div>
+            </>
+          )}
+        </>
+      )}
+    </Container>
+  );
 };
 
 export default Metricas;
