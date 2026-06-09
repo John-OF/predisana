@@ -1,7 +1,5 @@
-import { useState } from 'react';
-import { Container, Row, Col, Card, Button, Table, Badge, Accordion, Tab, Nav, ListGroup } from 'react-bootstrap';
-import { getSyntheticCase } from '../services/api';
-import { Droplet, HeartPulse, Heart, GraphDownArrow, Cpu, ExclamationOctagon, ExclamationTriangle, Eyedropper, Robot, Lightbulb, Magic, Stars } from 'react-bootstrap-icons';
+import { Container, Row, Col, Card, Badge, Tab, Nav, ListGroup } from 'react-bootstrap';
+import { Droplet, HeartPulse, Heart, GraphDownArrow, Cpu, ExclamationOctagon, ExclamationTriangle } from 'react-bootstrap-icons';
 
 const INFO_ENFERMEDADES = {
     diabetes: {
@@ -57,110 +55,11 @@ const INFO_ENFERMEDADES = {
     }
 };
 
-// Cada enfermedad tiene un esquema de datos distinto (diabetes no mide presión
-// continua, cardiovascular usa colesterol/glucosa ordinales 1-3, hipertensión
-// trae cintura/peso...). Por eso la interpretación clínica es por-enfermedad.
-const DISEASE_TABS = [
-    { key: 'diabetes', label: 'Diabetes', icon: <Droplet className="me-2" />, variant: 'primary' },
-    { key: 'hipertension', label: 'Hipertensión', icon: <HeartPulse className="me-2" />, variant: 'danger' },
-    { key: 'cardiovascular', label: 'Cardiovascular', icon: <Heart className="me-2" />, variant: 'info' },
-];
-
-// --- Helpers de interpretación (badges) ---
-const imcBadge = (bmi) =>
-    bmi >= 30 ? <Badge bg="danger">Obesidad</Badge> :
-    bmi >= 25 ? <Badge bg="warning">Sobrepeso</Badge> :
-    <Badge bg="success">Normal</Badge>;
-
-const glucosaBadge = (g) =>
-    g > 200 ? <Badge bg="danger">Diabetes</Badge> :
-    g > 100 ? <Badge bg="warning">Riesgo</Badge> :
-    <Badge bg="success">Normal</Badge>;
-
-const presionBadge = (sys) =>
-    sys >= 140 ? <Badge bg="danger">Hipertensión</Badge> :
-    sys >= 130 ? <Badge bg="warning">Elevada</Badge> :
-    <Badge bg="success">Normal</Badge>;
-
-// cholesterol / gluc de cardiovascular son ordinales: 1=normal, 2=alto, 3=muy alto
-const ordinalBadge = (v) =>
-    Number(v) === 3 ? <Badge bg="danger">Muy alto</Badge> :
-    Number(v) === 2 ? <Badge bg="warning">Elevado</Badge> :
-    <Badge bg="success">Normal</Badge>;
-
-const siNoBadge = (v, texto) =>
-    Number(v) === 1 ? <Badge bg="danger">{texto}</Badge> : <span className="text-muted">—</span>;
-
-const getGenderLabel = (data) => {
-    if (data.gender_Male === undefined && data.gender_Female === undefined) return 'No especificado';
-    if (Number(data.gender_Male) === 1) return 'Masculino';
-    if (Number(data.gender_Female) === 1) return 'Femenino';
-    return 'Otro';
-};
-
-// Devuelve las filas {label, valor, interp} a renderizar según el esquema real
-// que /synthetic/<disease> entrega para cada enfermedad.
-const buildRows = (disease, d) => {
-    const edadGenero = { label: 'Edad / Género', valor: `${Math.floor(d.age)} años / ${getGenderLabel(d)}`, interp: <span className="text-muted">Demográfico</span> };
-    const imc = { label: 'IMC (Masa Corporal)', valor: Number(d.bmi).toFixed(1), interp: imcBadge(d.bmi) };
-
-    if (disease === 'diabetes') {
-        return [
-            edadGenero,
-            imc,
-            { label: 'Glucosa', valor: `${Math.round(d.blood_glucose_level)} mg/dL`, interp: glucosaBadge(d.blood_glucose_level) },
-            { label: 'HbA1c', valor: `${Number(d.hba1c_level).toFixed(1)} %`, interp: d.hba1c_level >= 6.5 ? <Badge bg="danger">Diabetes</Badge> : d.hba1c_level >= 5.7 ? <Badge bg="warning">Prediabetes</Badge> : <Badge bg="success">Normal</Badge> },
-            { label: 'Hipertensión (Dx)', valor: Number(d.hypertension) === 1 ? 'Sí' : 'No', interp: siNoBadge(d.hypertension, 'Diagnóstico Presente') },
-            { label: 'Enfermedad Cardíaca', valor: Number(d.heart_disease) === 1 ? 'Sí' : 'No', interp: siNoBadge(d.heart_disease, 'Historial Presente') },
-        ];
-    }
-
-    if (disease === 'hipertension') {
-        return [
-            edadGenero,
-            imc,
-            { label: 'Presión Arterial', valor: `${Math.round(d.blood_pressure)} mmHg`, interp: presionBadge(d.blood_pressure) },
-            { label: 'Circunferencia de Cintura', valor: `${Math.round(d.waist_circumference)} cm`, interp: <span className="text-muted">Adiposidad central</span> },
-            { label: 'Peso', valor: `${Math.round(d.weight)} kg`, interp: <span className="text-muted">Antropometría</span> },
-            { label: 'Glucosa', valor: `${Math.round(d.glucose)} mg/dL`, interp: glucosaBadge(d.glucose) },
-        ];
-    }
-
-    // cardiovascular
-    return [
-        edadGenero,
-        imc,
-        { label: 'Presión (Sistólica / Diastólica)', valor: `${Math.round(d.ap_hi)} / ${Math.round(d.ap_lo)} mmHg`, interp: presionBadge(d.ap_hi) },
-        { label: 'Colesterol', valor: `Nivel ${Number(d.cholesterol)}`, interp: ordinalBadge(d.cholesterol) },
-        { label: 'Glucosa', valor: `Nivel ${Number(d.gluc)}`, interp: ordinalBadge(d.gluc) },
-        { label: 'Hábitos', valor: 'Tabaco / Alcohol / Actividad', interp: <span className="d-flex gap-1 justify-content-center flex-wrap">{siNoBadge(d.smoke, 'Fuma')}{siNoBadge(d.alco, 'Alcohol')}{Number(d.active) === 1 ? <Badge bg="success">Activo</Badge> : <Badge bg="secondary">Sedentario</Badge>}</span> },
-    ];
-};
-
 const Educacion = () => {
-    const [syntheticData, setSyntheticData] = useState(null);
-    const [loading, setLoading] = useState(false);
-    const [disease, setDisease] = useState('diabetes');
-
-    const generateDemo = async (target) => {
-        const dis = target || disease;
-        setDisease(dis);
-        setLoading(true);
-        setSyntheticData(null);
-        try {
-            const { data } = await getSyntheticCase(dis);
-            setSyntheticData({ ...data, _disease: dis });
-        } catch (error) {
-            console.error("Error generando caso:", error);
-        } finally {
-            setLoading(false);
-        }
-    };
-
     return (
         <Container className="py-5">
             {/* ==============================================
-                SECCIÓN 1: ENCICLOPEDIA MÉDICA (Requisito Tutor)
+                ENCICLOPEDIA MÉDICA — Biblioteca de enfermedades
                ============================================== */}
             <div className="mb-5">
                 <div className="ps-sec-head mx-auto text-center" style={{ maxWidth: '60ch' }}>
@@ -184,7 +83,7 @@ const Educacion = () => {
                                 </Nav.Item>
                             </Nav>
                         </Col>
-                        
+
                         <Col sm={9}>
                             <Tab.Content>
                                 {Object.entries(INFO_ENFERMEDADES).map(([key, info]) => (
@@ -239,7 +138,7 @@ const Educacion = () => {
                                                 </Row>
 
                                                 <hr />
-                                                
+
                                                 <div className="d-flex justify-content-between align-items-start flex-wrap">
                                                     <div className="mb-2">
                                                         <strong>Órganos Afectados: </strong>
@@ -248,7 +147,7 @@ const Educacion = () => {
                                                         ))}
                                                     </div>
                                                     <div style={{maxWidth: '400px'}}>
-                                                        <strong>Tratamiento: </strong> 
+                                                        <strong>Tratamiento: </strong>
                                                         <span className="text-muted small">{info.tratamiento}</span>
                                                     </div>
                                                 </div>
@@ -260,131 +159,6 @@ const Educacion = () => {
                         </Col>
                     </Row>
                 </Tab.Container>
-            </div>
-
-            <hr className="my-5" />
-
-            {/* ==============================================
-                SECCIÓN 2: TECNOLOGÍA E IA (Lo existente mejorado)
-               ============================================== */}
-            
-            <Row className="mb-5 align-items-center">
-                <Col lg={7}>
-                    <h3 className="mb-3">Tecnología: Datos Sintéticos y Privacidad</h3>
-                    <p className="lead text-muted">
-                        ¿Cómo entrenamos a la IA sin comprometer la privacidad de los pacientes reales?
-                    </p>
-                    <p>
-                        En salud, usar datos reales es delicado por las leyes de privacidad. 
-                        Nuestra solución utiliza <strong>Redes Generativas Antagónicas (GAN)</strong>.
-                    </p>
-                    
-                    <Accordion defaultActiveKey="0" className="mb-4">
-                        <Accordion.Item eventKey="0">
-                            <Accordion.Header><Eyedropper className="me-2" />¿Qué son los Datos Sintéticos?</Accordion.Header>
-                            <Accordion.Body>
-                                Son registros médicos generados artificialmente que imitan fielmente las estadísticas 
-                                (promedios, correlaciones) de los pacientes reales, pero no corresponden a ninguna persona física. 
-                                Esto permite investigar sin riesgos éticos.
-                            </Accordion.Body>
-                        </Accordion.Item>
-                        <Accordion.Item eventKey="1">
-                            <Accordion.Header><Robot className="me-2" />¿Cómo funciona una GAN?</Accordion.Header>
-                            <Accordion.Body>
-                                Es una arquitectura de "competencia" entre dos IAs:
-                                <ul>
-                                    <li><strong>El Generador:</strong> Intenta crear pacientes falsos creíbles.</li>
-                                    <li><strong>El Discriminador:</strong> Intenta distinguir si el paciente es real o falso.</li>
-                                </ul>
-                                Cuando el discriminador ya no puede notar la diferencia, el modelo está listo para generar datos de alta calidad (CTGAN).
-                            </Accordion.Body>
-                        </Accordion.Item>
-                    </Accordion>
-                </Col>
-                
-                <Col lg={5}>
-                    <Card className="ps-card-accent border-0 shadow">
-                        <Card.Body className="p-4">
-                            <h5><Lightbulb className="me-2" />Sabías que...</h5>
-                            <p className="mb-0">
-                                Los modelos de IA de este proyecto fueron entrenados usando una técnica llamada <strong>CTGAN</strong> (Conditional Tabular GAN). 
-                                Esto permite generar casos raros o extremos para mejorar la capacidad de predicción del sistema.
-                            </p>
-                        </Card.Body>
-                    </Card>
-                </Col>
-            </Row>
-
-            {/* DEMO INTERACTIVA */}
-            <div className="bg-light p-5 rounded-3 border">
-                <div className="text-center mb-4">
-                    <h3><Magic className="me-2" />Laboratorio de Generación (Demo GAN)</h3>
-                    <p className="text-muted">
-                        Elige una enfermedad y observa cómo la IA "imagina" un paciente con
-                        características clínicas coherentes para ese modelo.
-                    </p>
-
-                    <div className="d-flex gap-2 justify-content-center flex-wrap mb-3">
-                        {DISEASE_TABS.map(({ key, label, icon, variant }) => (
-                            <Button
-                                key={key}
-                                variant={disease === key ? variant : `outline-${variant}`}
-                                onClick={() => generateDemo(key)}
-                                disabled={loading}
-                            >
-                                {icon}{label}
-                            </Button>
-                        ))}
-                    </div>
-
-                    <Button
-                        variant="dark"
-                        size="lg"
-                        onClick={() => generateDemo()}
-                        disabled={loading}
-                    >
-                        {loading ? (
-                            <span><span className="spinner-border spinner-border-sm me-2"/>Generando...</span>
-                        ) : <><Stars className="me-2" />Generar Paciente Sintético</>}
-                    </Button>
-                </div>
-
-                {syntheticData && (
-                    <div className="animate__animated animate__fadeInUp">
-                        <Row className="justify-content-center">
-                            <Col md={10} lg={8}>
-                                <Card className="shadow-sm border-0">
-                                    <Card.Header className="bg-dark text-white d-flex justify-content-between align-items-center">
-                                        <span>Perfil Clínico Generado (IA) · {INFO_ENFERMEDADES[syntheticData._disease]?.titulo}</span>
-                                        <Badge bg="warning" text="dark">100% Sintético</Badge>
-                                    </Card.Header>
-                                    <Table striped hover responsive className="mb-0 text-center align-middle">
-                                        <thead className="table-light">
-                                            <tr>
-                                                <th className="text-start ps-4">Variable</th>
-                                                <th>Valor Generado</th>
-                                                <th>Interpretación Rápida</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {buildRows(syntheticData._disease, syntheticData).map((row, i) => (
-                                                <tr key={i}>
-                                                    <td className="text-start ps-4 fw-bold">{row.label}</td>
-                                                    <td>{row.valor}</td>
-                                                    <td>{row.interp}</td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </Table>
-                                    <Card.Footer className="text-center text-muted small bg-white">
-                                        Registro creado matemáticamente (CTGAN) a partir de la distribución de
-                                        probabilidad de datos clínicos reales. No corresponde a ninguna persona física.
-                                    </Card.Footer>
-                                </Card>
-                            </Col>
-                        </Row>
-                    </div>
-                )}
             </div>
         </Container>
     );

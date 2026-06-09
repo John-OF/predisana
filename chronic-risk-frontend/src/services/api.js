@@ -21,4 +21,16 @@ export const predictRisk = (disease, data) => api.post(`/predict/${disease}`, da
 // ... al final del archivo agrega:
 export const getSyntheticCase = (disease) => api.get(`/synthetic/${disease}`);
 
+// Ficha de paciente del origen pedido: source = 'real' | 'synthetic'.
+export const getSampleCase = (disease, source = 'synthetic') =>
+    api.get(`/sample/${disease}`, { params: { source } });
+
+// Histograma comparado real vs sintético de una variable numérica.
+export const getDistribution = (disease, feature) =>
+    api.get(`/distribution/${disease}`, { params: { feature } });
+
+// Calidad del sintético: score SDMetrics + matrices de correlación.
+export const getSyntheticQuality = (disease) =>
+    api.get(`/synthetic_quality/${disease}`);
+
 export default api;

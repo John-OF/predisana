@@ -9,6 +9,7 @@ import Simulacion from './pages/Simulacion';
 import Metricas from './pages/Metricas';
 import Aviso from './pages/Aviso';
 import Educacion from './pages/Educacion';
+import Proyecto from './pages/Proyecto';
 
 const NotFound = () => (
   <div className="p-5 text-center">
@@ -28,6 +29,7 @@ function App() {
             <Route path="/educacion" element={<Educacion />} />
             <Route path="/simulacion" element={<Simulacion />} />
             <Route path="/metricas" element={<Metricas />} />
+            <Route path="/proyecto" element={<Proyecto />} />
             <Route path="/aviso" element={<Aviso />} />
             <Route path="*" element={<NotFound />} />
           </Routes>

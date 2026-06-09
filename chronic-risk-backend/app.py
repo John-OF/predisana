@@ -271,8 +271,41 @@ def compute_clinical_flags(glucose_mgdl: float, hba1c: float, systolic: float) -
 
 
 # ==========================================
-# FUNCIÓN AUXILIAR PARA DATOS SINTÉTICOS
+# FUNCIONES AUXILIARES PARA DATOS SINTÉTICOS / REALES
 # ==========================================
+def _sample_row_from_csv(csv_path, source_type):
+    """Lee un CSV, descarta 'target', muestrea 1 fila y normaliza tipos numpy.
+    Marca _source_type. Mismo formato para datos reales y sintéticos (clave para
+    que el juego 'real vs sintético' presente ambas fichas idénticas en forma)."""
+    if not os.path.exists(csv_path):
+        return None
+    try:
+        df = pd.read_csv(csv_path)
+        if "target" in df.columns:
+            df = df.drop(columns=["target"])
+        sample = df.sample(1).iloc[0].to_dict()
+        for key, val in sample.items():
+            if isinstance(val, (np.integer, np.int64)):
+                sample[key] = int(val)
+            elif isinstance(val, (np.floating, np.float64)):
+                sample[key] = round(float(val), 2)
+        sample['_source_type'] = source_type
+        return sample
+    except Exception as e:
+        print(f"Error leyendo CSV ({source_type}): {e}")
+        return None
+
+
+def get_real_sample(disease):
+    """Una fila REAL aleatoria del split de entrenamiento curado
+    (data_curated/<disease>/<disease>_train.csv), con fallback al procesado."""
+    disease = disease.lower()
+    csv_path = os.path.join("data_curated", disease, f"{disease}_train.csv")
+    if not os.path.exists(csv_path):
+        csv_path = os.path.join("data_processed", f"{disease}_dataset.csv")
+    return _sample_row_from_csv(csv_path, "real")
+
+
 def get_random_sample(disease):
     """
     Busca datos SINTÉTICOS priorizando CTGAN (que son los médicamente correctos).
@@ -501,6 +534,170 @@ def get_synthetic(disease):
         return jsonify({"error": "could not generate synthetic data"}), 500
         
     return jsonify(sample)
+
+
+@app.get("/sample/<disease>")
+def get_sample(disease):
+    """Una ficha de paciente del origen pedido: ?source=real|synthetic
+    (default synthetic). Alimenta el juego 'real vs sintético'."""
+    disease = disease.lower()
+    if disease not in FILES:
+        return jsonify({"error": "disease not supported"}), 404
+
+    source = (request.args.get("source") or "synthetic").lower()
+    sample = get_real_sample(disease) if source == "real" else get_random_sample(disease)
+
+    if not sample:
+        return jsonify({"error": "could not get sample"}), 500
+
+    return jsonify(sample)
+
+
+@app.get("/distribution/<disease>")
+def get_distribution(disease):
+    """Histograma comparado real vs sintético de una variable numérica.
+    ?feature=<col>&bins=<n>. Devuelve proporciones (cada serie suma ~100%) sobre
+    bins COMUNES, para comparar la *forma* aunque difiera el tamaño de muestra."""
+    disease = disease.lower()
+    if disease not in FILES:
+        return jsonify({"error": "disease not supported"}), 404
+
+    feature = request.args.get("feature")
+    if not feature:
+        return jsonify({"error": "feature required"}), 400
+
+    try:
+        nbins = max(5, min(40, int(request.args.get("bins", 18))))
+    except (TypeError, ValueError):
+        nbins = 18
+
+    real_path = os.path.join("data_curated", disease, f"{disease}_train.csv")
+    synth_files = glob.glob(os.path.join("data_curated", disease, f"{disease}_synthetic_ctgan*.csv")) \
+        or glob.glob(os.path.join("data_curated", disease, f"{disease}_synthetic*.csv"))
+    if not os.path.exists(real_path) or not synth_files:
+        return jsonify({"error": "data not available"}), 500
+
+    try:
+        real = pd.read_csv(real_path)
+        synth = pd.read_csv(synth_files[0])
+        if feature not in real.columns or feature not in synth.columns:
+            return jsonify({"error": "feature not found"}), 400
+
+        r = pd.to_numeric(real[feature], errors="coerce").dropna()
+        s = pd.to_numeric(synth[feature], errors="coerce").dropna()
+        if r.empty or s.empty:
+            return jsonify({"error": "no numeric data"}), 400
+
+        lo = float(min(r.min(), s.min()))
+        hi = float(max(r.max(), s.max()))
+        if hi <= lo:
+            hi = lo + 1.0
+        edges = np.linspace(lo, hi, nbins + 1)
+        r_counts, _ = np.histogram(r, bins=edges)
+        s_counts, _ = np.histogram(s, bins=edges)
+        r_sum = r_counts.sum() or 1
+        s_sum = s_counts.sum() or 1
+
+        bins = []
+        for i in range(len(edges) - 1):
+            bins.append({
+                "bin": round((edges[i] + edges[i + 1]) / 2, 1),
+                "real": round(float(r_counts[i] / r_sum * 100), 2),
+                "synthetic": round(float(s_counts[i] / s_sum * 100), 2),
+            })
+
+        return jsonify({
+            "feature": feature,
+            "real_n": int(r.shape[0]),
+            "synthetic_n": int(s.shape[0]),
+            "bins": bins,
+        })
+    except Exception as e:
+        print(f"Error en distribution ({disease}/{feature}): {e}")
+        return jsonify({"error": "could not compute distribution"}), 500
+
+
+# Variables continuas por enfermedad para el heatmap de correlaciones.
+CORR_FEATURES = {
+    "diabetes": ["age", "bmi", "blood_glucose_level", "hba1c_level"],
+    "hipertension": ["age", "bmi", "weight", "waist_circumference", "blood_pressure", "glucose"],
+    "cardiovascular": ["age", "bmi", "ap_hi", "ap_lo"],
+}
+
+_QUALITY_CACHE = {}
+
+
+def _compute_quality(disease):
+    """Calidad del sintético vs real: score SDMetrics (submuestreado, rápido) +
+    matrices de correlación (pandas) para el heatmap comparado."""
+    real_path = os.path.join("data_curated", disease, f"{disease}_train.csv")
+    synth_files = glob.glob(os.path.join("data_curated", disease, f"{disease}_synthetic_ctgan*.csv")) \
+        or glob.glob(os.path.join("data_curated", disease, f"{disease}_synthetic*.csv"))
+    if not os.path.exists(real_path) or not synth_files:
+        return None
+
+    real = pd.read_csv(real_path)
+    synth = pd.read_csv(synth_files[0])
+    for d in (real, synth):
+        if "target" in d.columns:
+            d.drop(columns=["target"], inplace=True)
+    cols = [c for c in real.columns if c in synth.columns]
+    real, synth = real[cols], synth[cols]
+    n = min(2000, len(real), len(synth))
+    real_s = real.sample(n, random_state=42)
+    synth_s = synth.sample(n, random_state=42)
+
+    result = {"n_used": int(n)}
+
+    # --- Score de fidelidad (SDMetrics) ---
+    try:
+        from sdmetrics.reports.single_table import QualityReport
+        meta = {"columns": {c: {"sdtype": "categorical" if real_s[c].nunique() <= 10 else "numerical"} for c in cols}}
+        rep = QualityReport()
+        rep.generate(real_s, synth_s, meta, verbose=False)
+        prop_scores = dict(zip(rep.get_properties()["Property"], rep.get_properties()["Score"]))
+        result["overall"] = round(float(rep.get_score()), 4)
+        result["column_shapes"] = round(float(prop_scores.get("Column Shapes", 0)), 4)
+        result["column_pair_trends"] = round(float(prop_scores.get("Column Pair Trends", 0)), 4)
+        try:
+            details = rep.get_details("Column Shapes")
+            per = [{"column": str(r["Column"]), "score": round(float(r["Score"]), 3)}
+                   for _, r in details.iterrows() if pd.notna(r.get("Score"))]
+            per.sort(key=lambda x: x["score"], reverse=True)
+            result["per_column"] = per
+        except Exception as e:
+            print(f"quality details fail ({disease}): {e}")
+            result["per_column"] = []
+    except Exception as e:
+        print(f"sdmetrics fail ({disease}): {e}")
+        result["overall"] = None
+        result["per_column"] = []
+
+    # --- Correlaciones (pandas, robusto) ---
+    corr_cols = [c for c in CORR_FEATURES.get(disease, []) if c in cols]
+    if len(corr_cols) >= 2:
+        rc = real_s[corr_cols].corr().fillna(0).round(2)
+        sc = synth_s[corr_cols].corr().fillna(0).round(2)
+        result["corr"] = {
+            "features": corr_cols,
+            "real": rc.values.tolist(),
+            "synthetic": sc.values.tolist(),
+        }
+    return result
+
+
+@app.get("/synthetic_quality/<disease>")
+def get_synthetic_quality(disease):
+    disease = disease.lower()
+    if disease not in FILES:
+        return jsonify({"error": "disease not supported"}), 404
+    if disease not in _QUALITY_CACHE:
+        res = _compute_quality(disease)
+        if res is None:
+            return jsonify({"error": "data not available"}), 500
+        _QUALITY_CACHE[disease] = res
+    return jsonify(_QUALITY_CACHE[disease])
+
 
 # Inicialización global (se ejecuta siempre)
 _load_all()

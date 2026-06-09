@@ -42,6 +42,9 @@ const MyNavbar = () => {
             <Nav.Link as={NavLink} to="/metricas" className="navlink">
               Métricas
             </Nav.Link>
+            <Nav.Link as={NavLink} to="/proyecto" className="navlink">
+              Proyecto
+            </Nav.Link>
             <Nav.Link as={NavLink} to="/aviso" className="navlink">
               Aviso Legal
             </Nav.Link>
