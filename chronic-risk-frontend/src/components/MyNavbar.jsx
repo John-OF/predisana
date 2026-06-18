@@ -43,7 +43,7 @@ const MyNavbar = () => {
               Métricas
             </Nav.Link>
             <Nav.Link as={NavLink} to="/proyecto" className="navlink">
-              Proyecto
+              Acerca de
             </Nav.Link>
             <Nav.Link as={NavLink} to="/aviso" className="navlink">
               Aviso Legal

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Container, Row, Col, Card, Button, Table, Badge, Accordion, Spinner, Tabs, Tab } from 'react-bootstrap';
 import { getSyntheticCase, getMetrics, predictRisk, getSampleCase, getDistribution, getSyntheticQuality } from '../services/api';
 import { getLabel } from '../utils/translations';
-import { Droplet, HeartPulse, Heart, Eyedropper, Robot, Lightbulb, Magic, Stars, BarChartLineFill, ArrowRight, TrophyFill, CpuFill, ArrowUpShort, ArrowDownShort, ArrowRepeat, PatchQuestion, ClipboardCheck } from 'react-bootstrap-icons';
+import { Droplet, HeartPulse, Heart, Eyedropper, Robot, Lightbulb, Magic, Stars, BarChartLineFill, ArrowRight, TrophyFill, CpuFill, ArrowUpShort, ArrowDownShort, ArrowRepeat, PatchQuestion, ClipboardCheck, ClipboardPulse, CodeSlash, Window, Github, PersonBadge } from 'react-bootstrap-icons';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 // Cada enfermedad tiene un esquema de datos distinto (diabetes no mide presión
@@ -585,10 +585,78 @@ const Proyecto = () => {
                 <span className="ps-eyebrow">Caso de estudio</span>
                 <h2>El proyecto por dentro</h2>
                 <p>
-                    Las decisiones técnicas detrás de la herramienta. Empezamos por una pieza
-                    central: cómo se entrenan los modelos sin exponer datos de pacientes reales.
+                    Las decisiones de ingeniería detrás de la herramienta: de dónde salen los
+                    datos, cómo se eligen los modelos, cómo se interpreta el resultado y cómo se
+                    entrena la IA sin exponer datos de pacientes reales.
                 </p>
             </div>
+
+            {/* ==============================================
+                DATOS (B1) — de dónde salen, con transparencia
+               ============================================== */}
+            <div className="ps-sec-head mx-auto text-center mb-4" style={{ maxWidth: '62ch' }}>
+                <span className="ps-eyebrow">Los datos</span>
+                <h2>De dónde salen los datos</h2>
+                <p>
+                    Cada enfermedad se entrena con su propia fuente real, curada por separado
+                    (sin imputación cruzada): se sanean valores fisiológicamente imposibles y se
+                    eligen variables que una persona común puede responder.
+                </p>
+            </div>
+
+            <Row className="g-3 mb-5">
+                <Col md={4}>
+                    <Card className="h-100 ps-card-hover">
+                        <Card.Body>
+                            <div className="d-flex align-items-center mb-2 fw-bold text-primary">
+                                <Droplet className="me-2" />Diabetes
+                            </div>
+                            <p className="text-soft small mb-2">
+                                <strong>100 000</strong> registros de una sola fuente pública, sin
+                                valores faltantes. Señal clínica real: glucosa, HbA1c, IMC, edad.
+                            </p>
+                            <p className="text-faint small mb-0">
+                                Transparencia: usa glucosa/HbA1c como variables — uso predictivo
+                                legítimo, no fuga de datos.
+                            </p>
+                        </Card.Body>
+                    </Card>
+                </Col>
+                <Col md={4}>
+                    <Card className="h-100 ps-card-hover">
+                        <Card.Body>
+                            <div className="d-flex align-items-center mb-2 fw-bold text-danger">
+                                <HeartPulse className="me-2" />Hipertensión
+                            </div>
+                            <p className="text-soft small mb-2">
+                                Encuesta de salud (ENSANUT México, <strong>~4 400</strong> personas)
+                                con señal real: IMC, cintura y peso correlacionan con el riesgo.
+                            </p>
+                            <p className="text-faint small mb-0">
+                                Transparencia: muestra pequeña y el objetivo es un <em>score</em> de
+                                riesgo, no un diagnóstico medido.
+                            </p>
+                        </Card.Body>
+                    </Card>
+                </Col>
+                <Col md={4}>
+                    <Card className="h-100 ps-card-hover">
+                        <Card.Body>
+                            <div className="d-flex align-items-center mb-2 fw-bold text-info">
+                                <Heart className="me-2" />Cardiovascular
+                            </div>
+                            <p className="text-soft small mb-2">
+                                <strong>~69 000</strong> registros balanceados al 50/50. Se derivan
+                                medidas como el IMC a partir de talla y peso.
+                            </p>
+                            <p className="text-faint small mb-0">
+                                Transparencia: presiones imposibles (negativas o de miles) se
+                                descartan antes de entrenar.
+                            </p>
+                        </Card.Body>
+                    </Card>
+                </Col>
+            </Row>
 
             {/* ==============================================
                 SECCIÓN: TECNOLOGÍA E IA — Datos sintéticos
@@ -813,6 +881,136 @@ const Proyecto = () => {
                     <ArrowRight className="ms-2" />
                 </Button>
             </div>
+
+            {/* ==============================================
+                CAPA CLÍNICA (A4) — interpretación desacoplada
+               ============================================== */}
+            <div className="ps-sec-head mx-auto text-center mt-5 mb-4" style={{ maxWidth: '62ch' }}>
+                <span className="ps-eyebrow">Interpretación</span>
+                <h2>El modelo no se mezcla con el criterio clínico</h2>
+                <p>
+                    La probabilidad que ves es la salida limpia del modelo — la misma que respalda
+                    el AUC publicado. Los umbrales diagnósticos van en una capa aparte, etiquetada.
+                </p>
+            </div>
+
+            <Row className="g-3 mb-5 justify-content-center">
+                <Col md={6}>
+                    <Card className="h-100">
+                        <Card.Body>
+                            <h5 className="d-flex align-items-center"><CpuFill className="me-2 text-primary" />La probabilidad del modelo</h5>
+                            <p className="text-soft small mb-0">
+                                Sin retoques ni "pisos" artificiales: lo que el modelo calcula es lo
+                                que se muestra y lo que SHAP explica. Así el número es auditable y
+                                coherente con las métricas de validación.
+                            </p>
+                        </Card.Body>
+                    </Card>
+                </Col>
+                <Col md={6}>
+                    <Card className="h-100">
+                        <Card.Body>
+                            <h5 className="d-flex align-items-center"><ClipboardPulse className="me-2 text-danger" />La capa de referencia clínica</h5>
+                            <p className="text-soft small mb-2">
+                                Junto al número, una nota basada en guías reconocidas marca si un valor
+                                cruza un umbral diagnóstico — sin alterar la salida del modelo.
+                            </p>
+                            <div className="ps-clinic">
+                                <p className="mb-0">
+                                    Glucosa y HbA1c según <strong>ADA</strong>; presión arterial
+                                    según <strong>ACC/AHA</strong>.
+                                </p>
+                                <div className="ref">ADA · ACC/AHA</div>
+                            </div>
+                        </Card.Body>
+                    </Card>
+                </Col>
+            </Row>
+
+            {/* ==============================================
+                STACK TÉCNICO
+               ============================================== */}
+            <div className="ps-sec-head mx-auto text-center mt-5 mb-4" style={{ maxWidth: '62ch' }}>
+                <span className="ps-eyebrow">Stack</span>
+                <h2>Con qué está construido</h2>
+                <p>
+                    Arquitectura desacoplada: una API en Python sirve los modelos; una SPA en
+                    React los consume y los visualiza.
+                </p>
+            </div>
+
+            <Row className="g-3 mb-5">
+                <Col md={4}>
+                    <Card className="h-100">
+                        <Card.Body>
+                            <div className="ps-ic"><CodeSlash size={22} /></div>
+                            <h5>Backend</h5>
+                            <p className="text-soft small mb-3">
+                                API REST que carga los modelos, arma el explainer SHAP y expone la
+                                capa clínica.
+                            </p>
+                            <div className="ps-chips">
+                                {['Python 3.12', 'Flask', 'scikit-learn', 'LightGBM', 'SHAP'].map((t) => (
+                                    <span key={t} className="ps-chip" style={{ cursor: 'default' }}>{t}</span>
+                                ))}
+                            </div>
+                        </Card.Body>
+                    </Card>
+                </Col>
+                <Col md={4}>
+                    <Card className="h-100">
+                        <Card.Body>
+                            <div className="ps-ic"><Magic size={22} /></div>
+                            <h5>Datos sintéticos</h5>
+                            <p className="text-soft small mb-3">
+                                Generación de pacientes virtuales plausibles sin exponer datos reales.
+                            </p>
+                            <div className="ps-chips">
+                                {['SDV', 'CTGAN', 'SDMetrics', 'pandas'].map((t) => (
+                                    <span key={t} className="ps-chip" style={{ cursor: 'default' }}>{t}</span>
+                                ))}
+                            </div>
+                        </Card.Body>
+                    </Card>
+                </Col>
+                <Col md={4}>
+                    <Card className="h-100">
+                        <Card.Body>
+                            <div className="ps-ic"><Window size={22} /></div>
+                            <h5>Frontend</h5>
+                            <p className="text-soft small mb-3">
+                                SPA que gestiona la experiencia y renderiza gauges, barras SHAP y
+                                gráficos comparativos.
+                            </p>
+                            <div className="ps-chips">
+                                {['React 19', 'Vite', 'React-Bootstrap', 'Recharts'].map((t) => (
+                                    <span key={t} className="ps-chip" style={{ cursor: 'default' }}>{t}</span>
+                                ))}
+                            </div>
+                        </Card.Body>
+                    </Card>
+                </Col>
+            </Row>
+
+            {/* ==============================================
+                AUTOR + REPO
+               ============================================== */}
+            <Card className="mt-5">
+                <Card.Body className="p-4 d-flex flex-wrap align-items-center justify-content-between gap-3">
+                    <div className="d-flex align-items-center gap-3">
+                        <div className="ps-ic" style={{ marginBottom: 0 }}><PersonBadge size={22} /></div>
+                        <div>
+                            <div className="text-faint" style={{ fontSize: '.76rem', textTransform: 'uppercase', letterSpacing: '.06em', fontWeight: 600 }}>Autor</div>
+                            <div style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', lineHeight: 1.15 }}>John Orellana</div>
+                            <div className="text-soft small">Predisana · IA explicable en salud</div>
+                        </div>
+                    </div>
+                    <Button href="https://github.com/John-OF/predisana" target="_blank" rel="noopener noreferrer" variant="primary">
+                        <Github className="me-2" />Ver el código en GitHub
+                    </Button>
+                </Card.Body>
+            </Card>
+
         </Container>
     );
 };

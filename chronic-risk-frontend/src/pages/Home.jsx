@@ -1,8 +1,7 @@
-import { Container, Row, Col, Button, Accordion } from 'react-bootstrap';
+import { Container, Row, Col, Button } from 'react-bootstrap';
 import { Link } from 'react-router-dom';
 import {
   ArrowRight, InfoCircle, Activity, BarChartLine, ClipboardData,
-  Tools, Diagram3, Magic,
 } from 'react-bootstrap-icons';
 
 const Home = () => {
@@ -138,45 +137,15 @@ const Home = () => {
             </Col>
           </Row>
 
-          <Row className="justify-content-center mt-5">
-            <Col lg={10}>
-              <h3 className="mb-3" style={{ fontSize: '1.4rem' }}>Profundización técnica</h3>
-              <Accordion defaultActiveKey="0">
-                <Accordion.Item eventKey="0">
-                  <Accordion.Header>
-                    <Tools className="me-2" />Arquitectura (Flask + React)
-                  </Accordion.Header>
-                  <Accordion.Body className="text-soft">
-                    Arquitectura desacoplada. El <strong>backend</strong> en Python (Flask) carga
-                    los modelos <code>.pkl</code>, procesa las peticiones JSON, construye el
-                    explainer SHAP y expone la capa clínica. El <strong>frontend</strong> en
-                    React 19 + Vite gestiona la experiencia y renderiza los gráficos.
-                  </Accordion.Body>
-                </Accordion.Item>
-                <Accordion.Item eventKey="1">
-                  <Accordion.Header>
-                    <Diagram3 className="me-2" />Multi-modelo con selección por CV
-                  </Accordion.Header>
-                  <Accordion.Body className="text-soft">
-                    En lugar de fijar un único algoritmo, se entrena un stack (Regresión
-                    Logística, Random Forest, LightGBM) y se sirve el ganador por enfermedad
-                    según su AUC en validación cruzada. SHAP se adapta al tipo de modelo
-                    (lineal o de árboles).
-                  </Accordion.Body>
-                </Accordion.Item>
-                <Accordion.Item eventKey="2">
-                  <Accordion.Header>
-                    <Magic className="me-2" />Datos sintéticos (CTGAN)
-                  </Accordion.Header>
-                  <Accordion.Body className="text-soft">
-                    Para alimentar el simulador con casos coherentes sin exponer datos reales,
-                    se usa <strong>CTGAN</strong>, que aprende las correlaciones del dataset y
-                    genera "pacientes virtuales" estadísticamente plausibles.
-                  </Accordion.Body>
-                </Accordion.Item>
-              </Accordion>
-            </Col>
-          </Row>
+          <div className="text-center mt-5">
+            <p className="text-soft mb-3">
+              ¿Te interesa cómo se construyó? El caso de estudio explica los datos, la
+              selección de modelos, la capa clínica y el stack técnico.
+            </p>
+            <Button as={Link} to="/proyecto" variant="outline-primary" size="lg">
+              Acerca de Predisana <ArrowRight className="ms-1" />
+            </Button>
+          </div>
         </Container>
       </section>
     </div>
