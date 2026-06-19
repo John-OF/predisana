@@ -1,8 +1,8 @@
 import json
 import os
 import sys
-import sqlite3
-from typing import Dict, Any, List
+from functools import wraps
+from typing import Dict, Any, List, Optional
 
 import glob
 
@@ -23,6 +23,12 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from joblib import load
 
+from sqlalchemy import (
+    create_engine, inspect, text, func,
+    Column, Integer, String, Float, Text as SAText, DateTime,
+)
+from sqlalchemy.orm import declarative_base, sessionmaker
+
 EXPLAINERS: Dict[str, Any] = {}
 
 app = Flask(__name__)
@@ -30,6 +36,13 @@ CORS(app)
 
 BASE_MODELS = "models"
 DB_NAME = "medical_history.db"  # <--- Nombre de la Base de Datos
+# Capa de datos agnóstica al motor (A3): SQLite en dev, Postgres en prod (#7),
+# mismo código. Se controla con la env var DATABASE_URL.
+DATABASE_URL = os.environ.get("DATABASE_URL", f"sqlite:///{DB_NAME}")
+# Token del panel admin dev-only (A3). Si no está seteado, el admin queda
+# deshabilitado (los endpoints /admin/* responden 503). NO es auth de usuario:
+# los usuarios nunca se loguean, las simulaciones son anónimas.
+ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN")
 
 # Archivos por enfermedad
 FILES = {
@@ -55,39 +68,100 @@ FEATURES: Dict[str, List[str]] = {}
 MODEL_NAMES: Dict[str, str] = {}  # enfermedad -> modelo ganador (A5), desde _metrics.json
 
 # ==========================================
-# 1. FUNCIÓN DE BASE DE DATOS
+# 1. BASE DE DATOS (SQLAlchemy, agnóstica al motor — A3)
 # ==========================================
-def init_db():
-    """Crea la tabla si no existe."""
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS predictions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            disease TEXT,
-            input_data TEXT,
-            prediction INTEGER,
-            probability REAL,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    conn.commit()
-    conn.close()
+engine = create_engine(DATABASE_URL, future=True)
+SessionLocal = sessionmaker(bind=engine, future=True, expire_on_commit=False)
+Base = declarative_base()
 
-def log_prediction_to_db(disease, input_data, prediction, probability):
-    """Guarda el historial de uso."""
+
+class Prediction(Base):
+    """Log anónimo de cada simulación. Sin PII: solo inputs de salud + salida."""
+    __tablename__ = "predictions"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    disease = Column(String(50), index=True)
+    input_data = Column(SAText)                  # JSON con las features enviadas
+    prediction = Column(Integer)                 # clase 0/1
+    probability = Column(Float)                  # salida limpia del modelo
+    model_name = Column(String(50))              # A5: modelo ganador servido
+    clinical_note = Column(SAText)               # A4: nota clínica ADA/ACC-AHA
+    top_features = Column(SAText)                # JSON con el SHAP top
+    session_id = Column(String(64), index=True)  # UUID anónimo (agrupa sin identificar)
+    timestamp = Column(DateTime, server_default=func.now())
+
+
+def _migrate_add_columns():
+    """Añade columnas nuevas a una tabla `predictions` preexistente (esquema viejo
+    de 5 campos). create_all NO altera tablas existentes; sqlite y Postgres ambos
+    soportan ALTER TABLE ADD COLUMN."""
+    insp = inspect(engine)
+    if "predictions" not in insp.get_table_names():
+        return
+    existing = {c["name"] for c in insp.get_columns("predictions")}
+    wanted = {
+        "model_name": "VARCHAR(50)",
+        "clinical_note": "TEXT",
+        "top_features": "TEXT",
+        "session_id": "VARCHAR(64)",
+    }
+    with engine.begin() as conn:
+        for col, ddl in wanted.items():
+            if col not in existing:
+                conn.execute(text(f"ALTER TABLE predictions ADD COLUMN {col} {ddl}"))
+
+
+def init_db():
+    """Crea la tabla si no existe y migra columnas nuevas si venía del esquema viejo."""
+    Base.metadata.create_all(engine)
+    _migrate_add_columns()
+
+
+def log_prediction_to_db(disease, input_data, prediction, probability,
+                         model_name=None, clinical_note=None,
+                         top_features=None, session_id=None):
+    """Guarda el historial de uso (anónimo). Nunca debe tumbar un request."""
     try:
-        conn = sqlite3.connect(DB_NAME)
-        cursor = conn.cursor()
-        # Guardamos el input como texto JSON para no complicarnos con columnas
-        cursor.execute('''
-            INSERT INTO predictions (disease, input_data, prediction, probability)
-            VALUES (?, ?, ?, ?)
-        ''', (disease, json.dumps(input_data), int(prediction), float(probability)))
-        conn.commit()
-        conn.close()
+        with SessionLocal() as s:
+            s.add(Prediction(
+                disease=disease,
+                input_data=json.dumps(input_data, ensure_ascii=False),
+                prediction=int(prediction),
+                probability=float(probability),
+                model_name=model_name,
+                clinical_note=clinical_note,
+                top_features=(json.dumps(top_features, ensure_ascii=False)
+                              if top_features is not None else None),
+                session_id=session_id,
+            ))
+            s.commit()
     except Exception as e:
-        print(f"⚠️ Error guardando en BD: {e}")
+        print(f"[WARN] Error guardando en BD: {e}")
+
+
+def _safe_json_loads(raw):
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except (ValueError, TypeError):
+        return raw
+
+
+# ==========================================
+# 1b. AUTH DEL PANEL ADMIN (dev-only — A3)
+# ==========================================
+def require_admin(fn):
+    """Protege los endpoints /admin/* con un token en header X-Admin-Token.
+    NO es auth de usuario: solo el dev. Si ADMIN_TOKEN no está configurado, el
+    panel queda deshabilitado (503)."""
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if not ADMIN_TOKEN:
+            return jsonify({"error": "admin deshabilitado: configura ADMIN_TOKEN"}), 503
+        if request.headers.get("X-Admin-Token") != ADMIN_TOKEN:
+            return jsonify({"error": "no autorizado"}), 401
+        return fn(*args, **kwargs)
+    return wrapper
 
 
 # >>> SHAP START
@@ -505,7 +579,13 @@ def predict(disease: str):
     clinical_note = " ".join(f["detail"] for f in clinical_flags) or \
         "Sin indicadores clínicos por encima de umbrales de referencia."
 
-    log_prediction_to_db(disease, payload, pred_class, prob)
+    log_prediction_to_db(
+        disease, payload, pred_class, prob,
+        model_name=MODEL_NAMES.get(disease),
+        clinical_note=clinical_note,
+        top_features=top_features,
+        session_id=request.headers.get("X-Session-Id"),
+    )
 
     return jsonify({
         "disease": disease,
@@ -697,6 +777,109 @@ def get_synthetic_quality(disease):
             return jsonify({"error": "data not available"}), 500
         _QUALITY_CACHE[disease] = res
     return jsonify(_QUALITY_CACHE[disease])
+
+
+# ==========================================
+# PANEL ADMIN (dev-only, anónimo, server-side — A3)
+# ==========================================
+@app.get("/admin/verify")
+@require_admin
+def admin_verify():
+    """El frontend lo usa para validar el token antes de mostrar el dashboard."""
+    return jsonify({"ok": True})
+
+
+@app.get("/admin/stats")
+@require_admin
+def admin_stats():
+    """Analítica de uso AGREGADA y anónima (sin datos personales). Solo cuenta las
+    enfermedades que hoy se sirven (FILES); ignora filas viejas de enfermedades
+    retiradas como `obesidad`."""
+    supported = list(FILES.keys())
+    with SessionLocal() as s:
+        total = (
+            s.query(func.count(Prediction.id))
+             .filter(Prediction.disease.in_(supported)).scalar() or 0
+        )
+        distinct_sessions = (
+            s.query(func.count(func.distinct(Prediction.session_id)))
+             .filter(Prediction.session_id.isnot(None),
+                     Prediction.disease.in_(supported)).scalar() or 0
+        )
+
+        agg = (
+            s.query(
+                Prediction.disease,
+                func.count(Prediction.id),
+                func.avg(Prediction.probability),
+                func.sum(Prediction.prediction),
+            )
+            .filter(Prediction.disease.in_(supported))
+            .group_by(Prediction.disease)
+            .all()
+        )
+        by_disease = []
+        for disease, n, avg_prob, positives in agg:
+            n = int(n or 0)
+            positives = int(positives or 0)
+            by_disease.append({
+                "disease": disease,
+                "count": n,
+                "avg_probability": round(float(avg_prob or 0), 4),
+                "positives": positives,
+                "positive_rate": round(positives / n, 4) if n else 0.0,
+                "model": MODEL_NAMES.get(disease),
+            })
+
+        daily = (
+            s.query(func.date(Prediction.timestamp), func.count(Prediction.id))
+             .filter(Prediction.disease.in_(supported))
+             .group_by(func.date(Prediction.timestamp))
+             .order_by(func.date(Prediction.timestamp))
+             .all()
+        )
+        timeline = [{"day": str(day), "count": int(c)} for day, c in daily]
+
+    return jsonify({
+        "total": int(total),
+        "distinct_sessions": int(distinct_sessions),
+        "by_disease": by_disease,
+        "timeline": timeline,
+    })
+
+
+@app.get("/admin/predictions")
+@require_admin
+def admin_predictions():
+    """Lista las simulaciones más recientes (server-side, anónimas)."""
+    try:
+        limit = min(int(request.args.get("limit", 50)), 500)
+    except (ValueError, TypeError):
+        limit = 50
+    disease = request.args.get("disease")
+
+    with SessionLocal() as s:
+        # Solo enfermedades servidas hoy (oculta filas viejas de `obesidad`, etc.).
+        q = (s.query(Prediction)
+              .filter(Prediction.disease.in_(list(FILES.keys())))
+              .order_by(Prediction.id.desc()))
+        if disease:
+            q = q.filter(Prediction.disease == disease.lower())
+        rows = q.limit(limit).all()
+        items = [{
+            "id": r.id,
+            "disease": r.disease,
+            "prediction": r.prediction,
+            "probability": r.probability,
+            "model": r.model_name,
+            "clinical_note": r.clinical_note,
+            "session_id": r.session_id,
+            "timestamp": r.timestamp.isoformat() if r.timestamp else None,
+            "input_data": _safe_json_loads(r.input_data),
+            "top_features": _safe_json_loads(r.top_features),
+        } for r in rows]
+
+    return jsonify({"count": len(items), "items": items})
 
 
 # Inicialización global (se ejecuta siempre)

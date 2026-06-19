@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Container, Row, Col, Form, Button, Alert, Nav, Spinner, OverlayTrigger, Tooltip } from 'react-bootstrap';
 import { getConfig, predictRisk, getSyntheticCase } from '../services/api';
-import { saveHistoryEntry } from '../services/historyService';
 import { getLabel } from '../utils/translations';
 import Swal from 'sweetalert2';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -168,7 +167,6 @@ const Simulacion = () => {
   const [currentResult, setCurrentResult] = useState(null);
   const [baseResult, setBaseResult] = useState(null);
   const [error, setError] = useState(null);
-  const [baseCase, setBaseCase] = useState(null);
 
   // 1. Cargar configuración
   useEffect(() => {
@@ -178,7 +176,6 @@ const Simulacion = () => {
       setCurrentResult(null);
       setBaseResult(null);
       setFormData({});
-      setBaseCase(null);
       try {
         const { data } = await getConfig(selectedDisease);
         setConfig(data);
@@ -282,55 +279,6 @@ const Simulacion = () => {
     return payload;
   };
 
-  const makeId = () => {
-    if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
-    return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
-  };
-
-  const buildRunSnapshot = (inputs, apiData) => ({
-    id: makeId(),
-    timestamp: Date.now(),
-    inputs: { ...inputs },
-    result: { probability: apiData?.probability, prediction: apiData?.prediction },
-    top_features: apiData?.top_features ?? null,
-  });
-
-  const saveSinglePredictionToHistory = (apiData) => {
-    saveHistoryEntry({
-      type: "single",
-      id: makeId(),
-      timestamp: Date.now(),
-      disease: selectedDisease,
-      inputs: { ...formData },
-      result: { probability: apiData?.probability, prediction: apiData?.prediction },
-      top_features: apiData?.top_features ?? null,
-      notes: "",
-    });
-  };
-
-  const saveComparisonToHistory = (newApiData) => {
-    if (!baseCase) return;
-    const newSnap = buildRunSnapshot(formData, newApiData);
-    const basePct = (baseCase.result.probability ?? 0) * 100;
-    const newPct = (newApiData.probability ?? 0) * 100;
-    const diff = newPct - basePct;
-
-    saveHistoryEntry({
-      type: "comparison",
-      id: makeId(),
-      timestamp: Date.now(),
-      disease: selectedDisease,
-      base: { timestamp: baseCase.timestamp, inputs: { ...baseCase.inputs }, result: { ...baseCase.result } },
-      scenarios: [{ timestamp: newSnap.timestamp, inputs: { ...newSnap.inputs }, result: { ...newSnap.result } }],
-      delta: {
-        probability_points: Number(diff.toFixed(1)),
-        direction: diff < 0 ? "decrease" : diff > 0 ? "increase" : "same",
-      },
-      top_features_new: newApiData?.top_features ?? null,
-      notes: "",
-    });
-  };
-
   // 4. Enviar predicción
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -340,9 +288,6 @@ const Simulacion = () => {
       const payload = preparePayload();
       const { data } = await predictRisk(selectedDisease, payload);
       setCurrentResult(data);
-
-      if (baseResult) saveComparisonToHistory(data);
-      else saveSinglePredictionToHistory(data);
     } catch (err) {
       console.error(err);
       setError("Error al procesar la predicción. Revisa que todos los campos numéricos tengan valores.");
@@ -353,11 +298,6 @@ const Simulacion = () => {
 
   // 5. Comparación
   const handleSetBaseCase = () => {
-    setBaseCase({
-      timestamp: Date.now(),
-      inputs: { ...formData },
-      result: { probability: currentResult?.probability, prediction: currentResult?.prediction },
-    });
     setBaseResult(currentResult);
     setCurrentResult(null);
     Swal.fire({
@@ -368,7 +308,6 @@ const Simulacion = () => {
   };
 
   const handleResetComparison = () => {
-    setBaseCase(null);
     setBaseResult(null);
     setCurrentResult(null);
   };

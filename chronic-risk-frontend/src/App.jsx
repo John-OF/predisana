@@ -10,6 +10,7 @@ import Metricas from './pages/Metricas';
 import Aviso from './pages/Aviso';
 import Educacion from './pages/Educacion';
 import Proyecto from './pages/Proyecto';
+import Admin from './pages/Admin';
 
 const NotFound = () => (
   <div className="p-5 text-center">
@@ -31,6 +32,8 @@ function App() {
             <Route path="/metricas" element={<Metricas />} />
             <Route path="/proyecto" element={<Proyecto />} />
             <Route path="/aviso" element={<Aviso />} />
+            {/* Panel dev-only (A3): sin link en navbar, acceso por URL directa + token. */}
+            <Route path="/admin" element={<Admin />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </main>
