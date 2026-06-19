@@ -42,7 +42,7 @@ function App() {
                 <Logo className="ps-logo" size={34} />
                 <div>
                   <p className="foot-title">Predisana</p>
-                  <div className="text-faint">Proyecto desarrollado para cliente privado · IA explicable en salud</div>
+                  <div className="text-faint">© 2026 John Orellana · IA explicable en salud</div>
                 </div>
               </div>
               <div className="mono text-faint" style={{ fontSize: '.8rem' }}>

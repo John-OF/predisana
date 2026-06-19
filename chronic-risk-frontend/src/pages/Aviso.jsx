@@ -12,7 +12,7 @@ const Aviso = () => {
             <Alert variant="warning" className="mb-4">
                 <Alert.Heading><ExclamationTriangleFill className="me-2" />Importante: Herramienta No Clínica</Alert.Heading>
                 <p>
-                    Este sistema es un prototipo de software desarrollado para un cliente privado con fines educativos y demostrativos.
+                    Este sistema es un prototipo de software de portafolio con fines educativos y demostrativos.
                     <strong> NO es un dispositivo médico ni una herramienta de diagnóstico clínico.</strong>
                 </p>
             </Alert>

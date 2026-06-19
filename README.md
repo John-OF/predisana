@@ -1,13 +1,13 @@
 # Predisana — Predicción educativa de riesgo de enfermedades crónicas
 
-Aplicación full-stack que estima el riesgo de cuatro enfermedades crónicas
-(**diabetes, hipertensión, obesidad y cardiovascular**) a partir de datos
+Aplicación full-stack que estima el riesgo de tres enfermedades crónicas
+(**diabetes, hipertensión y cardiovascular**) a partir de datos
 clínicos, con un enfoque **educativo y explicable**: cada predicción se
 acompaña de los factores que más influyeron (SHAP) y de reglas clínicas
 transparentes.
 
-> ⚠️ Proyecto desarrollado para un cliente privado, con fines educativos y
-> demostrativos. **No** es una herramienta de diagnóstico médico.
+> ⚠️ Proyecto de portafolio con fines educativos y demostrativos. **No** es una
+> herramienta de diagnóstico médico.
 
 ## Arquitectura
 
@@ -62,4 +62,4 @@ endpoints y convenciones.
 
 ## Licencia
 
-Pendiente de definir.
+Software propietario. © 2026 John Orellana. Todos los derechos reservados.
