@@ -6,8 +6,8 @@ const INFO_ENFERMEDADES = {
         titulo: "Diabetes Tipo 2",
         color: "primary",
         definicion: "Trastorno metabólico crónico caracterizado por niveles elevados de glucosa en sangre, debido a que el cuerpo no produce suficiente insulina o no la utiliza eficazmente.",
-        mortalidad: "En Ecuador, la diabetes mellitus es una de las principales causas de muerte no violenta.",
-        poblacion: "Se estima que afecta a cerca del 5.5% de la población (aprox. 1 de cada 18 ecuatorianos).",
+        mortalidad: "La diabetes mellitus es una de las principales causas de muerte no violenta a nivel mundial.",
+        poblacion: "Se estima que afecta a cerca del 10% de la población adulta mundial (más de 500 millones de personas).",
         organos: ["Páncreas", "Riñones (Nefropatía)", "Ojos (Retina)", "Corazón", "Nervios periféricos"],
         variables_ia: "El modelo analiza Glucosa, HbA1c y BMI porque son indicadores directos del estado metabólico.",
         factores: [
@@ -24,7 +24,7 @@ const INFO_ENFERMEDADES = {
         color: "danger",
         definicion: "Afección en la que la fuerza que ejerce la sangre contra las paredes de las arterias es lo suficientemente alta como para causar problemas de salud cardíaca.",
         mortalidad: "Conocida como 'el asesino silencioso', es un factor crítico en infartos y accidentes cerebrovasculares.",
-        poblacion: "Afecta aproximadamente al 19.8% de la población adulta en Ecuador.",
+        poblacion: "Afecta aproximadamente a 1 de cada 3 adultos en el mundo (cerca del 30%).",
         organos: ["Corazón (Insuficiencia)", "Arterias", "Cerebro", "Riñones"],
         variables_ia: "La presión arterial sistólica/diastólica y la edad son las variables de mayor peso en la predicción.",
         factores: [
@@ -40,7 +40,7 @@ const INFO_ENFERMEDADES = {
         titulo: "Riesgo Cardiovascular",
         color: "info",
         definicion: "Grupo de desórdenes del corazón y los vasos sanguíneos, incluyendo cardiopatías coronarias y enfermedades cerebrovasculares.",
-        mortalidad: "Es la causa #1 de muerte a nivel mundial y en Ecuador (aprox. 24% de defunciones).",
+        mortalidad: "Es la causa #1 de muerte a nivel mundial (aprox. 32% de las defunciones).",
         poblacion: "El riesgo aumenta significativamente en hombres >45 años y mujeres >55 años.",
         organos: ["Corazón", "Cerebro", "Sistema circulatorio completo"],
         variables_ia: "El modelo cruza datos de tabaquismo, colesterol y presión arterial para estimar este riesgo.",
@@ -99,7 +99,7 @@ const Educacion = () => {
                                                 <Row className="mb-4">
                                                     <Col md={6}>
                                                         <div className="p-3 bg-light rounded h-100">
-                                                            <h6 className="text-danger fw-bold"><GraphDownArrow className="me-2" />Impacto en Ecuador</h6>
+                                                            <h6 className="text-danger fw-bold"><GraphDownArrow className="me-2" />Impacto epidemiológico</h6>
                                                             <ul className="small mb-0 ps-3">
                                                                 <li><strong>Mortalidad:</strong> {info.mortalidad}</li>
                                                                 <li className="mt-2"><strong>Población Afectada:</strong> {info.poblacion}</li>
