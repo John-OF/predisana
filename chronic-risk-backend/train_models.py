@@ -44,6 +44,33 @@ DROP_NON_RESPONDABLE = {
     "cardiovascular": [],
 }
 
+# Restricciones de monotonia para LightGBM (2026-07-05).
+# Motivo: el dataset de diabetes trae la glucosa CUANTIZADA a un puñado de valores
+# discretos y uno de ellos (158) quedo con 0% de positivos por como se construyo la
+# fuente. LightGBM, al ser de arboles, MEMORIZABA ese pozo y devolvia riesgo ~0.02
+# para glucosa 157-158 mientras sus vecinos (155, 159) daban ~0.58. Forzar monotonia
+# creciente elimina el pozo de raiz y hace que el modelo respete la fisiologia:
+# a mas glucosa/edad/IMC/presion, el riesgo NUNCA puede bajar. Coste de AUC minimo.
+# Solo se listan features cuyo signo clinico es INEQUIVOCO (todas crecientes, +1);
+# las de signo ambiguo o protector (habitos, sexo) se dejan libres (0). Aplica solo
+# al candidato LightGBM (RandomForest de sklearn no soporta monotone_constraints;
+# LogReg ya es monotona por construccion).
+MONOTONIC_INCREASING = {
+    "diabetes": ["blood_glucose_level", "hba1c_level", "age", "bmi",
+                 "hypertension", "heart_disease"],
+    "hipertension": ["age", "bmi", "weight", "waist_circumference", "blood_pressure"],
+    "cardiovascular": ["age", "bmi", "ap_hi", "ap_lo", "cholesterol", "gluc"],
+}
+
+
+def _monotone_vector(disease: str, features):
+    """Vector de restricciones {0,1} alineado al orden de `features` para LightGBM.
+    +1 = la prediccion no puede decrecer al crecer esa feature; 0 = sin restriccion.
+    El StandardScaler(with_mean=False) divide por una desviacion positiva, asi que
+    preserva la direccion: monotonia en la feature escalada == monotonia en la cruda."""
+    inc = set(MONOTONIC_INCREASING.get(disease, []))
+    return [1 if f in inc else 0 for f in features]
+
 # Validacion cruzada para la seleccion de modelo
 CV_FOLDS = 5
 SEED = 42
@@ -63,10 +90,19 @@ def get_features_for_disease(name: str, df: pd.DataFrame):
     return [c for c in df.columns if c != "target" and c not in drop]
 
 
-def build_models() -> dict:
+def build_models(disease: str = None, features=None) -> dict:
     """Registro de modelos candidatos. Todos comparten la misma interfaz de
     Pipeline con los pasos 'scaler' + 'clf' (nombres load-bearing para el SHAP
-    de app.py). El StandardScaler(with_mean=False) es inocuo para los arboles."""
+    de app.py). El StandardScaler(with_mean=False) es inocuo para los arboles.
+
+    Si se pasan `disease` + `features`, el LightGBM recibe el vector de monotonia
+    de esa enfermedad (ver MONOTONIC_INCREASING); sin ellos queda sin restringir."""
+    lgbm_kwargs = dict(
+        n_estimators=400, class_weight="balanced",
+        random_state=SEED, n_jobs=-1, verbose=-1)
+    if disease is not None and features is not None:
+        lgbm_kwargs["monotone_constraints"] = _monotone_vector(disease, features)
+
     return {
         "logreg": Pipeline([
             ("scaler", StandardScaler(with_mean=False)),
@@ -80,9 +116,7 @@ def build_models() -> dict:
         ]),
         "lightgbm": Pipeline([
             ("scaler", StandardScaler(with_mean=False)),
-            ("clf", LGBMClassifier(
-                n_estimators=400, class_weight="balanced",
-                random_state=SEED, n_jobs=-1, verbose=-1)),
+            ("clf", LGBMClassifier(**lgbm_kwargs)),
         ]),
     }
 
@@ -137,7 +171,7 @@ def train_one(name: str):
     leaderboard = []
     best_name, best_pipe, best_cv = None, None, -1.0
 
-    for model_name, pipe in build_models().items():
+    for model_name, pipe in build_models(name, features).items():
         try:
             scores = cross_val_score(pipe, X_train, y_train, cv=cv, scoring="roc_auc", n_jobs=-1)
             mean_auc, std_auc = float(scores.mean()), float(scores.std())
