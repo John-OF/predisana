@@ -659,6 +659,11 @@ const Simulacion = () => {
                     <div className="text-faint mb-2" style={{ fontSize: '.78rem', textTransform: 'uppercase', letterSpacing: '.05em', fontWeight: 600 }}>
                       Datos opcionales — afinan la estimación
                     </div>
+                    <p className="small text-soft mb-2">
+                      Sin glucosa, estimamos tu <strong>riesgo</strong> a partir de factores generales
+                      (edad, IMC, antecedentes), a modo de cribado. Si te la has medido, la estimación
+                      se vuelve mucho más precisa.
+                    </p>
                     <Row>
                       {config.optional_features.map(feat => {
                         const input = renderNumberInput(feat, true);
@@ -706,7 +711,8 @@ const Simulacion = () => {
                     </div>
                   ) : (config.optional_features?.length > 0 && (
                     <p className="small text-faint mt-2 mb-0">
-                      Estimación con datos básicos. Añade tu glucosa arriba para una lectura más precisa.
+                      Riesgo estimado a partir de factores generales, sin medir tu glucosa. Añádela
+                      arriba para una lectura mucho más precisa.
                     </p>
                   ))}
                   {renderShap()}
