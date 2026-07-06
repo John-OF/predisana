@@ -1,13 +1,16 @@
 import { useState, useEffect } from 'react';
 import { Container, Row, Col, Form, Button, Alert, Nav, Spinner, OverlayTrigger, Tooltip } from 'react-bootstrap';
-import { getConfig, predictRisk, getSyntheticCase } from '../services/api';
+import { getConfig, predictRisk, getSyntheticCase, getSampleCase, getWhatIf } from '../services/api';
 import { getLabel } from '../utils/translations';
 import Swal from 'sweetalert2';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from 'recharts';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend,
+  ResponsiveContainer, AreaChart, Area, ReferenceLine, ReferenceDot,
+} from 'recharts';
 import {
   ArrowUpShort, ArrowDownShort, PencilSquare, ArrowCounterclockwise, Dice5Fill,
   RocketTakeoffFill, HeartPulse, ArrowLeftRight, Search, BarChartSteps, ClipboardData,
-  ArrowRepeat, CpuFill,
+  ArrowRepeat, CpuFill, GraphUpArrow,
 } from 'react-bootstrap-icons';
 
 const DISEASES = ['diabetes', 'hipertension', 'cardiovascular'];
@@ -20,6 +23,29 @@ const MODEL_LABELS = {
   xgboost: 'XGBoost',
 };
 const prettyModel = (m) => MODEL_LABELS[m] || (m ? String(m) : '—');
+
+// Variables continuas que el panel "what-if" puede barrer, con su rango de barrido
+// realista por enfermedad. Solo se ofrecen las que existan en config.features.
+const WHATIF_FEATURES = {
+  diabetes: [
+    { feat: 'blood_glucose_level', min: 70, max: 300, step: 5 },
+    { feat: 'age', min: 18, max: 90, step: 2 },
+    { feat: 'bmi', min: 16, max: 45, step: 1 },
+  ],
+  hipertension: [
+    { feat: 'blood_pressure', min: 90, max: 200, step: 5 },
+    { feat: 'bmi', min: 16, max: 45, step: 1 },
+    { feat: 'weight', min: 45, max: 140, step: 5 },
+    { feat: 'waist_circumference', min: 60, max: 140, step: 5 },
+    { feat: 'age', min: 18, max: 90, step: 2 },
+  ],
+  cardiovascular: [
+    { feat: 'ap_hi', min: 90, max: 200, step: 5 },
+    { feat: 'ap_lo', min: 60, max: 130, step: 5 },
+    { feat: 'bmi', min: 16, max: 45, step: 1 },
+    { feat: 'age', min: 30, max: 90, step: 2 },
+  ],
+};
 
 // --- CONFIGURACIÓN DE LÍMITES CLÍNICOS REALISTAS ---
 const CLINICAL_LIMITS = {
@@ -168,6 +194,13 @@ const Simulacion = () => {
   const [baseResult, setBaseResult] = useState(null);
   const [error, setError] = useState(null);
 
+  // Panel "what-if": barrido de una variable manteniendo el resto fijo.
+  const [whatIfFeat, setWhatIfFeat] = useState('');
+  const [whatIf, setWhatIf] = useState(null); // { feature, curve, current }
+  const [whatIfLoading, setWhatIfLoading] = useState(false);
+
+  const resetWhatIf = () => { setWhatIfFeat(''); setWhatIf(null); };
+
   // 1. Cargar configuración
   useEffect(() => {
     const fetchConfig = async () => {
@@ -176,6 +209,7 @@ const Simulacion = () => {
       setCurrentResult(null);
       setBaseResult(null);
       setFormData({});
+      resetWhatIf();
       try {
         const { data } = await getConfig(selectedDisease);
         setConfig(data);
@@ -200,9 +234,13 @@ const Simulacion = () => {
   const handleGenerateSynthetic = async () => {
     setLoading(true);
     try {
-      const { data } = await getSyntheticCase(selectedDisease);
+      // Diabetes usa NHANES: muestrea un caso REAL (su sintético CTGAN aún es del
+      // esquema viejo). Las demás enfermedades siguen con su sintético.
+      const { data } = selectedDisease === 'diabetes'
+        ? await getSampleCase(selectedDisease, 'real')
+        : await getSyntheticCase(selectedDisease);
       const cleanData = {};
-      const integers = ['age', 'pregnancies', 'glucose', 'blood_pressure', 'skin_thickness', 'insulin', 'hypertension', 'heart_disease'];
+      const integers = ['age', 'pregnancies', 'glucose', 'blood_glucose_level', 'blood_pressure', 'skin_thickness', 'insulin', 'hypertension', 'heart_disease'];
       const floats_1 = ['bmi', 'hba1c_level'];
       const floats_2 = ['diabetes_pedigree'];
 
@@ -247,7 +285,7 @@ const Simulacion = () => {
   // 3. Manejar cambios
   const handleChange = (e) => {
     const { name, value, type } = e.target;
-    if (currentResult && !baseResult) setCurrentResult(null);
+    if (currentResult && !baseResult) { setCurrentResult(null); resetWhatIf(); }
 
     if (type === 'number') {
       if (value === '') {
@@ -276,6 +314,11 @@ const Simulacion = () => {
         });
       });
     }
+    // Features opcionales vacías (p.ej. glucosa que el usuario no aporta) NO se
+    // envían: así el backend rutea al modelo self-report.
+    Object.keys(payload).forEach(k => {
+      if (payload[k] === '' || payload[k] === undefined || payload[k] === null) delete payload[k];
+    });
     return payload;
   };
 
@@ -288,6 +331,7 @@ const Simulacion = () => {
       const payload = preparePayload();
       const { data } = await predictRisk(selectedDisease, payload);
       setCurrentResult(data);
+      resetWhatIf();
     } catch (err) {
       console.error(err);
       setError("Error al procesar la predicción. Revisa que todos los campos numéricos tengan valores.");
@@ -312,8 +356,9 @@ const Simulacion = () => {
     setCurrentResult(null);
   };
 
-  // Campo numérico
-  const renderNumberInput = (feat) => {
+  // Campo numérico. `optional=true` no exige el campo (features tipo glucosa que
+  // el usuario puede aportar o no; activan el modelo mejorado si las rellena).
+  const renderNumberInput = (feat, optional = false) => {
     const isCategoricalPart = config.categoricals && Object.keys(config.categoricals).some(cat => feat.startsWith(cat + "_"));
     if (isCategoricalPart) return null;
     if (feat === 'pregnancies' && formData['gender'] === 'Male') return null;
@@ -322,7 +367,10 @@ const Simulacion = () => {
     return (
       <Form.Group className="ps-field" key={feat}>
         <Form.Label className="d-flex align-items-center justify-content-between">
-          <span>{getLabel(feat)}<InfoIcon variableKey={feat} /></span>
+          <span>
+            {getLabel(feat)}<InfoIcon variableKey={feat} />
+            {optional && <span className="ps-tag ms-2" style={{ background: 'var(--surface-2)', fontSize: '.68rem' }}>opcional</span>}
+          </span>
         </Form.Label>
         <Form.Control
           type="number"
@@ -332,11 +380,11 @@ const Simulacion = () => {
           min={limits.min}
           max={limits.max}
           step={limits.step || "any"}
-          placeholder={`Rango: ${limits.min} - ${limits.max}`}
-          required
+          placeholder={optional ? 'Déjalo vacío si no la conoces' : `Rango: ${limits.min} - ${limits.max}`}
+          required={!optional}
         />
         <Form.Text className="text-faint d-block text-end small">
-          Recomendado: {limits.label}
+          {optional ? 'Si te la has medido, afina la estimación' : `Recomendado: ${limits.label}`}
         </Form.Text>
       </Form.Group>
     );
@@ -410,6 +458,101 @@ const Simulacion = () => {
           <ArrowUpShort className="text-danger" />Empuja el riesgo arriba ·
           <ArrowDownShort className="text-success" />lo reduce. SHAP explica la salida del modelo.
         </p>
+      </div>
+    );
+  };
+
+  // Ejecuta el barrido what-if de una variable manteniendo el resto del caso fijo.
+  const runWhatIf = async (feat) => {
+    const spec = (WHATIF_FEATURES[selectedDisease] || []).find(s => s.feat === feat);
+    if (!spec) { setWhatIf(null); return; }
+    setWhatIfLoading(true);
+    try {
+      const base = preparePayload();
+      const steps = Math.min(100, Math.max(2, Math.round((spec.max - spec.min) / spec.step) + 1));
+      const { data } = await getWhatIf(selectedDisease, {
+        base, feature: feat, min: spec.min, max: spec.max, steps,
+      });
+      const curve = (data.curve || []).map(p => ({ value: p.value, pct: +(p.probability * 100).toFixed(1) }));
+      const currentVal = Number(formData[feat]);
+      // Riesgo interpolado en el valor actual del usuario (para el punto marcado).
+      let currentPct = null;
+      if (Number.isFinite(currentVal) && curve.length) {
+        const nearest = curve.reduce((a, b) =>
+          Math.abs(b.value - currentVal) < Math.abs(a.value - currentVal) ? b : a);
+        currentPct = nearest.pct;
+      }
+      setWhatIf({ feature: feat, curve, current: Number.isFinite(currentVal) ? currentVal : null, currentPct });
+    } catch (err) {
+      console.error(err);
+      setWhatIf(null);
+    } finally {
+      setWhatIfLoading(false);
+    }
+  };
+
+  // Panel "what-if": curva de riesgo al variar una sola variable.
+  const renderWhatIf = () => {
+    if (!currentResult || baseResult) return null;
+    // Se puede barrer tanto features del modelo como las opcionales (p.ej. glucosa),
+    // aunque el usuario no las haya rellenado: la curva muestra su efecto potencial.
+    const available = [...(config.features || []), ...(config.optional_features || [])];
+    const specs = (WHATIF_FEATURES[selectedDisease] || []).filter(s => available.includes(s.feat));
+    if (!specs.length) return null;
+
+    return (
+      <div className="mt-4 text-start">
+        <hr style={{ borderColor: 'var(--border)' }} />
+        <h5 className="mb-2"><GraphUpArrow className="me-2" style={{ color: 'var(--accent)' }} />¿Y si cambiara una variable?</h5>
+        <p className="small text-faint mb-3">
+          Manteniendo el resto de tus datos igual, observa cómo se movería tu riesgo estimado
+          al variar una sola variable. La curva usa la probabilidad calibrada del modelo.
+        </p>
+        <Form.Select
+          value={whatIfFeat}
+          onChange={(e) => { setWhatIfFeat(e.target.value); runWhatIf(e.target.value); }}
+          className="mb-3"
+        >
+          <option value="">Elige una variable para explorar…</option>
+          {specs.map(s => <option key={s.feat} value={s.feat}>{labelES(s.feat)}</option>)}
+        </Form.Select>
+
+        {whatIfLoading && (
+          <div className="text-center py-4"><Spinner animation="border" size="sm" variant="primary" /></div>
+        )}
+
+        {whatIf && !whatIfLoading && (
+          <div style={{ width: '100%', height: 250 }}>
+            <ResponsiveContainer>
+              <AreaChart data={whatIf.curve} margin={{ top: 6, right: 12, bottom: 22, left: 0 }}>
+                <defs>
+                  <linearGradient id="wiFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--accent, #2f9e8f)" stopOpacity={0.35} />
+                    <stop offset="100%" stopColor="var(--accent, #2f9e8f)" stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                <XAxis type="number" dataKey="value" domain={['dataMin', 'dataMax']}
+                  stroke="var(--text-faint)" fontSize={12}
+                  label={{ value: labelES(whatIf.feature), position: 'insideBottom', offset: -12, fontSize: 12 }} />
+                <YAxis domain={[0, 100]} unit="%" stroke="var(--text-faint)" fontSize={12} />
+                <RechartsTooltip
+                  formatter={(v) => [`${v}%`, 'Riesgo']}
+                  labelFormatter={(v) => `${labelES(whatIf.feature)}: ${v}`} />
+                <Area type="monotone" dataKey="pct" stroke="var(--accent, #2f9e8f)" strokeWidth={2}
+                  fill="url(#wiFill)" />
+                {whatIf.current != null && (
+                  <ReferenceLine x={whatIf.current} stroke="var(--text-faint)" strokeDasharray="4 4"
+                    label={{ value: 'tú', position: 'top', fontSize: 11, fill: 'var(--text-faint)' }} />
+                )}
+                {whatIf.current != null && whatIf.currentPct != null && (
+                  <ReferenceDot x={whatIf.current} y={whatIf.currentPct} r={5}
+                    fill="var(--accent, #2f9e8f)" stroke="#fff" strokeWidth={2} />
+                )}
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </div>
     );
   };
@@ -511,6 +654,20 @@ const Simulacion = () => {
                   })}
                 </Row>
 
+                {config.optional_features && config.optional_features.length > 0 && (
+                  <div className="mt-2 mb-1">
+                    <div className="text-faint mb-2" style={{ fontSize: '.78rem', textTransform: 'uppercase', letterSpacing: '.05em', fontWeight: 600 }}>
+                      Datos opcionales — afinan la estimación
+                    </div>
+                    <Row>
+                      {config.optional_features.map(feat => {
+                        const input = renderNumberInput(feat, true);
+                        return input ? <Col sm={6} key={feat}>{input}</Col> : null;
+                      })}
+                    </Row>
+                  </div>
+                )}
+
                 <div className="d-grid mt-3">
                   <Button variant={baseResult ? 'success' : 'primary'} size="lg" type="submit" disabled={loading} className="fw-bold">
                     {loading
@@ -543,8 +700,18 @@ const Simulacion = () => {
                   </div>
 
                   <Gauge pct={(currentResult.probability || 0) * 100} />
+                  {currentResult.used_glucose ? (
+                    <div className="ps-tag mt-2 d-inline-flex align-items-center" style={{ background: 'var(--halo)', color: 'var(--accent)' }}>
+                      <Search className="me-1" size={13} />Estimación mejorada con tu glucosa
+                    </div>
+                  ) : (config.optional_features?.length > 0 && (
+                    <p className="small text-faint mt-2 mb-0">
+                      Estimación con datos básicos. Añade tu glucosa arriba para una lectura más precisa.
+                    </p>
+                  ))}
                   {renderShap()}
                   {renderClinic()}
+                  {renderWhatIf()}
 
                   {!baseResult && (
                     <div className="d-grid mt-4">

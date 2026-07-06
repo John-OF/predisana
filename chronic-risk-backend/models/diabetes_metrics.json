@@ -1,120 +1,181 @@
 {
-  "dataset": "diabetes",
+  "dataset": "diabetes_nhanes",
+  "variant": "selfreport",
   "features": [
     "age",
     "bmi",
-    "blood_glucose_level",
     "hypertension",
     "heart_disease",
     "gender_Female",
     "gender_Male",
     "smoking_history_never",
     "smoking_history_current",
-    "smoking_history_former",
-    "smoking_history_ever",
-    "smoking_history_not_current"
+    "smoking_history_former"
   ],
-  "best_model": "lightgbm",
-  "cv_auc": 0.9287594523465124,
+  "best_model": "logreg",
+  "cv_auc": 0.7829173321538557,
   "leaderboard": [
     {
-      "model": "lightgbm",
-      "cv_auc_mean": 0.9287594523465124,
-      "cv_auc_std": 0.0025558510613635224
+      "model": "logreg",
+      "cv_auc_mean": 0.7829173321538557,
+      "cv_auc_std": 0.02374600393719182
     },
     {
-      "model": "logreg",
-      "cv_auc_mean": 0.9066497709739634,
-      "cv_auc_std": 0.003982137397322309
+      "model": "lightgbm",
+      "cv_auc_mean": 0.7821032099939629,
+      "cv_auc_std": 0.025023036494821144
     },
     {
       "model": "random_forest",
-      "cv_auc_mean": 0.894904306292189,
-      "cv_auc_std": 0.0018953763015779068
+      "cv_auc_mean": 0.718672429151815,
+      "cv_auc_std": 0.025125348530106766
     }
   ],
-  "auc": 0.9290228222436515,
+  "auc": 0.8140787783644926,
   "report": {
     "0": {
-      "precision": 0.9838509316770186,
-      "recall": 0.8222950819672131,
-      "f1-score": 0.8958475963685072,
-      "support": 18300.0
+      "precision": 0.9582806573957017,
+      "recall": 0.7031539888682746,
+      "f1-score": 0.8111289459604066,
+      "support": 1078.0
     },
     "1": {
-      "precision": 0.30882040382571735,
-      "recall": 0.8547058823529412,
-      "f1-score": 0.4537080405932865,
-      "support": 1700.0
+      "precision": 0.2982456140350877,
+      "recall": 0.8047337278106509,
+      "f1-score": 0.4352,
+      "support": 169.0
     },
-    "accuracy": 0.82505,
+    "accuracy": 0.7169206094627105,
     "macro avg": {
-      "precision": 0.646335667751368,
-      "recall": 0.8385004821600772,
-      "f1-score": 0.6747778184808968,
-      "support": 20000.0
+      "precision": 0.6282631357153947,
+      "recall": 0.7539438583394628,
+      "f1-score": 0.6231644729802033,
+      "support": 1247.0
     },
     "weighted avg": {
-      "precision": 0.926473336809658,
-      "recall": 0.82505,
-      "f1-score": 0.8582657341276133,
-      "support": 20000.0
+      "precision": 0.8688292361222905,
+      "recall": 0.7169206094627105,
+      "f1-score": 0.7601810775824526,
+      "support": 1247.0
     }
   },
-  "auc_test": 0.9290228222436515,
-  "auc_train": 0.9321357772822244,
+  "auc_test": 0.8140787783644926,
   "report_test": {
     "0": {
-      "precision": 0.9838509316770186,
-      "recall": 0.8222950819672131,
-      "f1-score": 0.8958475963685072,
-      "support": 18300.0
+      "precision": 0.9582806573957017,
+      "recall": 0.7031539888682746,
+      "f1-score": 0.8111289459604066,
+      "support": 1078.0
     },
     "1": {
-      "precision": 0.30882040382571735,
-      "recall": 0.8547058823529412,
-      "f1-score": 0.4537080405932865,
-      "support": 1700.0
+      "precision": 0.2982456140350877,
+      "recall": 0.8047337278106509,
+      "f1-score": 0.4352,
+      "support": 169.0
     },
-    "accuracy": 0.82505,
+    "accuracy": 0.7169206094627105,
     "macro avg": {
-      "precision": 0.646335667751368,
-      "recall": 0.8385004821600772,
-      "f1-score": 0.6747778184808968,
-      "support": 20000.0
+      "precision": 0.6282631357153947,
+      "recall": 0.7539438583394628,
+      "f1-score": 0.6231644729802033,
+      "support": 1247.0
     },
     "weighted avg": {
-      "precision": 0.926473336809658,
-      "recall": 0.82505,
-      "f1-score": 0.8582657341276133,
-      "support": 20000.0
+      "precision": 0.8688292361222905,
+      "recall": 0.7169206094627105,
+      "f1-score": 0.7601810775824526,
+      "support": 1247.0
     }
   },
-  "report_train": {
-    "0": {
-      "precision": 0.9849684320717066,
-      "recall": 0.8226639344262295,
-      "f1-score": 0.8965296490940762,
-      "support": 73200.0
-    },
-    "1": {
-      "precision": 0.3117909023433358,
-      "recall": 0.8648529411764706,
-      "f1-score": 0.458343075364352,
-      "support": 6800.0
-    },
-    "accuracy": 0.82625,
-    "macro avg": {
-      "precision": 0.6483796672075212,
-      "recall": 0.8437584378013501,
-      "f1-score": 0.6774363622292141,
-      "support": 80000.0
-    },
-    "weighted avg": {
-      "precision": 0.9277483420447951,
-      "recall": 0.82625,
-      "f1-score": 0.8592837903270498,
-      "support": 80000.0
-    }
+  "calibration": {
+    "method": "isotonic",
+    "n_bins": 10,
+    "strategy": "quantile",
+    "brier_raw": 0.18715815938186903,
+    "brier_calibrated": 0.09946153223659962,
+    "raw_curve": [
+      {
+        "mean_pred": 0.07285317125021436,
+        "frac_pos": 0.008
+      },
+      {
+        "mean_pred": 0.13298185589109976,
+        "frac_pos": 0.008
+      },
+      {
+        "mean_pred": 0.19258659571332928,
+        "frac_pos": 0.008064516129032258
+      },
+      {
+        "mean_pred": 0.26099502050421663,
+        "frac_pos": 0.032
+      },
+      {
+        "mean_pred": 0.3326449197530678,
+        "frac_pos": 0.088
+      },
+      {
+        "mean_pred": 0.425978867243796,
+        "frac_pos": 0.08064516129032258
+      },
+      {
+        "mean_pred": 0.512428630243908,
+        "frac_pos": 0.168
+      },
+      {
+        "mean_pred": 0.6086523052665723,
+        "frac_pos": 0.24193548387096775
+      },
+      {
+        "mean_pred": 0.7102447288750015,
+        "frac_pos": 0.296
+      },
+      {
+        "mean_pred": 0.8370453006186757,
+        "frac_pos": 0.424
+      }
+    ],
+    "calibrated_curve": [
+      {
+        "mean_pred": 0.004775238595569572,
+        "frac_pos": 0.0070921985815602835
+      },
+      {
+        "mean_pred": 0.020428844910710186,
+        "frac_pos": 0.007575757575757576
+      },
+      {
+        "mean_pred": 0.038262746600272596,
+        "frac_pos": 0.007633587786259542
+      },
+      {
+        "mean_pred": 0.05443810457287551,
+        "frac_pos": 0.04716981132075472
+      },
+      {
+        "mean_pred": 0.07907705394040693,
+        "frac_pos": 0.0847457627118644
+      },
+      {
+        "mean_pred": 0.13381555153707086,
+        "frac_pos": 0.09271523178807947
+      },
+      {
+        "mean_pred": 0.15393021293605985,
+        "frac_pos": 0.18691588785046728
+      },
+      {
+        "mean_pred": 0.24034334763948553,
+        "frac_pos": 0.2711864406779661
+      },
+      {
+        "mean_pred": 0.3057806236874668,
+        "frac_pos": 0.3130434782608696
+      },
+      {
+        "mean_pred": 0.4431598917759243,
+        "frac_pos": 0.4782608695652174
+      }
+    ]
   }
 }

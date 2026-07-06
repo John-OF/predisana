@@ -1,8 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Container, Row, Col, Form, Button, Table, Spinner, Alert, Badge } from 'react-bootstrap';
-import { ShieldLock, BoxArrowRight, ArrowClockwise } from 'react-bootstrap-icons';
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
-import { verifyAdmin, getAdminStats, getAdminPredictions } from '../services/api';
+import { ShieldLock, BoxArrowRight, ArrowClockwise, Download, FunnelFill } from 'react-bootstrap-icons';
+import {
+  AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  CartesianGrid, Cell,
+} from 'recharts';
+import {
+  verifyAdmin, getAdminStats, getAdminPredictions, downloadAdminCsv,
+} from '../services/api';
 import { getLabel } from '../utils/translations';
 
 // El token vive en sessionStorage: se borra al cerrar la pestaña (más seguro que
@@ -33,13 +38,19 @@ const Admin = () => {
   const [loading, setLoading] = useState(false);
   const [dataError, setDataError] = useState(null);
 
-  const loadDashboard = useCallback(async (tok) => {
+  // Filtro por rango de fechas (YYYY-MM-DD, ambos opcionales).
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [histDisease, setHistDisease] = useState('');
+  const [exporting, setExporting] = useState(false);
+
+  const loadDashboard = useCallback(async (tok, range = {}) => {
     setLoading(true);
     setDataError(null);
     try {
       const [s, p] = await Promise.all([
-        getAdminStats(tok),
-        getAdminPredictions(tok, { limit: 50 }),
+        getAdminStats(tok, range),
+        getAdminPredictions(tok, { limit: 50, ...range }),
       ]);
       setStats(s.data);
       setPreds(p.data.items || []);
@@ -105,6 +116,23 @@ const Admin = () => {
     setPreds([]);
   };
 
+  const currentRange = () => ({ from: dateFrom || undefined, to: dateTo || undefined });
+
+  const applyFilter = () => loadDashboard(token, currentRange());
+  const clearFilter = () => { setDateFrom(''); setDateTo(''); loadDashboard(token, {}); };
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      await downloadAdminCsv(token, currentRange());
+    } catch (err) {
+      console.error(err);
+      setDataError('No se pudo exportar el CSV.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   // ---- Gate de login ----
   if (!authed) {
     return (
@@ -139,6 +167,25 @@ const Admin = () => {
   const timeline = stats?.timeline || [];
   const maxCount = Math.max(...byDisease.map(d => d.count || 0), 1);
 
+  // Uso por hora del día (0-23).
+  const hourlyData = (stats?.hourly || []).map((c, h) => ({
+    hour: String(h).padStart(2, '0'), count: c,
+  }));
+
+  // Histograma de probabilidad para la enfermedad elegida (10 bins 0..1).
+  const nBins = stats?.prob_bins || 10;
+  const diseasesWithData = byDisease.filter(d => d.count > 0).map(d => d.disease);
+  const activeHistDisease = histDisease || diseasesWithData[0] || (byDisease[0]?.disease);
+  const histBins = (stats?.prob_histogram?.[activeHistDisease] || []).map((c, i) => ({
+    band: `${Math.round((i / nBins) * 100)}–${Math.round(((i + 1) / nBins) * 100)}%`,
+    count: c,
+    high: i >= nBins / 2,
+  }));
+
+  // Top features SHAP más frecuentes.
+  const topFeatures = stats?.top_features || [];
+  const maxFeatCount = Math.max(...topFeatures.map(f => f.count || 0), 1);
+
   return (
     <Container className="py-5">
       <div className="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-4">
@@ -148,12 +195,41 @@ const Admin = () => {
           <p className="mb-0">Agregada y anónima. Sin datos personales: solo inputs de salud y la salida del modelo.</p>
         </div>
         <div className="d-flex gap-2">
-          <Button variant="outline-primary" size="sm" onClick={() => loadDashboard(token)} disabled={loading}>
+          <Button variant="outline-primary" size="sm" onClick={() => loadDashboard(token, currentRange())} disabled={loading}>
             <ArrowClockwise className="me-1" />Refrescar
           </Button>
           <Button variant="outline-secondary" size="sm" onClick={handleLogout}>
             <BoxArrowRight className="me-1" />Salir
           </Button>
+        </div>
+      </div>
+
+      {/* Barra de filtro por fechas + export */}
+      <div className="ps-card p-3 mb-4">
+        <div className="d-flex align-items-end gap-3 flex-wrap">
+          <Form.Group>
+            <Form.Label className="small text-faint mb-1">Desde</Form.Label>
+            <Form.Control type="date" size="sm" value={dateFrom} max={dateTo || undefined}
+              onChange={(e) => setDateFrom(e.target.value)} />
+          </Form.Group>
+          <Form.Group>
+            <Form.Label className="small text-faint mb-1">Hasta</Form.Label>
+            <Form.Control type="date" size="sm" value={dateTo} min={dateFrom || undefined}
+              onChange={(e) => setDateTo(e.target.value)} />
+          </Form.Group>
+          <Button variant="primary" size="sm" onClick={applyFilter} disabled={loading}>
+            <FunnelFill className="me-1" />Aplicar
+          </Button>
+          {(dateFrom || dateTo) && (
+            <Button variant="outline-secondary" size="sm" onClick={clearFilter} disabled={loading}>
+              Limpiar
+            </Button>
+          )}
+          <div className="ms-auto">
+            <Button variant="outline-primary" size="sm" onClick={handleExport} disabled={exporting || loading}>
+              {exporting ? <Spinner size="sm" animation="border" /> : <><Download className="me-1" />Exportar CSV</>}
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -207,6 +283,81 @@ const Admin = () => {
                   <Area type="monotone" dataKey="count" name="Simulaciones" stroke="#0e7c7b" fill="#0e7c7b" fillOpacity={0.18} />
                 </AreaChart>
               </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* Distribución de probabilidades + uso por hora */}
+          <Row className="g-4 mb-5">
+            <Col lg={6}>
+              <div className="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                <h3 style={{ fontSize: '1.3rem', margin: 0 }}>Distribución de probabilidades</h3>
+                {diseasesWithData.length > 1 && (
+                  <Form.Select size="sm" style={{ width: 'auto' }}
+                    value={activeHistDisease}
+                    onChange={(e) => setHistDisease(e.target.value)}>
+                    {byDisease.map(d => (
+                      <option key={d.disease} value={d.disease}>{getLabel(d.disease)}</option>
+                    ))}
+                  </Form.Select>
+                )}
+              </div>
+              <p className="text-soft small mb-2">Cuántas simulaciones caen en cada franja de riesgo (probabilidad calibrada) para {getLabel(activeHistDisease)}.</p>
+              <ResponsiveContainer width="100%" height={230}>
+                <BarChart data={histBins} margin={{ top: 6, right: 12, left: -12, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+                  <XAxis dataKey="band" tick={{ fontSize: 10 }} interval={0} angle={-30} textAnchor="end" height={50} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                  <Tooltip />
+                  <Bar dataKey="count" name="Simulaciones" radius={[4, 4, 0, 0]}>
+                    {histBins.map((b, i) => (
+                      <Cell key={i} fill={b.high ? '#c8736a' : '#2f9e8f'} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </Col>
+            <Col lg={6}>
+              <h3 style={{ fontSize: '1.3rem', marginBottom: '8px' }}>Simulaciones por hora del día</h3>
+              <p className="text-soft small mb-2">Cuándo se usa el simulador (hora del servidor, 0–23).</p>
+              <ResponsiveContainer width="100%" height={230}>
+                <BarChart data={hourlyData} margin={{ top: 6, right: 12, left: -12, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+                  <XAxis dataKey="hour" tick={{ fontSize: 10 }} interval={1} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                  <Tooltip />
+                  <Bar dataKey="count" name="Simulaciones" fill="#0e7c7b" radius={[3, 3, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </Col>
+          </Row>
+
+          {/* Top features SHAP */}
+          {topFeatures.length > 0 && (
+            <div className="mb-5">
+              <h3 style={{ fontSize: '1.3rem', marginBottom: '6px' }}>Factores de riesgo más frecuentes</h3>
+              <p className="text-soft small mb-3">Variables que más veces aparecen entre los 5 factores SHAP de mayor peso, sobre todas las simulaciones del rango.</p>
+              <div className="table-responsive">
+                <Table className="align-middle">
+                  <thead>
+                    <tr>
+                      <th>Variable</th>
+                      <th>Veces en el top</th>
+                      <th>Impacto medio</th>
+                      <th style={{ width: '38%' }}>Frecuencia</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {topFeatures.map((f) => (
+                      <tr key={f.feature}>
+                        <td>{getLabel(f.feature)}</td>
+                        <td className="num">{f.count}</td>
+                        <td className="num text-faint">{f.avg_abs_shap?.toFixed(3)}</td>
+                        <td><div className="ps-mini-bar" style={{ width: `${Math.round((f.count / maxFeatCount) * 100)}%` }} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+              </div>
             </div>
           )}
 

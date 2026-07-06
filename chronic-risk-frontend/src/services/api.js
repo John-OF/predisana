@@ -33,6 +33,11 @@ export const getMetrics = (disease) => api.get(`/metrics/${disease}`);
 export const predictRisk = (disease, data) =>
     api.post(`/predict/${disease}`, data, { headers: { 'X-Session-Id': getSessionId() } });
 
+// Análisis contrafactual: barre una feature sobre un rango y devuelve la curva de
+// riesgo (probabilidad calibrada). NO se registra en la BD.
+export const getWhatIf = (disease, { base, feature, min, max, steps = 25 }) =>
+    api.post(`/whatif/${disease}`, { base, feature, min, max, steps });
+
 // ... al final del archivo agrega:
 export const getSyntheticCase = (disease) => api.get(`/synthetic/${disease}`);
 
@@ -54,9 +59,37 @@ const adminHeaders = (token) => ({ headers: { 'X-Admin-Token': token } });
 
 export const verifyAdmin = (token) => api.get('/admin/verify', adminHeaders(token));
 
-export const getAdminStats = (token) => api.get('/admin/stats', adminHeaders(token));
+export const getAdminStats = (token, { from, to } = {}) =>
+    api.get('/admin/stats', { ...adminHeaders(token), params: { from, to } });
 
-export const getAdminPredictions = (token, { limit = 50, disease } = {}) =>
-    api.get('/admin/predictions', { ...adminHeaders(token), params: { limit, disease } });
+export const getAdminPredictions = (token, { limit = 50, disease, from, to } = {}) =>
+    api.get('/admin/predictions', { ...adminHeaders(token), params: { limit, disease, from, to } });
+
+// URL de descarga del CSV (el token va como query para poder usarlo en un <a download>).
+export const adminExportCsvUrl = (token, { disease, from, to } = {}) => {
+    const params = new URLSearchParams();
+    if (disease) params.set('disease', disease);
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    // El backend valida el token por header; para <a> lo pasamos por fetch abajo.
+    return `${API_URL}/admin/export.csv?${params.toString()}`;
+};
+
+// Descarga el CSV vía fetch (para poder mandar el header de token) y dispara el save.
+export const downloadAdminCsv = async (token, opts = {}) => {
+    const res = await fetch(adminExportCsvUrl(token, opts), {
+        headers: { 'X-Admin-Token': token },
+    });
+    if (!res.ok) throw new Error(`export falló: ${res.status}`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'predisana_simulaciones.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+};
 
 export default api;

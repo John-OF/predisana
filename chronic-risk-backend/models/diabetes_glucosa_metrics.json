@@ -1,0 +1,178 @@
+{
+  "dataset": "diabetes_nhanes",
+  "variant": "glucosa",
+  "features": [
+    "age",
+    "bmi",
+    "hypertension",
+    "heart_disease",
+    "gender_Female",
+    "gender_Male",
+    "smoking_history_never",
+    "smoking_history_current",
+    "smoking_history_former",
+    "blood_glucose_level"
+  ],
+  "best_model": "lightgbm",
+  "cv_auc": 0.9079360157991264,
+  "leaderboard": [
+    {
+      "model": "lightgbm",
+      "cv_auc_mean": 0.9079360157991264,
+      "cv_auc_std": 0.015921646841778266
+    },
+    {
+      "model": "logreg",
+      "cv_auc_mean": 0.900402005935425,
+      "cv_auc_std": 0.01497890553312083
+    },
+    {
+      "model": "random_forest",
+      "cv_auc_mean": 0.8983348621298495,
+      "cv_auc_std": 0.015771584339819712
+    }
+  ],
+  "auc": 0.899523319615912,
+  "report": {
+    "0": {
+      "precision": 0.9559164733178654,
+      "recall": 0.8477366255144033,
+      "f1-score": 0.8985823336968375,
+      "support": 972.0
+    },
+    "1": {
+      "precision": 0.4307692307692308,
+      "recall": 0.7466666666666667,
+      "f1-score": 0.5463414634146342,
+      "support": 150.0
+    },
+    "accuracy": 0.8342245989304813,
+    "macro avg": {
+      "precision": 0.6933428520435481,
+      "recall": 0.797201646090535,
+      "f1-score": 0.7224618985557358,
+      "support": 1122.0
+    },
+    "weighted avg": {
+      "precision": 0.8857096227097592,
+      "recall": 0.8342245989304813,
+      "f1-score": 0.8514913082580403,
+      "support": 1122.0
+    }
+  },
+  "auc_test": 0.899523319615912,
+  "report_test": {
+    "0": {
+      "precision": 0.9559164733178654,
+      "recall": 0.8477366255144033,
+      "f1-score": 0.8985823336968375,
+      "support": 972.0
+    },
+    "1": {
+      "precision": 0.4307692307692308,
+      "recall": 0.7466666666666667,
+      "f1-score": 0.5463414634146342,
+      "support": 150.0
+    },
+    "accuracy": 0.8342245989304813,
+    "macro avg": {
+      "precision": 0.6933428520435481,
+      "recall": 0.797201646090535,
+      "f1-score": 0.7224618985557358,
+      "support": 1122.0
+    },
+    "weighted avg": {
+      "precision": 0.8857096227097592,
+      "recall": 0.8342245989304813,
+      "f1-score": 0.8514913082580403,
+      "support": 1122.0
+    }
+  },
+  "calibration": {
+    "method": "isotonic",
+    "n_bins": 10,
+    "strategy": "quantile",
+    "brier_raw": 0.11109249774275669,
+    "brier_calibrated": 0.07060306752083585,
+    "raw_curve": [
+      {
+        "mean_pred": 0.003850003532652261,
+        "frac_pos": 0.0
+      },
+      {
+        "mean_pred": 0.013714643054941878,
+        "frac_pos": 0.0
+      },
+      {
+        "mean_pred": 0.02667695972026576,
+        "frac_pos": 0.008928571428571428
+      },
+      {
+        "mean_pred": 0.0542753573878021,
+        "frac_pos": 0.044642857142857144
+      },
+      {
+        "mean_pred": 0.10769425657541697,
+        "frac_pos": 0.026785714285714284
+      },
+      {
+        "mean_pred": 0.19020280811937837,
+        "frac_pos": 0.026785714285714284
+      },
+      {
+        "mean_pred": 0.32317501317616343,
+        "frac_pos": 0.10714285714285714
+      },
+      {
+        "mean_pred": 0.4763081460852593,
+        "frac_pos": 0.16071428571428573
+      },
+      {
+        "mean_pred": 0.6610408516651186,
+        "frac_pos": 0.25
+      },
+      {
+        "mean_pred": 0.9351376585203101,
+        "frac_pos": 0.7079646017699115
+      }
+    ],
+    "calibrated_curve": [
+      {
+        "mean_pred": 0.004743326884636871,
+        "frac_pos": 0.0
+      },
+      {
+        "mean_pred": 0.008042895442359253,
+        "frac_pos": 0.04716981132075472
+      },
+      {
+        "mean_pred": 0.017543859649122827,
+        "frac_pos": 0.043478260869565216
+      },
+      {
+        "mean_pred": 0.03171247357293875,
+        "frac_pos": 0.022058823529411766
+      },
+      {
+        "mean_pred": 0.07991140625916586,
+        "frac_pos": 0.0547945205479452
+      },
+      {
+        "mean_pred": 0.10982658959537575,
+        "frac_pos": 0.16
+      },
+      {
+        "mean_pred": 0.14369129829587698,
+        "frac_pos": 0.16129032258064516
+      },
+      {
+        "mean_pred": 0.30823164043232626,
+        "frac_pos": 0.3815789473684211
+      },
+      {
+        "mean_pred": 0.7605736307617231,
+        "frac_pos": 0.7526881720430108
+      }
+    ]
+  }
+}

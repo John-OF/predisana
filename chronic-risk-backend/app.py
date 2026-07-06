@@ -1,6 +1,9 @@
 import json
 import os
 import sys
+import csv
+import io
+from datetime import datetime, timedelta
 from functools import wraps
 from typing import Dict, Any, List, Optional
 
@@ -66,6 +69,31 @@ FILES = {
 MODELS: Dict[str, Any] = {}
 FEATURES: Dict[str, List[str]] = {}
 MODEL_NAMES: Dict[str, str] = {}  # enfermedad -> modelo ganador (A5), desde _metrics.json
+CALIBRATORS: Dict[str, Any] = {}  # enfermedad -> isotonica que calibra predict_proba
+
+# Modelo HIBRIDO de diabetes (NHANES): además del modelo base servido por defecto
+# ("diabetes", solo features respondibles), hay una VARIANTE con glucosa que se
+# sirve cuando el usuario la ingresa. Se cargan como claves extra en los dicts de
+# arriba, pero NO son enfermedades servibles por sí solas (no van en FILES ni en la
+# UI). Mapa variante -> enfermedad base (para datos/UI/admin).
+EXTRA_MODEL_KEYS = ["diabetes_glucosa"]
+VARIANT_BASE = {"diabetes_glucosa": "diabetes"}
+# Feature extra que activa cada variante de diabetes (si el usuario la aporta).
+DIABETES_GLUCOSE_KEY = "diabetes_glucosa"
+
+
+def _model_paths(key: str) -> Dict[str, str]:
+    return {
+        "pipeline": os.path.join(BASE_MODELS, f"{key}_pipeline.pkl"),
+        "features": os.path.join(BASE_MODELS, f"{key}_features.json"),
+        "metrics":  os.path.join(BASE_MODELS, f"{key}_metrics.json"),
+    }
+
+
+def _data_disease(key: str) -> str:
+    """Enfermedad base a la que pertenece una clave de modelo (para carpetas de
+    datos). Una variante como 'diabetes_glucosa' usa los datos de 'diabetes'."""
+    return VARIANT_BASE.get(key, key)
 
 # ==========================================
 # 1. BASE DE DATOS (SQLAlchemy, agnóstica al motor — A3)
@@ -209,21 +237,20 @@ def _build_shap_explainer(disease: str):
     """
     pipe = MODELS[disease]
     feats = FEATURES[disease]
-
-    scaler = pipe.named_steps["scaler"]
     clf = pipe.named_steps["clf"]
 
-    Xb = _load_background_for_shap(disease, feats, n=200)
-    Xb_t = scaler.transform(Xb)
-
     if _is_linear_clf(clf):
+        # Lineal (LogReg): LinearExplainer necesita background en el espacio escalado.
+        scaler = pipe.named_steps["scaler"]
+        Xb = _load_background_for_shap(_data_disease(disease), feats, n=200)
         EXPLAINERS[disease] = shap.LinearExplainer(
-            clf, Xb_t, feature_perturbation="interventional"
+            clf, scaler.transform(Xb), feature_perturbation="interventional"
         )
     else:
         # Árboles (LGBM/RandomForest): TreeExplainer en modo tree_path_dependent
         # (sin background). Es exacto y autoconsistente; pasar background dispara
-        # falsos fallos del "additivity check" con LightGBM.
+        # falsos fallos del "additivity check" con LightGBM. Además evita depender
+        # de una carpeta data_curated propia para las variantes (p.ej. diabetes_glucosa).
         EXPLAINERS[disease] = shap.TreeExplainer(clf)
 
 
@@ -262,7 +289,9 @@ def _shap_vector_for_positive_class(disease: str, Xt: np.ndarray, n_features: in
 # CARGA DE MODELOS
 # ==========================================
 def _load_all():
-    for dis, paths in FILES.items():
+    # Enfermedades servidas (FILES) + variantes de modelo extra (p.ej. glucosa).
+    for dis in list(FILES.keys()) + EXTRA_MODEL_KEYS:
+        paths = FILES.get(dis) or _model_paths(dis)
         if os.path.exists(paths["pipeline"]):
             MODELS[dis] = load(paths["pipeline"])
         if os.path.exists(paths["features"]):
@@ -274,6 +303,13 @@ def _load_all():
                     MODEL_NAMES[dis] = json.load(f).get("best_model")
             except Exception:
                 pass
+        # Calibrador isotonico opcional (mapea predict_proba -> prob honesta).
+        cal_path = os.path.join(BASE_MODELS, f"{dis}_calibrator.pkl")
+        if os.path.exists(cal_path):
+            try:
+                CALIBRATORS[dis] = load(cal_path)
+            except Exception as e:
+                print(f"⚠️ Calibrador no cargado para {dis}: {e}")
     # >>> SHAP START
     for dis in MODELS:
         try:
@@ -459,12 +495,88 @@ def get_config(disease: str):
     ranges = { "age": [18, 100], "bmi": [15, 50], "glucose": [60, 260], "blood_pressure": [60, 130] }
     gender_opts = sorted([f.split("gender_")[1] for f in feats if f.startswith("gender_")])
     smoke_opts  = sorted([f.split("smoking_history_")[1] for f in feats if f.startswith("smoking_history_")])
+
+    # Features OPCIONALES: las que aporta una variante con más datos (p.ej. la
+    # glucosa del modelo híbrido de diabetes) y que el usuario puede rellenar o no.
+    optional = []
+    if disease == "diabetes" and DIABETES_GLUCOSE_KEY in FEATURES:
+        optional = [f for f in FEATURES[DIABETES_GLUCOSE_KEY] if f not in feats]
+
     return jsonify({
         "disease": disease,
         "features": feats,
+        "optional_features": optional,
         "ranges": ranges,
         "categoricals": { "gender": gender_opts, "smoking_history": smoke_opts }
     })
+
+def _normalize_glucose_alias(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """`glucose` y `blood_glucose_level` son la misma variable en datasets/modelos
+    distintos. Si llega solo una, se refleja en la otra (plumbing, NO regla clínica)."""
+    if payload:
+        if "glucose" in payload and "blood_glucose_level" not in payload:
+            payload["blood_glucose_level"] = payload["glucose"]
+        if "blood_glucose_level" in payload and "glucose" not in payload:
+            payload["glucose"] = payload["blood_glucose_level"]
+    return payload
+
+
+def _build_row(key: str, payload: Dict[str, Any]):
+    """Arma el vector de features en el orden del modelo (clave `key`, que puede ser
+    una enfermedad o una variante como 'diabetes_glucosa'), rellena ausentes con 0 y
+    captura los valores clínicos (glucosa/HbA1c/sistólica) para la capa ADA/ACC-AHA.
+    Devuelve (X 2D, lista de features ausentes reportables, dict clínico)."""
+    feats = FEATURES[key]
+    row, missing = [], []
+    clin = {"glucose": 0.0, "hba1c": 0.0, "bp": 0.0}
+    for f in feats:
+        val = _safe_get(payload, f)
+        if f in ("glucose", "blood_glucose_level"): clin["glucose"] = float(val or 0)
+        if f == "hba1c_level": clin["hba1c"] = float(val or 0)
+        # Sistólica: hipertensión usa 'blood_pressure'; cardiovascular usa 'ap_hi'.
+        if f in ("blood_pressure", "ap_hi"): clin["bp"] = float(val or 0)
+        if val is None:
+            # Las dummies (one-hot, con "_") no se reportan como ausentes.
+            if not (f.startswith(("gender_", "smoking_history_", "cholesterol_",
+                                  "glucose_", "bp_", "ethnicity_", "race_")) or "_" in f):
+                missing.append(f)
+            val = 0
+        row.append(val)
+    return np.array([row], dtype=float), missing, clin
+
+
+def _predict_proba(key: str, X: np.ndarray):
+    """Probabilidad de clase positiva para el modelo `key`. Devuelve (raw, calibrada).
+    La calibrada aplica la isotónica persistida (si existe); es un mapeo monótono, así
+    que preserva el orden (AUC) y la monotonía clínica. SHAP explica SIEMPRE el modelo
+    crudo (la calibración es una transformación posterior del score)."""
+    model = MODELS[key]
+    if hasattr(model, "predict_proba"):
+        raw = float(model.predict_proba(X)[0, 1])
+    else:
+        raw = float(model.predict(X)[0])
+    raw = min(max(raw, 0.0), 1.0)
+    cal_obj = CALIBRATORS.get(key)
+    if cal_obj is not None:
+        cal = float(cal_obj.predict([raw])[0])
+        cal = min(max(cal, 0.0), 1.0)
+    else:
+        cal = raw
+    return raw, cal
+
+
+def _resolve_model_key(disease: str, payload: Dict[str, Any]) -> str:
+    """Ruteo del modelo híbrido de diabetes: si el usuario aporta una glucosa válida
+    y existe la variante con glucosa, se sirve esa; si no, el modelo self-report."""
+    if disease == "diabetes" and DIABETES_GLUCOSE_KEY in MODELS:
+        val = _safe_get(payload, "blood_glucose_level")
+        try:
+            if val is not None and float(val) > 0:
+                return DIABETES_GLUCOSE_KEY
+        except (TypeError, ValueError):
+            pass
+    return disease
+
 
 @app.post("/predict/<disease>")
 def predict(disease: str):
@@ -476,66 +588,34 @@ def predict(disease: str):
         payload = request.get_json(force=True) or {}
     except Exception:
         return jsonify({"error": "invalid JSON"}), 400
-    
-    # ===============================
-    # Normalización de glucosa
-    # ===============================
-    # Para compatibilidad entre datasets:
-    # - glucose
-    # - blood_glucose_level
-    # Si solo llega uno, se copia al otro
 
-    if payload is not None:
-        if "glucose" in payload and "blood_glucose_level" not in payload:
-            payload["blood_glucose_level"] = payload["glucose"]
+    payload = _normalize_glucose_alias(payload)
+    # Ruteo híbrido: modelo con glucosa si el usuario la aportó, si no self-report.
+    model_key = _resolve_model_key(disease, payload)
+    feats = FEATURES[model_key]
+    X, missing, clin = _build_row(model_key, payload)
+    clinical_glucose, clinical_hba1c, clinical_bp = clin["glucose"], clin["hba1c"], clin["bp"]
+    # La glucosa puede venir en el payload aunque el modelo base no la use: para la
+    # capa clínica ADA se toma directamente del payload si el modelo no la capturó.
+    if not clinical_glucose:
+        _g = _safe_get(payload, "blood_glucose_level")
+        try:
+            clinical_glucose = float(_g) if _g is not None else 0.0
+        except (TypeError, ValueError):
+            clinical_glucose = 0.0
 
-        if "blood_glucose_level" in payload and "glucose" not in payload:
-            payload["glucose"] = payload["blood_glucose_level"]
-
-    feats = FEATURES[disease]
-    row = []
-    missing = []
-    
-    # Variables clave para las reglas
-    clinical_glucose = 0
-    clinical_hba1c = 0
-    clinical_bp = 0
-
-    for f in feats:
-        val = _safe_get(payload, f)
-
-        # Capturamos valores clínicos (para la capa de interpretación ADA/ACC-AHA,
-        # que se reporta APARTE y NO modifica la probabilidad del modelo).
-        if f in ["glucose", "blood_glucose_level"]: clinical_glucose = float(val or 0)
-        if f == "hba1c_level": clinical_hba1c = float(val or 0)
-        # Sistólica: hipertensión usa 'blood_pressure'; cardiovascular usa 'ap_hi'.
-        if f in ["blood_pressure", "ap_hi"]: clinical_bp = float(val or 0)
-
-        if val is None:
-            if f.startswith(("gender_", "smoking_history_", "cholesterol_", "glucose_", "bp_", "ethnicity_", "race_")) or "_" in f:
-                val = 0
-            else:
-                val = 0
-                missing.append(f)
-        row.append(val)
-    
-    X = np.array([row], dtype=float)
-    model = MODELS[disease]
+    model = MODELS[model_key]
     scaler = model.named_steps["scaler"]
-    
-    # 1. Predicción Base de la IA
-    if hasattr(model, "predict_proba"):
-        prob = float(model.predict_proba(X)[0, 1])
-    else:
-        pred = int(model.predict(X)[0])
-        prob = float(pred)
+
+    # 1. Predicción del modelo (cruda) + calibración isotónica.
+    raw_prob, prob = _predict_proba(model_key, X)
 
     # >>> SHAP START
     top_features = []
 
-    if EXPLAINERS.get(disease) is not None:
+    if EXPLAINERS.get(model_key) is not None:
         Xt = scaler.transform(X)
-        shap_vals = _shap_vector_for_positive_class(disease, Xt, len(feats))
+        shap_vals = _shap_vector_for_positive_class(model_key, Xt, len(feats))
         x_row = X.reshape(-1)
 
         # ============================
@@ -568,8 +648,8 @@ def predict(disease: str):
 
     # =========================================================================
     # CAPA DE INTERPRETACIÓN CLÍNICA (A4) — DESACOPLADA DEL MODELO
-    # La probabilidad reportada es la salida limpia del modelo de ML. Los
-    # umbrales diagnósticos ADA/ACC-AHA se calculan APARTE y se devuelven como
+    # `probability` es la salida del modelo CALIBRADA (isotónica). Los umbrales
+    # diagnósticos ADA/ACC-AHA se calculan APARTE y se devuelven como
     # `clinical_flags` para mostrarse junto al número del modelo, sin alterarlo.
     # =========================================================================
     prob = min(max(prob, 0.0), 1.0)
@@ -579,9 +659,10 @@ def predict(disease: str):
     clinical_note = " ".join(f["detail"] for f in clinical_flags) or \
         "Sin indicadores clínicos por encima de umbrales de referencia."
 
+    used_glucose = model_key == DIABETES_GLUCOSE_KEY
     log_prediction_to_db(
         disease, payload, pred_class, prob,
-        model_name=MODEL_NAMES.get(disease),
+        model_name=MODEL_NAMES.get(model_key),
         clinical_note=clinical_note,
         top_features=top_features,
         session_id=request.headers.get("X-Session-Id"),
@@ -589,14 +670,73 @@ def predict(disease: str):
 
     return jsonify({
         "disease": disease,
-        "model": MODEL_NAMES.get(disease),
+        "model": MODEL_NAMES.get(model_key),
+        "variant": "glucosa" if used_glucose else "base",
+        "used_glucose": used_glucose,
         "probability": prob,
+        "raw_model_probability": raw_prob,
+        "calibrated": model_key in CALIBRATORS,
         "prediction": pred_class,
         "missing_filled_as_zero": missing,
         "top_features": top_features,
         "clinical_flags": clinical_flags,
         "clinical_note": clinical_note,
-        "explain_note": "La probabilidad es la salida directa del modelo de ML y los valores SHAP la explican. Los indicadores clínicos (ADA/ACC-AHA) se muestran aparte como referencia y NO modifican la probabilidad."
+        "explain_note": "La probabilidad mostrada es la salida del modelo calibrada (isotónica); `raw_model_probability` es la salida cruda. Los valores SHAP explican el modelo crudo (la calibración es un reescalado monótono posterior). Los indicadores clínicos (ADA/ACC-AHA) se muestran aparte como referencia y NO modifican la probabilidad."
+    })
+
+
+@app.post("/whatif/<disease>")
+def whatif(disease: str):
+    """Análisis contrafactual: fija un caso base y barre UNA feature sobre un rango,
+    devolviendo la curva de riesgo (probabilidad calibrada) a lo largo de esa
+    variable. NO se registra en la BD (no ensucia la analítica del admin) y no
+    calcula SHAP. Alimenta el panel 'what-if' del simulador."""
+    disease = disease.lower()
+    if disease not in MODELS or disease not in FEATURES:
+        return jsonify({"error": "model or features not loaded"}), 404
+
+    try:
+        body = request.get_json(force=True) or {}
+    except Exception:
+        return jsonify({"error": "invalid JSON"}), 400
+
+    feature = body.get("feature")
+    if not feature:
+        return jsonify({"error": "missing 'feature'"}), 400
+    try:
+        vmin, vmax = float(body["min"]), float(body["max"])
+        steps = int(body.get("steps", 25))
+    except (KeyError, ValueError, TypeError):
+        return jsonify({"error": "invalid min/max/steps"}), 400
+    if vmax <= vmin:
+        return jsonify({"error": "'max' must be greater than 'min'"}), 400
+    steps = max(2, min(steps, 100))
+
+    base = dict(body.get("base") or {})
+    # Mismo ruteo híbrido que /predict: si se barre la glucosa (o el base la trae),
+    # se usa el modelo con glucosa; si no, el self-report.
+    route_payload = _normalize_glucose_alias(dict(base))
+    if feature == "blood_glucose_level":
+        route_payload["blood_glucose_level"] = vmax
+    model_key = _resolve_model_key(disease, route_payload)
+
+    curve = []
+    for i in range(steps):
+        v = vmin + (vmax - vmin) * i / (steps - 1)
+        payload = dict(base)
+        payload[feature] = v
+        payload = _normalize_glucose_alias(payload)
+        X, _, _ = _build_row(model_key, payload)
+        raw, cal = _predict_proba(model_key, X)
+        curve.append({"value": round(v, 2), "probability": cal, "raw_probability": raw})
+
+    return jsonify({
+        "disease": disease,
+        "feature": feature,
+        "model": MODEL_NAMES.get(model_key),
+        "variant": "glucosa" if model_key == DIABETES_GLUCOSE_KEY else "base",
+        "calibrated": model_key in CALIBRATORS,
+        "curve": curve,
     })
 
 @app.get("/synthetic/<disease>")
@@ -789,62 +929,118 @@ def admin_verify():
     return jsonify({"ok": True})
 
 
+def _parse_date_range():
+    """Lee ?from=YYYY-MM-DD&to=YYYY-MM-DD de la query. Devuelve (dt_from, dt_to_excl)
+    donde dt_to_excl es exclusivo (fin del día 'to'). Cualquiera puede ser None."""
+    def _parse(s):
+        try:
+            return datetime.strptime(s, "%Y-%m-%d")
+        except (ValueError, TypeError):
+            return None
+    dt_from = _parse(request.args.get("from"))
+    dt_to = _parse(request.args.get("to"))
+    dt_to_excl = (dt_to + timedelta(days=1)) if dt_to else None
+    return dt_from, dt_to_excl
+
+
+def _query_predictions_filtered(s):
+    """Query base del admin: solo enfermedades servidas + filtro de rango de fechas."""
+    q = s.query(Prediction).filter(Prediction.disease.in_(list(FILES.keys())))
+    dt_from, dt_to_excl = _parse_date_range()
+    if dt_from is not None:
+        q = q.filter(Prediction.timestamp >= dt_from)
+    if dt_to_excl is not None:
+        q = q.filter(Prediction.timestamp < dt_to_excl)
+    return q
+
+
 @app.get("/admin/stats")
 @require_admin
 def admin_stats():
     """Analítica de uso AGREGADA y anónima (sin datos personales). Solo cuenta las
-    enfermedades que hoy se sirven (FILES); ignora filas viejas de enfermedades
-    retiradas como `obesidad`."""
+    enfermedades servidas (FILES); ignora filas viejas de enfermedades retiradas.
+    Acepta ?from=&to= (YYYY-MM-DD) para acotar el rango. La agregación se hace en
+    Python (probabilidades, horas, top-features) para ser agnóstica al motor SQL."""
     supported = list(FILES.keys())
     with SessionLocal() as s:
-        total = (
-            s.query(func.count(Prediction.id))
-             .filter(Prediction.disease.in_(supported)).scalar() or 0
-        )
-        distinct_sessions = (
-            s.query(func.count(func.distinct(Prediction.session_id)))
-             .filter(Prediction.session_id.isnot(None),
-                     Prediction.disease.in_(supported)).scalar() or 0
-        )
+        rows = _query_predictions_filtered(s).all()
 
-        agg = (
-            s.query(
-                Prediction.disease,
-                func.count(Prediction.id),
-                func.avg(Prediction.probability),
-                func.sum(Prediction.prediction),
-            )
-            .filter(Prediction.disease.in_(supported))
-            .group_by(Prediction.disease)
-            .all()
-        )
-        by_disease = []
-        for disease, n, avg_prob, positives in agg:
-            n = int(n or 0)
-            positives = int(positives or 0)
-            by_disease.append({
-                "disease": disease,
-                "count": n,
-                "avg_probability": round(float(avg_prob or 0), 4),
-                "positives": positives,
-                "positive_rate": round(positives / n, 4) if n else 0.0,
-                "model": MODEL_NAMES.get(disease),
-            })
+    total = len(rows)
+    distinct_sessions = len({r.session_id for r in rows if r.session_id})
 
-        daily = (
-            s.query(func.date(Prediction.timestamp), func.count(Prediction.id))
-             .filter(Prediction.disease.in_(supported))
-             .group_by(func.date(Prediction.timestamp))
-             .order_by(func.date(Prediction.timestamp))
-             .all()
-        )
-        timeline = [{"day": str(day), "count": int(c)} for day, c in daily]
+    # --- Por enfermedad: conteo, prob media, positivos, tasa+ ---
+    # --- Histograma de probabilidad por enfermedad (10 bins 0..1) ---
+    # --- Frecuencia de features SHAP en el top ---
+    N_BINS = 10
+    by_d = {d: {"count": 0, "sum_prob": 0.0, "positives": 0,
+                "hist": [0] * N_BINS} for d in supported}
+    hourly = [0] * 24
+    feat_freq: Dict[str, Dict[str, float]] = {}
+
+    for r in rows:
+        d = r.disease
+        if d not in by_d:
+            continue
+        b = by_d[d]
+        b["count"] += 1
+        p = float(r.probability or 0.0)
+        b["sum_prob"] += p
+        b["positives"] += int(r.prediction or 0)
+        idx = min(int(p * N_BINS), N_BINS - 1)
+        b["hist"][idx] += 1
+        if r.timestamp:
+            hourly[r.timestamp.hour] += 1
+        tf = _safe_json_loads(r.top_features)
+        if isinstance(tf, list):
+            for item in tf:
+                if not isinstance(item, dict):
+                    continue
+                name = item.get("feature")
+                if not name or str(name).startswith("gender_"):
+                    continue
+                agg = feat_freq.setdefault(name, {"count": 0, "sum_abs_shap": 0.0})
+                agg["count"] += 1
+                agg["sum_abs_shap"] += abs(float(item.get("shap", 0.0)))
+
+    by_disease = []
+    prob_histogram = {}
+    for d in supported:
+        b = by_d[d]
+        n = b["count"]
+        by_disease.append({
+            "disease": d,
+            "count": n,
+            "avg_probability": round(b["sum_prob"] / n, 4) if n else 0.0,
+            "positives": b["positives"],
+            "positive_rate": round(b["positives"] / n, 4) if n else 0.0,
+            "model": MODEL_NAMES.get(d),
+        })
+        prob_histogram[d] = b["hist"]
+
+    top_features = sorted(
+        ({"feature": k, "count": v["count"],
+          "avg_abs_shap": round(v["sum_abs_shap"] / v["count"], 4) if v["count"] else 0.0}
+         for k, v in feat_freq.items()),
+        key=lambda x: x["count"], reverse=True,
+    )[:10]
+
+    # --- Timeline diario (en Python, agnóstico al motor) ---
+    daily: Dict[str, int] = {}
+    for r in rows:
+        if r.timestamp:
+            key = r.timestamp.strftime("%Y-%m-%d")
+            daily[key] = daily.get(key, 0) + 1
+    timeline = [{"day": k, "count": daily[k]} for k in sorted(daily)]
 
     return jsonify({
-        "total": int(total),
-        "distinct_sessions": int(distinct_sessions),
+        "total": total,
+        "distinct_sessions": distinct_sessions,
         "by_disease": by_disease,
         "timeline": timeline,
+        "prob_histogram": prob_histogram,
+        "prob_bins": N_BINS,
+        "hourly": hourly,
+        "top_features": top_features,
     })
 
 
@@ -859,10 +1055,9 @@ def admin_predictions():
     disease = request.args.get("disease")
 
     with SessionLocal() as s:
-        # Solo enfermedades servidas hoy (oculta filas viejas de `obesidad`, etc.).
-        q = (s.query(Prediction)
-              .filter(Prediction.disease.in_(list(FILES.keys())))
-              .order_by(Prediction.id.desc()))
+        # Solo enfermedades servidas hoy (oculta filas viejas de `obesidad`, etc.)
+        # + filtro opcional de rango de fechas (?from=&to=).
+        q = _query_predictions_filtered(s).order_by(Prediction.id.desc())
         if disease:
             q = q.filter(Prediction.disease == disease.lower())
         rows = q.limit(limit).all()
@@ -880,6 +1075,42 @@ def admin_predictions():
         } for r in rows]
 
     return jsonify({"count": len(items), "items": items})
+
+
+@app.get("/admin/export.csv")
+@require_admin
+def admin_export_csv():
+    """Exporta las simulaciones (anónimas) como CSV server-side. Respeta el filtro
+    de rango de fechas (?from=&to=) y el de enfermedad (?disease=)."""
+    disease = request.args.get("disease")
+    with SessionLocal() as s:
+        q = _query_predictions_filtered(s).order_by(Prediction.id.desc())
+        if disease:
+            q = q.filter(Prediction.disease == disease.lower())
+        rows = q.all()
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["id", "timestamp", "disease", "model", "prediction",
+                     "probability", "session_id", "clinical_note", "input_data"])
+    for r in rows:
+        writer.writerow([
+            r.id,
+            r.timestamp.isoformat() if r.timestamp else "",
+            r.disease,
+            r.model_name or "",
+            r.prediction,
+            r.probability,
+            r.session_id or "",
+            (r.clinical_note or "").replace("\n", " "),
+            r.input_data or "",
+        ])
+    csv_data = buf.getvalue()
+    return app.response_class(
+        csv_data,
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=predisana_simulaciones.csv"},
+    )
 
 
 # Inicialización global (se ejecuta siempre)

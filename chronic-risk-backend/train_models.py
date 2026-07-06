@@ -11,8 +11,12 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import classification_report, roc_auc_score
-from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score
+from sklearn.isotonic import IsotonicRegression
+from sklearn.calibration import calibration_curve
+from sklearn.metrics import classification_report, roc_auc_score, brier_score_loss
+from sklearn.model_selection import (
+    train_test_split, StratifiedKFold, cross_val_score, cross_val_predict,
+)
 from joblib import dump
 
 from lightgbm import LGBMClassifier
@@ -208,6 +212,42 @@ def train_one(name: str):
     auc_train = float(roc_auc_score(y_train, y_proba_train))
     report_train = classification_report(y_train, y_pred_train, output_dict=True, zero_division=0)
 
+    # ---- Calibracion de probabilidades (isotonica) ----
+    # El AUC solo mide el ORDEN de los scores, no que "0.30" signifique "30% de
+    # los casos asi son positivos". Sobre datos con features cuantizadas (p.ej. la
+    # glucosa de diabetes) el predict_proba crudo puede estar mal calibrado.
+    # Ajustamos una isotonica sobre predicciones OUT-OF-FOLD del train (sin
+    # leakage) y la persistimos aparte; app.py la aplica tras predict_proba. Es un
+    # mapeo MONOTONO -> preserva el AUC y la monotonia clinica del fix de glucosa.
+    calibration = None
+    try:
+        oof_proba = cross_val_predict(
+            best_pipe, X_train, y_train, cv=cv, method="predict_proba", n_jobs=-1
+        )[:, 1]
+        calibrator = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0)
+        calibrator.fit(oof_proba, y_train)
+
+        cal_test = calibrator.predict(y_proba_test)
+        n_bins = 10
+        frac_raw, mean_raw = calibration_curve(y_test, y_proba_test, n_bins=n_bins, strategy="quantile")
+        frac_cal, mean_cal = calibration_curve(y_test, cal_test,     n_bins=n_bins, strategy="quantile")
+        calibration = {
+            "method": "isotonic",
+            "n_bins": n_bins,
+            "strategy": "quantile",
+            "brier_raw": float(brier_score_loss(y_test, y_proba_test)),
+            "brier_calibrated": float(brier_score_loss(y_test, cal_test)),
+            "raw_curve": [{"mean_pred": float(mp), "frac_pos": float(fp)}
+                          for mp, fp in zip(mean_raw, frac_raw)],
+            "calibrated_curve": [{"mean_pred": float(mp), "frac_pos": float(fp)}
+                                 for mp, fp in zip(mean_cal, frac_cal)],
+        }
+        dump(calibrator, os.path.join(MODELS_DIR, f"{name}_calibrator.pkl"))
+        print(f"   Calibracion isotonica: Brier {calibration['brier_raw']:.4f} -> "
+              f"{calibration['brier_calibrated']:.4f}")
+    except Exception as e:
+        print(f"   ! Calibracion fallo para {name}: {type(e).__name__}: {e}")
+
     # ---- Persistir ganador + features + metricas ----
     dump(best_pipe, os.path.join(MODELS_DIR, f"{name}_pipeline.pkl"))
 
@@ -225,6 +265,8 @@ def train_one(name: str):
         "auc_train": auc_train,
         "report_test": report_test,
         "report_train": report_train,
+        # Calibracion (curva de fiabilidad raw vs calibrado + Brier) para /metricas
+        "calibration": calibration,
     }
     with open(os.path.join(MODELS_DIR, f"{name}_metrics.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2, ensure_ascii=False)
