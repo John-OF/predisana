@@ -82,6 +82,19 @@ python curate_and_synthesize.py `
 python train_models.py
 ```
 
+### Tests
+
+La suite de `pytest` cubre los invariantes delicados de la API: ruteo del modelo
+híbrido de diabetes (con/sin glucosa), alias `glucose`↔`blood_glucose_level`,
+monotonía riesgo↔glucosa, calibración isotónica, filtro de género en SHAP, capa
+clínica ADA/ACC-AHA, el laboratorio sintético y la auth del panel admin. Corre
+contra una base SQLite temporal (nunca toca `medical_history.db`).
+
+```powershell
+pip install -r requirements-dev.txt
+python -m pytest
+```
+
 ---
 
 ## Endpoints
