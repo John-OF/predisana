@@ -477,9 +477,12 @@ def health():
 @app.get("/metrics/<disease>")
 def get_metrics(disease: str):
     disease = disease.lower()
-    if disease not in FILES:
+    # Sirve enfermedades de FILES y también las variantes de modelo extra
+    # (p.ej. 'diabetes_glucosa', la variante híbrida con glucosa).
+    if disease not in FILES and disease not in EXTRA_MODEL_KEYS:
         return jsonify({"error": "unknown disease"}), 404
-    mpath = FILES[disease]["metrics"]
+    paths = FILES.get(disease) or _model_paths(disease)
+    mpath = paths["metrics"]
     if not os.path.exists(mpath):
         return jsonify({"error": "metrics not found"}), 404
     with open(mpath, "r", encoding="utf-8") as f:

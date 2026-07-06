@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Container, Nav, Table, Row, Col, Spinner, Alert } from 'react-bootstrap';
+import { Container, Nav, Table, Row, Col, Spinner, Alert, ButtonGroup, Button } from 'react-bootstrap';
 import {
   ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip,
   ReferenceLine, ResponsiveContainer, Legend,
@@ -21,16 +21,26 @@ const pct = (x, d = 1) => (x == null ? '—' : `${(x * 100).toFixed(d)}%`);
 
 const Metricas = () => {
   const [selectedDisease, setSelectedDisease] = useState('diabetes');
+  // Diabetes tiene un modelo HÍBRIDO: la variante con glucosa se pide como
+  // 'diabetes_glucosa'. Para el resto de enfermedades el toggle no aplica.
+  const [showGlucose, setShowGlucose] = useState(false);
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  const metricsKey = selectedDisease === 'diabetes' && showGlucose ? 'diabetes_glucosa' : selectedDisease;
+
+  const selectDisease = (d) => {
+    setShowGlucose(false);      // el toggle de glucosa solo vive en diabetes
+    setSelectedDisease(d);
+  };
 
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       setError(null);
       try {
-        const { data } = await getMetrics(selectedDisease);
+        const { data } = await getMetrics(metricsKey);
         setMetrics(data);
       } catch (err) {
         console.error(err);
@@ -40,7 +50,7 @@ const Metricas = () => {
       }
     };
     fetchData();
-  }, [selectedDisease]);
+  }, [metricsKey]);
 
   const leaderboard = metrics?.leaderboard || [];
   const bestModel = metrics?.best_model;
@@ -60,12 +70,30 @@ const Metricas = () => {
       <Nav variant="tabs" className="mb-4">
         {DISEASES.map(d => (
           <Nav.Item key={d}>
-            <Nav.Link active={selectedDisease === d} onClick={() => setSelectedDisease(d)} className="text-capitalize px-4">
+            <Nav.Link active={selectedDisease === d} onClick={() => selectDisease(d)} className="text-capitalize px-4">
               {getLabel(d)}
             </Nav.Link>
           </Nav.Item>
         ))}
       </Nav>
+
+      {selectedDisease === 'diabetes' && (
+        <div className="mb-4">
+          <p className="text-soft small mb-2">
+            La diabetes usa un modelo <strong>híbrido</strong>: uno con solo datos que cualquiera
+            puede responder, y una variante que añade la <strong>glucosa sérica</strong> (opcional)
+            cuando la persona la conoce. Compara ambos:
+          </p>
+          <ButtonGroup size="sm">
+            <Button variant={!showGlucose ? 'primary' : 'outline-primary'} onClick={() => setShowGlucose(false)}>
+              Sin glucosa · respondible
+            </Button>
+            <Button variant={showGlucose ? 'primary' : 'outline-primary'} onClick={() => setShowGlucose(true)}>
+              Con glucosa · híbrido
+            </Button>
+          </ButtonGroup>
+        </div>
+      )}
 
       {loading && <div className="text-center py-5"><Spinner animation="border" variant="primary" /></div>}
       {error && <Alert variant="danger">{error}</Alert>}
