@@ -62,7 +62,11 @@ def _detect_categorical_columns(df: pd.DataFrame) -> List[str]:
 # --------- SANITIZACIÓN ---------
 def _sanitize_for_sdv(train_df: pd.DataFrame) -> pd.DataFrame:
     df = train_df.copy()
-    df = df.replace([np.inf, -np.inf], np.nan).fillna(0)
+    # El GAN se entrena solo con CASOS COMPLETOS: se descartan filas con algun
+    # valor faltante (p.ej. glucosa/HbA1c opcionales en NHANES) en vez de
+    # imputarlas a 0, que le meteria al sintetico un pico artificial en cero. En
+    # datasets ya imputados (Kaggle/ENSANUT) no hay NaN, asi que es un no-op.
+    df = df.replace([np.inf, -np.inf], np.nan).dropna()
 
     for c in df.columns:
         if pd.api.types.is_numeric_dtype(df[c]):
@@ -73,8 +77,8 @@ def _sanitize_for_sdv(train_df: pd.DataFrame) -> pd.DataFrame:
         else:
             df[c] = df[c].astype(str)
 
-    # Cap solo superior
-    caps = {"blood_pressure": 300, "glucose": 500, "bmi": 80}
+    # Cap solo superior (valores fisiologicamente imposibles antes de ajustar)
+    caps = {"blood_pressure": 300, "glucose": 500, "blood_glucose_level": 500, "bmi": 80}
     for col, hi in caps.items():
         if col in df.columns:
             x = df[col].values

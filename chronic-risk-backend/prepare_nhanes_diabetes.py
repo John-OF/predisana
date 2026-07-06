@@ -3,13 +3,14 @@
 # Une los archivos por SEQN, deriva features RESPONDIBLES (edad, sexo, IMC,
 # hipertension y cardiopatia autorreportadas, tabaquismo) + target, y agrega la
 # glucemia de laboratorio (glucosa serica + HbA1c) como columnas OPCIONALES para
-# el modelo hibrido "con/sin glucosa". Salida de STAGING: NO pisa el dataset vivo.
+# el modelo hibrido "con/sin glucosa". Es la fuente canonica de diabetes: escribe
+# data_processed/diabetes_dataset.csv (NHANES reemplazo al Kaggle viejo).
 import os
 import numpy as np
 import pandas as pd
 
 DOCS = os.path.join("..", "docs")          # archivos .xpt de NHANES
-OUT = os.path.join("data_processed", "diabetes_nhanes_dataset.csv")
+OUT = os.path.join("data_processed", "diabetes_dataset.csv")
 
 
 def _read(name):

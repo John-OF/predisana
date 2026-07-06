@@ -4,7 +4,8 @@
 #   - variante "glucosa"       -> self-report + glucosa (opcional, semi-respondible)
 # Cada variante: seleccion de modelo por CV (reusa build_models con monotonia) +
 # calibracion isotonica out-of-fold. Reporta AUCs y la curva glucosa->riesgo.
-# Guarda en STAGING (sufijo _selfreport / _glucosa) para no pisar el modelo vivo.
+# Escribe los modelos vivos: 'diabetes' (self-report, por defecto) y
+# 'diabetes_glucosa' (variante con glucosa opcional).
 import os, json
 import numpy as np
 import pandas as pd
@@ -19,7 +20,7 @@ from joblib import dump
 
 from train_models import build_models, CV_FOLDS, SEED
 
-DATASET = os.path.join("data_processed", "diabetes_nhanes_dataset.csv")
+DATASET = os.path.join("data_processed", "diabetes_dataset.csv")
 MODELS_DIR = "models"
 CURATED = os.path.join("data_curated", "diabetes")
 
@@ -87,7 +88,7 @@ def train_variant(key, df, features):
             "best_model": best_name, "cv_auc": best_cv, "leaderboard": leaderboard,
             "auc": auc_te, "report": report_te, "auc_test": auc_te,
             "report_test": report_te, "calibration": calib}
-    with open(os.path.join(MODELS_DIR, f"{suffix}_metrics.json"), "w", encoding="utf-8") as f:
+    with open(os.path.join(MODELS_DIR, f"{key}_metrics.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2, ensure_ascii=False)
 
     return best_pipe, cal, features
