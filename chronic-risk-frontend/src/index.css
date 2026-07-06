@@ -341,6 +341,23 @@ hr{ border-color:var(--border); opacity:.6; }
 code{ color:var(--accent); background:var(--surface-2); padding:.1em .35em; border-radius:6px; }
 
 /* ============================================================
+   TOOLTIPS DE RECHARTS → tokens del tema
+   Por defecto recharts pinta el tooltip con fondo blanco fijo (estilo inline)
+   y el texto hereda el color del tema; en modo oscuro eso deja texto blanco
+   sobre fondo blanco (ilegible). El !important gana al inline sin !important.
+   ============================================================ */
+.recharts-default-tooltip{
+  background-color:var(--surface) !important;
+  border:1px solid var(--border) !important;
+  border-radius:11px !important;
+  box-shadow:var(--shadow);
+  color:var(--text) !important;
+}
+.recharts-tooltip-label{ color:var(--text) !important; font-weight:600; }
+.recharts-tooltip-item{ color:var(--text-soft) !important; }
+.recharts-tooltip-cursor{ fill:var(--surface-2); opacity:.35; }
+
+/* ============================================================
    FOOTER
    ============================================================ */
 .ps-footer{
