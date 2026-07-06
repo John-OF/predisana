@@ -42,6 +42,10 @@ Thumbs.db
 # ===== Claude =====
 .claude/
 
+# ===== Datos crudos: no versionar (fuentes publicas, ver data_raw/README.md) =====
+chronic-risk-backend/data_raw/*
+!chronic-risk-backend/data_raw/README.md
+
 # ===== Docs internos / trabajo (no publicar) =====
 BITACORA.md
 GETTING_STARTED.md

@@ -9,7 +9,7 @@ import os
 import numpy as np
 import pandas as pd
 
-DOCS = os.path.join("..", "docs")          # archivos .xpt de NHANES
+DOCS = os.path.join("data_raw", "nhanes")  # archivos .xpt de NHANES
 OUT = os.path.join("data_processed", "diabetes_dataset.csv")
 
 
