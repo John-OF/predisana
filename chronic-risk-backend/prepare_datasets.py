@@ -13,9 +13,14 @@
 #     real y coherente, no entre fuentes distintas.
 #
 # Fuentes elegidas (ver BITACORA.md → B1):
-#   - diabetes        -> data_raw/diabetes_prediction_dataset.csv   (100k, limpio)
 #   - cardiovascular  -> data_raw/cardio_train.csv                  (70k, sep=';')
 #   - hipertension    -> data_raw/Hipertension_Arterial_Mexico.csv  (4.4k, ENSANUT)
+#
+# DIABETES NO SE PROCESA AQUÍ: migró a NHANES 2021-2023 (datos reales de los CDC,
+# glucosa continua). Su dataset lo genera prepare_nhanes_diabetes.py y su modelo
+# híbrido lo entrena train_nhanes_diabetes.py. El flujo Kaggle viejo (glucosa
+# cuantizada, target escalonado) se retiró para que correr este script no pise
+# el dataset NHANES vivo.
 #
 # Descartados a propósito:
 #   - data_raw/hypertension_dataset.csv  -> RUIDO (target aleatorio, corr ~0.00)
@@ -67,51 +72,6 @@ def _report(name, df, target="target"):
     na = int(df.isna().sum().sum())
     print(f"   => {name}: filas={n}  positivos={pos} ({100*pos/n:.1f}%)  "
           f"cols={df.shape[1]}  NaN_restantes={na}")
-
-
-# =============================================================================
-# DIABETES  <- diabetes_prediction_dataset.csv (100k)
-# Columns: gender, age, hypertension, heart_disease, smoking_history, bmi,
-#          HbA1c_level, blood_glucose_level, diabetes
-# =============================================================================
-def build_diabetes():
-    print("\n=== DIABETES (diabetes_prediction_dataset.csv) ===")
-    src = _read_csv(os.path.join(RAW_DIR, "diabetes_prediction_dataset.csv"))
-    src.columns = [c.strip().lower() for c in src.columns]
-
-    out = pd.DataFrame()
-    out["age"] = _clip(src["age"], 0, 120)
-    out["bmi"] = _clip(src["bmi"], 10, 70)
-    out["hba1c_level"] = _clip(src["hba1c_level"], 3.0, 15.0)
-    out["blood_glucose_level"] = _clip(src["blood_glucose_level"], 50, 400)
-    # 'glucose' NO se almacena aquí (sería un duplicado colineal de blood_glucose_level).
-    # app.py /predict ya hace el espejo glucose<->blood_glucose_level en el input.
-
-    # Comorbilidades (predictoras, no leakage: el target es diabetes)
-    out["hypertension"] = pd.to_numeric(src["hypertension"], errors="coerce").fillna(0).astype(int)
-    out["heart_disease"] = pd.to_numeric(src["heart_disease"], errors="coerce").fillna(0).astype(int)
-
-    # Género (one-hot; 'Other' -> ambos 0)
-    g = src["gender"].astype(str).str.lower()
-    out["gender_Female"] = (g == "female").astype(int)
-    out["gender_Male"] = (g == "male").astype(int)
-
-    # Tabaquismo (one-hot; 'No Info' -> todas 0 = desconocido)
-    s = src["smoking_history"].astype(str).str.lower().str.strip()
-    out["smoking_history_never"] = (s == "never").astype(int)
-    out["smoking_history_current"] = (s == "current").astype(int)
-    out["smoking_history_former"] = (s == "former").astype(int)
-    out["smoking_history_ever"] = (s == "ever").astype(int)
-    out["smoking_history_not_current"] = (s == "not current").astype(int)
-
-    out["target"] = pd.to_numeric(src["diabetes"], errors="coerce").fillna(0).astype(int)
-
-    # Imputación por mediana (este dataset no tiene nulos, pero por si el clip generó alguno)
-    out = _impute_median(out, ["age", "bmi", "hba1c_level", "blood_glucose_level"])
-    out = out.dropna(subset=["target"]).reset_index(drop=True)
-
-    _report("diabetes", out)
-    return out
 
 
 # =============================================================================
@@ -239,8 +199,9 @@ def build_hipertension():
 # MAIN
 # =============================================================================
 def main():
+    # Diabetes NO está aquí a propósito: su dataset canónico es NHANES y lo
+    # genera prepare_nhanes_diabetes.py (correr este script no debe pisarlo).
     builders = {
-        "diabetes": build_diabetes,
         "cardiovascular": build_cardiovascular,
         "hipertension": build_hipertension,
     }
@@ -252,6 +213,7 @@ def main():
         print(f"   guardado -> {path}")
 
     print("\nListo. Cada enfermedad tiene su propio esquema, sin imputación cruzada.")
+    print("(Diabetes va aparte: python prepare_nhanes_diabetes.py)")
 
 
 if __name__ == "__main__":

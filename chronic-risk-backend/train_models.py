@@ -3,6 +3,11 @@
 # Por cada enfermedad se entrenan varios modelos, se elige el mejor por AUC en
 # cross-validation y se persiste el ganador. El score de CADA modelo se guarda en
 # _metrics.json como insumo para el leaderboard de /metricas.
+#
+# DIABETES NO SE ENTRENA AQUI: su modelo vivo es el HIBRIDO NHANES (variantes
+# con/sin glucosa + calibradores) que entrena train_nhanes_diabetes.py, el cual
+# reusa build_models/CV_FOLDS/SEED de este modulo. Correr este script no debe
+# pisar models/diabetes_*.
 import os, json
 import numpy as np
 import pandas as pd
@@ -26,7 +31,8 @@ CURATED_DIR = "data_curated"
 MODELS_DIR = "models"
 os.makedirs(MODELS_DIR, exist_ok=True)
 
-DATASETS = ["diabetes", "hipertension", "cardiovascular"]
+# Diabetes fuera a proposito: la entrena train_nhanes_diabetes.py (ver cabecera).
+DATASETS = ["hipertension", "cardiovascular"]
 
 # Features descartadas por baja "respondibilidad" (decision de alcance 2026-06-04).
 # El simulador es educativo y de autoevaluacion: prioriza inputs que una persona
@@ -35,14 +41,13 @@ DATASETS = ["diabetes", "hipertension", "cardiovascular"]
 # laboratorio (extraccion de sangre + orden medica). Las columnas siguen en los
 # CSV (utiles para el case-study/diccionario); solo se excluyen del MODELO.
 # Costo medido por ablation (CV AUC, mismo protocolo que abajo):
-#   - diabetes: fuera HbA1c (lab puro); se conserva glucosa, semi-accesible via
-#       glucometro/farmacia. 0.974 -> 0.926. (Quitar ambos labs caia a 0.819.)
 #   - hipertension: fuera los 7 labs (juntos pesaban ~9% de importancia).
 #       0.955 -> 0.946, practicamente gratis. Quedan inputs 100% respondibles.
 #   - cardiovascular: nada que quitar; colesterol/glucosa ya son ordinales
 #       ("te dijeron que lo tienes alto"), no valores de laboratorio.
+# (Diabetes definia aqui "hba1c_level"; su seleccion de features vive ahora en
+#  train_nhanes_diabetes.py: SELF_REPORT / GLUCOSA, con HbA1c excluida.)
 DROP_NON_RESPONDABLE = {
-    "diabetes": ["hba1c_level"],
     "hipertension": ["glucose", "hba1c_level", "cholesterol_total", "hdl",
                      "ldl", "triglycerides", "insulin"],
     "cardiovascular": [],
@@ -59,6 +64,9 @@ DROP_NON_RESPONDABLE = {
 # las de signo ambiguo o protector (habitos, sexo) se dejan libres (0). Aplica solo
 # al candidato LightGBM (RandomForest de sklearn no soporta monotone_constraints;
 # LogReg ya es monotona por construccion).
+# OJO: la entrada "diabetes" se QUEDA aunque diabetes no este en DATASETS —
+# train_nhanes_diabetes.py llama build_models("diabetes", features) y depende de
+# este vector para la monotonia de ambas variantes del hibrido.
 MONOTONIC_INCREASING = {
     "diabetes": ["blood_glucose_level", "hba1c_level", "age", "bmi",
                  "hypertension", "heart_disease"],

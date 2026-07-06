@@ -74,7 +74,7 @@ cada fuente y de dónde descargarla.
 ```powershell
 # 1. Datasets limpios por enfermedad (data_raw/ -> data_processed/)
 python prepare_datasets.py            # hipertensión y cardiovascular
-python prepare_nhanes_diabetes.py     # diabetes (NHANES 2021-2023; pisa el de prepare_datasets)
+python prepare_nhanes_diabetes.py     # diabetes (NHANES 2021-2023)
 
 # 2. Split estratificado + síntesis CTGAN/TVAE por enfermedad
 python curate_and_synthesize.py
@@ -88,13 +88,14 @@ python curate_and_synthesize.py `
     --only diabetes,hipertension
 
 # 3. Entrenamiento
-python train_models.py                # bake-off por CV para hipertensión y cardiovascular
+python train_models.py                # bake-off por CV: hipertensión y cardiovascular
 python train_nhanes_diabetes.py       # diabetes híbrida: variantes con/sin glucosa + calibradores
 ```
 
-> ⚠️ El modelo vivo de diabetes es el **híbrido NHANES** (`train_nhanes_diabetes.py`).
-> Si corres `prepare_datasets.py` / `train_models.py` completos, re-corre después los
-> scripts de NHANES para no dejar el dataset/modelo de diabetes en un estado viejo.
+Diabetes vive en sus propios scripts (NHANES): `prepare_datasets.py` y
+`train_models.py` **no la tocan** — correrlos completos no pisa el dataset ni el
+modelo híbrido. `curate_and_synthesize.py` sí la incluye (opera sobre el
+`diabetes_dataset.csv` ya generado, que es NHANES).
 
 ### Tests
 
