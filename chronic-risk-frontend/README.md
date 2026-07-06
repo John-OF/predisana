@@ -1,10 +1,18 @@
 # Predisana Frontend
 
-SPA en React 19 + Vite que sirve como interfaz educativa de **Predisana**: una plataforma para explorar la predicción de riesgo de enfermedades crónicas (diabetes, hipertensión, obesidad y riesgo cardiovascular) usando Machine Learning.
+SPA en React 19 + Vite que sirve como interfaz educativa de **Predisana**: una
+plataforma para explorar la estimación de riesgo de enfermedades crónicas
+(**diabetes, hipertensión y cardiovascular**) usando Machine Learning explicable.
 
-Consume el API [`chronic-risk-backend`](../chronic-risk-backend) y presenta los resultados con visualizaciones interactivas, explicabilidad SHAP y un historial de simulaciones local.
+Consume el API [`chronic-risk-backend`](../chronic-risk-backend) y presenta los
+resultados con visualizaciones interactivas (SHAP, calibración, what-if, laboratorio
+de datos sintéticos) sobre un sistema de diseño propio ("Pulso Sereno") con tema
+claro/oscuro.
 
 > ⚠️ Este sistema es puramente educativo y **NO** sustituye un diagnóstico médico.
+
+> 📸 **Captura de pantalla de:** el simulador en modo oscuro con una predicción
+> calculada (banda de riesgo + barras SHAP).
 
 ---
 
@@ -12,8 +20,8 @@ Consume el API [`chronic-risk-backend`](../chronic-risk-backend) y presenta los 
 
 - **React 19** + **react-router-dom 7** (SPA con rutas)
 - **Vite 7** (dev server y build)
-- **Bootstrap 5** + **react-bootstrap** (UI)
-- **recharts** (gráficos SHAP y métricas)
+- **Bootstrap 5** + **react-bootstrap** (UI) + **react-bootstrap-icons** (iconos SVG)
+- **recharts** (gráficos: SHAP, calibración, what-if, distribuciones, admin)
 - **sweetalert2** (modales / alertas)
 - **axios** (cliente HTTP)
 - **ESLint 9** (lint)
@@ -48,7 +56,8 @@ npm run lint      # ESLint sobre todo el proyecto
 
 ## Configuración
 
-La URL del backend se controla con la variable de entorno **`VITE_API_URL`**. Si no se define, hace fallback a `http://localhost:8000`.
+La URL del backend se controla con la variable de entorno **`VITE_API_URL`**. Si no
+se define, hace fallback a `http://localhost:8000`.
 
 Crea un archivo `.env` (o `.env.local`) en la raíz:
 
@@ -56,9 +65,11 @@ Crea un archivo `.env` (o `.env.local`) en la raíz:
 VITE_API_URL=http://localhost:8000
 ```
 
-Para producción (ej. Vercel), define `VITE_API_URL` en las variables de entorno del entorno de despliegue apuntando al backend público.
+Para producción (ej. Vercel), define `VITE_API_URL` en las variables de entorno del
+entorno de despliegue apuntando al backend público.
 
-El archivo `vercel.json` ya está configurado para servir la SPA con rewrites a `index.html` (necesario para que react-router funcione en rutas profundas).
+El archivo `vercel.json` ya está configurado para servir la SPA con rewrites a
+`index.html` (necesario para que react-router funcione en rutas profundas).
 
 ---
 
@@ -66,31 +77,44 @@ El archivo `vercel.json` ya está configurado para servir la SPA con rewrites a 
 
 | Ruta             | Componente       | Descripción |
 |------------------|------------------|-------------|
-| `/`              | `Home`           | Hero, introducción al proyecto y accesos rápidos. |
-| `/educacion`     | `Educacion`      | Contenido educativo sobre las 4 enfermedades crónicas. |
-| `/simulacion`    | `Simulacion`     | Formulario clínico → predicción + SHAP. Es la página principal. |
-| `/metricas`      | `Metricas`       | Métricas de los modelos (AUC, classification report train/test). |
-| `/historial`     | `Historial`      | Historial de simulaciones del usuario (localStorage), con export JSON/CSV. |
+| `/`              | `Home`           | Hero, propuesta de valor y metodología en 3 pasos. |
+| `/educacion`     | `Educacion`      | Enciclopedia breve de las 3 enfermedades crónicas. |
+| `/simulacion`    | `Simulacion`     | La página principal: formulario clínico → riesgo + SHAP + capa clínica + what-if. |
+| `/metricas`      | `Metricas`       | Leaderboard de algoritmos, curva de calibración y reporte por clase. En diabetes, toggle con/sin glucosa. |
+| `/proyecto`      | `Proyecto`       | Case study: historia de los datos, panorámica de modelos y laboratorio sintético (4 demos). |
 | `/aviso`         | `Aviso`          | Aviso legal / disclaimer médico. |
+| `/admin`         | `Admin`          | Dashboard de uso **dev-only**: sin link en la navbar, se accede por URL directa + token (`ADMIN_TOKEN` del backend). |
 
 ---
 
-## Capa de servicios
+## Capa de servicios (`src/services/api.js`)
 
-### `src/services/api.js`
 Cliente axios con base URL = `VITE_API_URL`. Expone:
 
+**Núcleo del simulador**
 - `checkHealth()` → `GET /health`
-- `getConfig(disease)` → `GET /config/<disease>`
-- `getMetrics(disease)` → `GET /metrics/<disease>`
-- `predictRisk(disease, payload)` → `POST /predict/<disease>`
-- `getSyntheticCase(disease)` → `GET /synthetic/<disease>` (autocompleta el formulario con un caso clínico aleatorio)
+- `getConfig(disease)` → `GET /config/<disease>` (features + opcionales + rangos)
+- `getMetrics(disease)` → `GET /metrics/<disease>` (acepta también la variante `diabetes_glucosa`)
+- `predictRisk(disease, payload)` → `POST /predict/<disease>` — envía el header
+  `X-Session-Id` con un **UUID anónimo** persistido en `localStorage`
+  (`getSessionId()`), que agrupa simulaciones sin identificar a nadie.
+- `getWhatIf(disease, {base, feature, min, max, steps})` → `POST /whatif/<disease>`
+  (curva contrafactual; el backend NO la registra en BD)
 
-### `src/services/historyService.js`
-**El historial vive solo en `localStorage`** bajo la clave `chronic_sim_history_v1`. Es independiente de la tabla SQLite que mantiene el backend (esa no se expone por API). Funciones:
+**Laboratorio sintético (página Proyecto)**
+- `getSyntheticCase(disease)` → `GET /synthetic/<disease>`
+- `getSampleCase(disease, source)` → `GET /sample/<disease>?source=real|synthetic`
+- `getDistribution(disease, feature, bins)` → `GET /distribution/<disease>`
+- `getSyntheticQuality(disease)` → `GET /synthetic_quality/<disease>`
 
-- `getHistory()`, `saveHistoryEntry(entry)`, `deleteHistoryEntry(id)`, `clearHistory()`
-- `exportHistoryJSON()`, `exportHistoryCSV()` — descargas con timestamp.
+**Panel admin** (todas mandan el header `X-Admin-Token`)
+- `verifyAdmin(token)`, `getAdminStats(token, {from, to})`,
+  `getAdminPredictions(token, {limit, disease, from, to})`,
+  `downloadAdminCsv(token, opts)` (export CSV server-side)
+
+> El historial de simulaciones es **server-side y anónimo**: vive en la tabla
+> `predictions` del backend y se consulta desde el panel admin. No hay historial
+> en `localStorage` (solo el UUID de sesión y el token admin en `sessionStorage`).
 
 ---
 
@@ -102,31 +126,44 @@ chronic-risk-frontend/
 ├── vite.config.js
 ├── vercel.json                  # rewrites SPA para Vercel
 ├── eslint.config.js
-├── public/                      # assets estáticos (íconos, imágenes)
+├── public/                      # assets estáticos
 └── src/
     ├── main.jsx                 # entrypoint React
     ├── App.jsx                  # router + layout (navbar + footer)
-    ├── index.css                # estilos globales
-    ├── App.css
+    ├── index.css                # sistema de diseño "Pulso Sereno" (tokens, tema claro/oscuro)
     ├── components/
-    │   └── MyNavbar.jsx         # navegación principal
-    ├── pages/                   # una página por ruta
+    │   ├── Logo.jsx
+    │   └── MyNavbar.jsx         # navegación + toggle de tema
+    ├── context/
+    │   └── ThemeContext.jsx     # tema claro/oscuro persistido
+    ├── pages/                   # una página por ruta (7)
     ├── services/
-    │   ├── api.js               # cliente axios
-    │   └── historyService.js    # historial en localStorage
-    ├── utils/
-    │   └── translations.js      # etiquetas en español (LABELS_ES, getLabel)
-    └── assets/
+    │   └── api.js               # cliente axios + sesión anónima + llamadas admin
+    └── utils/
+        └── translations.js      # etiquetas en español (LABELS_ES, getLabel)
 ```
 
 ---
 
 ## Notas
 
-- **App en español.** Toda la UI, etiquetas e identificadores siguen español (`hipertension`, `obesidad`). Mantener consistencia al editar.
-- **Las 4 enfermedades** (`diabetes`, `hipertension`, `obesidad`, `cardiovascular`) son un set cerrado declarado en `DISEASES` dentro de `Simulacion.jsx`. Si se añade una nueva al backend, hay que añadirla aquí también.
-- **`Simulacion.jsx`** es la página más compleja: consume `/config`, `/predict` y `/synthetic`, aplica los rangos `CLINICAL_LIMITS` a los inputs del formulario y renderiza el top-5 de SHAP como barras de recharts.
-- La respuesta de `/predict` distingue `raw_model_probability` (probabilidad cruda del modelo, explicada por SHAP) de `probability` (probabilidad final tras reglas clínicas). El simulador muestra ambas para que el estudiante entienda la diferencia.
+- **App en español.** Toda la UI, etiquetas e identificadores siguen español
+  (`hipertension`, `cardiovascular`). Mantener consistencia al editar.
+- **Las 3 enfermedades** (`diabetes`, `hipertension`, `cardiovascular`) son un set
+  cerrado declarado en `DISEASES` dentro de `Simulacion.jsx` (y `Metricas.jsx` /
+  `Proyecto.jsx`). Si se añade una nueva al backend, hay que añadirla aquí también.
+- **`Simulacion.jsx`** es la página más compleja: consume `/config`, `/predict`,
+  `/synthetic` y `/whatif`, aplica los rangos `CLINICAL_LIMITS` a los inputs,
+  renderiza el top-5 SHAP como barras de recharts y pinta la capa clínica
+  (`clinical_flags`) aparte. En diabetes, la **glucosa es un campo opcional**: si
+  el usuario la aporta, el backend sirve la variante híbrida más precisa y la UI
+  lo indica con un badge.
+- La respuesta de `/predict` distingue `probability` (calibrada con isotónica)
+  de `raw_model_probability` (salida cruda del modelo, que es la que explica
+  SHAP). La calibración es un reescalado monótono: no cambia el ranking.
+- Los colores de los gráficos recharts van en **hex**, no `var()` CSS (recharts
+  pinta atributos SVG donde las variables CSS no resuelven). Los tooltips sí se
+  tematizan globalmente vía `.recharts-default-tooltip` en `index.css`.
 
 ---
 
