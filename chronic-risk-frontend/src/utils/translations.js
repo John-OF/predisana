@@ -13,6 +13,7 @@ export const LABELS_ES = {
     hba1c_level: "Hemoglobina Glicosilada (HbA1c)",
     heart_disease: "Enfermedad Cardíaca Previa",
     hypertension: "Hipertensión Previa",
+    high_cholesterol: "Colesterol Alto Diagnosticado",
     pregnancies: "Embarazos",
     skin_thickness: "Grosor Pliegue Cutáneo (mm)",
     diabetes_pedigree: "Función Pedigree Diabetes",

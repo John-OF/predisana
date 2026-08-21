@@ -1,1 +1,1 @@
-["age", "bmi", "weight", "waist_circumference", "blood_pressure", "gender_Male", "gender_Female"]
+["age", "bmi", "weight", "waist_circumference", "diabetes", "heart_disease", "high_cholesterol", "gender_Male", "gender_Female", "smoking_history_never", "smoking_history_current", "smoking_history_former"]

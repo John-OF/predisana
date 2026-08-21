@@ -1,4 +1,4 @@
-# Regresiones de la auditoria 2026-08-20 (AUD-2, 3, 5, 6, 7, 8, 9 y 18).
+# Regresiones de la auditoria 2026-08-20 (AUD-1, 2, 3, 5, 6, 7, 8, 9 y 18).
 # Cada test fija el comportamiento CORREGIDO para que no vuelva a colarse.
 import json
 import math
@@ -157,3 +157,50 @@ def test_cuerpo_gigante_da_413(client, ruta, cuerpo):
 
 def test_cuerpo_normal_no_se_ve_afectado(client, perfil_diabetes):
     assert client.post("/predict/diabetes", json=perfil_diabetes).status_code == 200
+
+
+# ---------- AUD-1: hipertension migrada a NHANES ----------
+
+PERFIL_HTA = {
+    "age": 50, "bmi": 28, "weight": 80, "waist_circumference": 95,
+    "diabetes": 0, "heart_disease": 0, "high_cholesterol": 0,
+    "gender_Male": 1, "gender_Female": 0,
+    "smoking_history_never": 1, "smoking_history_current": 0, "smoking_history_former": 0,
+}
+
+
+def _riesgo_hta(client, **cambios):
+    r = client.post("/predict/hipertension", json={**PERFIL_HTA, **cambios})
+    assert r.status_code == 200, r.get_json()
+    return r.get_json()["probability"]
+
+
+def test_hipertension_el_riesgo_crece_con_la_edad(client):
+    """El modelo viejo (target-formula de ENSANUT) daba 100% a los 20 años y 38% a
+    los 80. Con NHANES la relacion es la clinica: a mas edad, mas riesgo."""
+    riesgos = [_riesgo_hta(client, age=a) for a in (25, 40, 55, 70, 80)]
+    assert riesgos == sorted(riesgos), riesgos
+    assert riesgos[-1] > riesgos[0] * 2
+
+def test_hipertension_el_riesgo_crece_con_el_imc(client):
+    riesgos = [_riesgo_hta(client, bmi=b) for b in (20, 27, 33, 40)]
+    assert riesgos == sorted(riesgos), riesgos
+
+def test_hipertension_no_satura_en_el_extremo_sano(client):
+    """Un adulto joven y delgado no puede salir con un riesgo alto (el modelo viejo
+    devolvia 100% con 25 años y presion 110)."""
+    assert _riesgo_hta(client, age=25, bmi=22, weight=62, waist_circumference=75) < 0.15
+
+def test_hipertension_las_comorbilidades_suman(client):
+    base = _riesgo_hta(client)
+    assert _riesgo_hta(client, diabetes=1) > base
+    assert _riesgo_hta(client, high_cholesterol=1) > base
+
+def test_presion_no_entra_al_modelo_pero_si_a_la_capa_clinica(client):
+    sin = client.post("/predict/hipertension", json=PERFIL_HTA).get_json()
+    con = client.post("/predict/hipertension",
+                      json={**PERFIL_HTA, "blood_pressure": 165}).get_json()
+    assert con["probability"] == sin["probability"]      # la presion no mueve el modelo
+    assert not sin["clinical_flags"]
+    assert any(f["indicator"] == "blood_pressure" for f in con["clinical_flags"])
+    assert con["clinical_flags"][0]["source"] == "ACC/AHA"

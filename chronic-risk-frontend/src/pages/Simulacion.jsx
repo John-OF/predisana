@@ -33,11 +33,10 @@ const WHATIF_FEATURES = {
     { feat: 'bmi', min: 16, max: 45, step: 1 },
   ],
   hipertension: [
-    { feat: 'blood_pressure', min: 90, max: 200, step: 5 },
-    { feat: 'bmi', min: 16, max: 45, step: 1 },
-    { feat: 'weight', min: 45, max: 140, step: 5 },
-    { feat: 'waist_circumference', min: 60, max: 140, step: 5 },
     { feat: 'age', min: 18, max: 90, step: 2 },
+    { feat: 'bmi', min: 16, max: 45, step: 1 },
+    { feat: 'waist_circumference', min: 60, max: 140, step: 5 },
+    { feat: 'weight', min: 45, max: 140, step: 5 },
   ],
   cardiovascular: [
     { feat: 'ap_hi', min: 90, max: 200, step: 5 },
@@ -59,6 +58,8 @@ const CLINICAL_LIMITS = {
   hba1c_level: { min: 3, max: 15, label: "4 - 9 %", step: 0.1 },
   heart_disease: { min: 0, max: 1, label: "0 (No) - 1 (Sí)", step: 1 },
   hypertension: { min: 0, max: 1, label: "0 (No) - 1 (Sí)", step: 1 },
+  diabetes: { min: 0, max: 1, label: "0 (No) - 1 (Sí)", step: 1 },
+  high_cholesterol: { min: 0, max: 1, label: "0 (No) - 1 (Sí)", step: 1 },
   blood_glucose_level: { min: 40, max: 500, label: "70 - 200 mg/dL", step: 1 },
   weight: { min: 30, max: 250, label: "40 - 150 kg", step: 0.1 },
   waist_circumference: { min: 40, max: 200, label: "60 - 120 cm", step: 0.1 },
@@ -70,6 +71,31 @@ const CLINICAL_LIMITS = {
   alco: { min: 0, max: 1, label: "0 (No) - 1 (Sí)", step: 1 },
   active: { min: 0, max: 1, label: "0 (No) - 1 (Sí)", step: 1 },
   default: { min: 0, max: 1000, label: "Valor positivo", step: 1 }
+};
+
+// Copy del bloque de datos opcionales. Diabetes ofrece la glucosa (mejora el
+// MODELO: activa la variante hibrida); hipertension ofrece la presion, que NO
+// entra al modelo y solo se interpreta con la referencia ACC/AHA (AUD-1).
+const OPTIONAL_COPY = {
+  diabetes: {
+    form: 'Sin glucosa, estimamos tu riesgo a partir de factores generales (edad, IMC, antecedentes), a modo de cribado. Si te la has medido, la estimación se vuelve mucho más precisa.',
+    result: 'Riesgo estimado a partir de factores generales, sin medir tu glucosa. Añádela arriba para una lectura mucho más precisa.',
+  },
+  hipertension: {
+    form: 'El riesgo se estima con factores respondibles (edad, IMC, cintura, antecedentes), a modo de cribado. Si conoces tu presión, no cambia la estimación: se interpreta aparte con la referencia ACC/AHA.',
+    result: 'Estimación de cribado a partir de factores generales. Si conoces tu presión, añádela arriba y la interpretamos con la referencia clínica.',
+  },
+  default: {
+    form: 'Datos opcionales: si los conoces, afinan la lectura de tu resultado.',
+    result: 'Estimación a partir de los datos que completaste.',
+  },
+};
+
+// La clave `diabetes` ya existe en LABELS_ES como NOMBRE de enfermedad (la
+// pestaña "Diabetes Tipo 2"). Como feature de hipertension significa otra cosa
+// —"¿te lo han diagnosticado?"— asi que el formulario la reetiqueta aqui.
+const FIELD_LABEL_OVERRIDES = {
+  diabetes: 'Diabetes Previa',
 };
 
 const VARIABLE_DESCRIPTIONS = {
@@ -87,6 +113,8 @@ const VARIABLE_DESCRIPTIONS = {
   smoking_history: "Fumar daña las arterias y el corazón. Es el factor de riesgo modificable más crítico.",
   heart_disease: "Indica si ya has tenido diagnósticos cardíacos previos.",
   hypertension: "Indica si ya has sido diagnosticado previamente con presión alta.",
+  diabetes: "Indica si un médico te ha dicho alguna vez que tienes diabetes.",
+  high_cholesterol: "Indica si un médico te ha dicho alguna vez que tienes el colesterol alto.",
   weight: "Tu peso corporal en kilogramos.",
   waist_circumference: "Contorno de cintura en cm. Refleja la grasa abdominal, clave en el riesgo metabólico.",
   ap_hi: "Presión sistólica (la 'alta'): el primer número al medir la presión.",
@@ -126,6 +154,8 @@ const SHAP_LABELS_ES = {
   pregnancies: "Embarazos",
   heart_disease: "Enfermedad Cardíaca Previa",
   hypertension: "Hipertensión Previa",
+  diabetes: "Diabetes Previa",
+  high_cholesterol: "Colesterol Alto",
   weight: "Peso (kg)",
   waist_circumference: "Cintura (cm)",
   ap_hi: "Presión Sistólica",
@@ -365,7 +395,7 @@ const Simulacion = () => {
       <Form.Group className="ps-field" key={feat}>
         <Form.Label className="d-flex align-items-center justify-content-between">
           <span>
-            {getLabel(feat)}<InfoIcon variableKey={feat} />
+            {FIELD_LABEL_OVERRIDES[feat] || getLabel(feat)}<InfoIcon variableKey={feat} />
             {optional && <span className="ps-tag ms-2" style={{ background: 'var(--surface-2)', fontSize: '.68rem' }}>opcional</span>}
           </span>
         </Form.Label>
@@ -554,6 +584,10 @@ const Simulacion = () => {
     );
   };
 
+  const optionalCopy = OPTIONAL_COPY[selectedDisease] || OPTIONAL_COPY.default;
+  const optionalNote = optionalCopy.form;
+  const resultNote = optionalCopy.result;
+
   // Aviso de campos que el backend no recibió y asumió como 0. Antes la respuesta
   // traía `missing_filled_as_zero` y la UI lo ignoraba: el usuario veía un riesgo
   // calculado con un IMC de 0 sin enterarse.
@@ -672,11 +706,7 @@ const Simulacion = () => {
                     <div className="text-faint mb-2" style={{ fontSize: '.78rem', textTransform: 'uppercase', letterSpacing: '.05em', fontWeight: 600 }}>
                       Datos opcionales — afinan la estimación
                     </div>
-                    <p className="small text-soft mb-2">
-                      Sin glucosa, estimamos tu <strong>riesgo</strong> a partir de factores generales
-                      (edad, IMC, antecedentes), a modo de cribado. Si te la has medido, la estimación
-                      se vuelve mucho más precisa.
-                    </p>
+                    <p className="small text-soft mb-2">{optionalNote}</p>
                     <Row>
                       {config.optional_features.map(feat => {
                         const input = renderNumberInput(feat, true);
@@ -723,10 +753,7 @@ const Simulacion = () => {
                       <Search className="me-1" size={13} />Estimación mejorada con tu glucosa
                     </div>
                   ) : (config.optional_features?.length > 0 && (
-                    <p className="small text-faint mt-2 mb-0">
-                      Riesgo estimado a partir de factores generales, sin medir tu glucosa. Añádela
-                      arriba para una lectura mucho más precisa.
-                    </p>
+                    <p className="small text-faint mt-2 mb-0">{resultNote}</p>
                   ))}
                   {renderMissing()}
                   {renderShap()}

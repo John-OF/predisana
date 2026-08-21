@@ -20,7 +20,7 @@ CURATED_DIR = "data_curated"
 # Variables continuas por enfermedad para el heatmap de correlaciones.
 CORR_FEATURES = {
     "diabetes": ["age", "bmi", "blood_glucose_level", "hba1c_level"],
-    "hipertension": ["age", "bmi", "weight", "waist_circumference", "blood_pressure", "glucose"],
+    "hipertension": ["age", "bmi", "weight", "waist_circumference"],
     "cardiovascular": ["age", "bmi", "ap_hi", "ap_lo"],
 }
 

@@ -54,9 +54,14 @@ las probabilidades (calibración isotónica con curva de fiabilidad).
 
 ## Decisiones técnicas destacables
 
-- **Datos reales por enfermedad** (sin frame maestro imputado): diabetes se
-  entrena con **NHANES 2021-2023** (encuesta real de los CDC, glucosa continua);
-  hipertensión con ENSANUT México; cardiovascular con el dataset público de Kaggle.
+- **Datos reales por enfermedad** (sin frame maestro imputado): diabetes e
+  hipertensión se entrenan con **NHANES 2021-2023** (encuesta real de los CDC);
+  cardiovascular con el dataset público de Kaggle.
+- **Auditoría de la señal, no solo del AUC**: el dataset previo de hipertensión se
+  descartó al comprobar que su target era una fórmula del autor del CSV y no un
+  desenlace clínico — el modelo la reaprendía y devolvía relaciones invertidas
+  (100% de riesgo a los 25 años). Migrado a NHANES, el AUC baja de 0.95 a **0.80**
+  y las relaciones son las clínicas: el riesgo crece con la edad y el IMC.
 - **Modelo híbrido de diabetes**: variante self-report (LogReg, AUC 0.81, en el
   rango de los scores de cribado tipo FINDRISC) y variante con glucosa (LightGBM
   con restricción de monotonía, AUC 0.90). El backend rutea según lo que el
@@ -95,7 +100,7 @@ Monorepo con dos componentes:
 │  (dev-only)      │ ◀───── analítica ───── │  SQLite dev / Postgres    │
 └──────────────────┘        agregada        └───────────────────────────┘
 
-  pipeline offline:  fuentes públicas (NHANES/ENSANUT/Kaggle) → dataset limpio
+  pipeline offline:  fuentes públicas (NHANES/Kaggle) → dataset limpio
   por enfermedad → split + sintético CTGAN → bake-off por CV → modelos + calibradores
 ```
 

@@ -45,11 +45,15 @@ def test_config_diabetes_glucosa_es_opcional(client):
     assert "blood_glucose_level" in c["optional_features"]
     assert c["categoricals"]["gender"], "sin opciones de genero"
 
-@pytest.mark.parametrize("disease", ["hipertension", "cardiovascular"])
-def test_config_sin_opcionales_en_otras(client, disease):
-    r = client.get(f"/config/{disease}")
-    assert r.status_code == 200
-    assert r.get_json()["optional_features"] == []
+def test_config_hipertension_ofrece_la_presion_como_opcional(client):
+    """AUD-1: la presion NO es feature del modelo (seria un umbral disfrazado),
+    pero se ofrece como dato opcional para la capa clinica ACC/AHA."""
+    c = client.get("/config/hipertension").get_json()
+    assert "blood_pressure" not in c["features"]
+    assert c["optional_features"] == ["blood_pressure"]
+
+def test_config_cardiovascular_sin_opcionales(client):
+    assert client.get("/config/cardiovascular").get_json()["optional_features"] == []
 
 
 # ---------- laboratorio sintetico ----------

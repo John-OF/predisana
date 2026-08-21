@@ -135,6 +135,14 @@ def process_one_dataset(name, test_size, seed, model, synth_multiplier, balance,
         return
     df = pd.read_csv(src, low_memory=False)
 
+    # AUD-12: sin esto, las filas repetidas caian a ambos lados del split (219 en
+    # cardiovascular, 22 en hipertension) y el test quedaba optimista: el modelo
+    # ya habia visto esa fila exacta en entrenamiento.
+    antes = len(df)
+    df = df.drop_duplicates().reset_index(drop=True)
+    if len(df) < antes:
+        print(f"{name}: {antes - len(df)} filas duplicadas descartadas antes del split")
+
     out_dir = os.path.join(CURATED_DIR, name)
     ensure_dir(out_dir)
 

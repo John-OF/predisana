@@ -48,8 +48,9 @@ DATASETS = ["hipertension", "cardiovascular"]
 # (Diabetes definia aqui "hba1c_level"; su seleccion de features vive ahora en
 #  train_nhanes_diabetes.py: SELF_REPORT / GLUCOSA, con HbA1c excluida.)
 DROP_NON_RESPONDABLE = {
-    "hipertension": ["glucose", "hba1c_level", "cholesterol_total", "hdl",
-                     "ldl", "triglycerides", "insulin"],
+    # hipertension ya no trae labs: desde la migracion a NHANES (AUD-1) el dataset
+    # nace solo con variables autorreportadas/antropometricas.
+    "hipertension": [],
     "cardiovascular": [],
 }
 
@@ -70,7 +71,8 @@ DROP_NON_RESPONDABLE = {
 MONOTONIC_INCREASING = {
     "diabetes": ["blood_glucose_level", "hba1c_level", "age", "bmi",
                  "hypertension", "heart_disease"],
-    "hipertension": ["age", "bmi", "weight", "waist_circumference", "blood_pressure"],
+    "hipertension": ["age", "bmi", "weight", "waist_circumference",
+                     "diabetes", "heart_disease", "high_cholesterol"],
     "cardiovascular": ["age", "bmi", "ap_hi", "ap_lo", "cholesterol", "gluc"],
 }
 
@@ -94,9 +96,11 @@ def get_features_for_disease(name: str, df: pd.DataFrame):
     target y menos las descartadas por respondibilidad (DROP_NON_RESPONDABLE).
     Con los esquemas por-enfermedad (B1) ya no hay columnas de leakage que
     recortar: cada dataset trae solo features legitimas para SU target (p.ej.
-    diabetes conserva hypertension/heart_disease como comorbilidades; hipertension
-    conserva blood_pressure porque el target es un score de riesgo, no la tension
-    medida). El unico recorte vigente es el de laboratorio (no respondible).
+    diabetes conserva hypertension/heart_disease como comorbilidades y viceversa).
+    Tras la migracion de hipertension a NHANES (AUD-1) ya no queda nada que
+    recortar: ninguno de los dos datasets propios trae columnas de laboratorio.
+    OJO con el historico: la version vieja de hipertension SI usaba la presion
+    medida como feature, sobre un target que era una formula del autor del CSV.
     """
     drop = set(DROP_NON_RESPONDABLE.get(name, []))
     return [c for c in df.columns if c != "target" and c not in drop]

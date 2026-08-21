@@ -20,7 +20,7 @@ const diseaseLabel = (key) => DISEASE_TABS.find((t) => t.key === key)?.label ?? 
 // Variables numéricas continuas por enfermedad para el histograma comparado.
 const DIST_FEATURES = {
     diabetes: ['age', 'bmi', 'blood_glucose_level', 'hba1c_level'],
-    hipertension: ['age', 'bmi', 'weight', 'waist_circumference', 'blood_pressure', 'glucose'],
+    hipertension: ['age', 'bmi', 'weight', 'waist_circumference'],
     cardiovascular: ['age', 'bmi', 'ap_hi', 'ap_lo'],
 };
 
@@ -101,10 +101,10 @@ const buildRows = (disease, d) => {
         return [
             edadGenero,
             imc,
-            { label: 'Presión Arterial', valor: `${Math.round(d.blood_pressure)} mmHg`, interp: presionBadge(d.blood_pressure) },
             { label: 'Circunferencia de Cintura', valor: `${Math.round(d.waist_circumference)} cm`, interp: <span className="text-muted">Adiposidad central</span> },
             { label: 'Peso', valor: `${Math.round(d.weight)} kg`, interp: <span className="text-muted">Antropometría</span> },
-            { label: 'Glucosa', valor: `${Math.round(d.glucose)} mg/dL`, interp: glucosaBadge(d.glucose) },
+            { label: 'Diabetes (Dx)', valor: Number(d.diabetes) === 1 ? 'Sí' : 'No', interp: siNoBadge(d.diabetes, 'Diagnóstico Presente') },
+            { label: 'Colesterol Alto (Dx)', valor: Number(d.high_cholesterol) === 1 ? 'Sí' : 'No', interp: siNoBadge(d.high_cholesterol, 'Diagnóstico Presente') },
         ];
     }
 

@@ -96,6 +96,15 @@ VARIANT_BASE = {"diabetes_glucosa": "diabetes"}
 # Feature extra que activa cada variante de diabetes (si el usuario la aporta).
 DIABETES_GLUCOSE_KEY = "diabetes_glucosa"
 
+# Datos que el usuario PUEDE aportar y que NO entran al modelo: solo alimentan la
+# capa clinica de referencia (ADA / ACC-AHA). Caso de la presion en hipertension
+# (AUD-1): meterla como feature convertiria el modelo en un umbral disfrazado
+# —quien se mide 160 no necesita un modelo— asi que el riesgo se estima con
+# factores respondibles y la tension, si se conoce, se interpreta aparte.
+OPTIONAL_CLINICAL_INPUTS = {
+    "hipertension": ["blood_pressure"],
+}
+
 
 def _model_paths(key: str) -> Dict[str, str]:
     return {
@@ -227,6 +236,7 @@ def _loggable_payload(key: str, payload: Dict[str, Any]) -> Dict[str, float]:
     Antes se guardaba el JSON entero tal cual: claves arbitrarias del cliente
     engordando la BD sin aportar nada, y texto libre en una tabla que se exporta."""
     permitidas = set(FEATURES.get(key, [])) | set(_LOG_EXTRA_KEYS)
+    permitidas |= set(OPTIONAL_CLINICAL_INPUTS.get(_data_disease(key), []))
     limpio = {}
     for k, v in payload.items():
         if k not in permitidas:
@@ -593,6 +603,10 @@ def get_config(disease: str):
     optional = []
     if disease == "diabetes" and DIABETES_GLUCOSE_KEY in FEATURES:
         optional = [f for f in FEATURES[DIABETES_GLUCOSE_KEY] if f not in feats]
+    # Opcionales que no son del modelo pero si de la capa clinica (p.ej. la
+    # presion en hipertension). El front los pinta igual, marcados como opcionales.
+    optional += [f for f in OPTIONAL_CLINICAL_INPUTS.get(disease, [])
+                 if f not in feats and f not in optional]
 
     return jsonify({
         "disease": disease,
@@ -711,6 +725,14 @@ def predict(disease: str):
             clinical_glucose = float(_g) if _g is not None else 0.0
         except (TypeError, ValueError):
             clinical_glucose = 0.0
+    # Idem con la sistolica: en hipertension es un dato OPCIONAL fuera del modelo
+    # (AUD-1), asi que _build_row no la capturo.
+    if not clinical_bp:
+        _bp = _safe_get(payload, "blood_pressure") or _safe_get(payload, "ap_hi")
+        try:
+            clinical_bp = float(_bp) if _bp is not None else 0.0
+        except (TypeError, ValueError):
+            clinical_bp = 0.0
 
     model = MODELS[model_key]
     scaler = model.named_steps["scaler"]

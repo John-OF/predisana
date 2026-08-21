@@ -83,8 +83,9 @@ cada fuente y de dónde descargarla.
 
 ```powershell
 # 1. Datasets limpios por enfermedad (data_raw/ -> data_processed/)
-python prepare_datasets.py            # hipertensión y cardiovascular
-python prepare_nhanes_diabetes.py     # diabetes (NHANES 2021-2023)
+python prepare_datasets.py              # cardiovascular (Kaggle)
+python prepare_nhanes_diabetes.py       # diabetes (NHANES 2021-2023)
+python prepare_nhanes_hipertension.py   # hipertensión (NHANES 2021-2023)
 
 # 2. Split estratificado + síntesis CTGAN/TVAE por enfermedad
 python curate_and_synthesize.py
@@ -105,10 +106,19 @@ python train_models.py                # bake-off por CV: hipertensión y cardiov
 python train_nhanes_diabetes.py       # diabetes híbrida: variantes con/sin glucosa + calibradores
 ```
 
-Diabetes vive en sus propios scripts (NHANES): `prepare_datasets.py` y
-`train_models.py` **no la tocan** — correrlos completos no pisa el dataset ni el
-modelo híbrido. `curate_and_synthesize.py` sí la incluye (opera sobre el
-`diabetes_dataset.csv` ya generado, que es NHANES).
+Diabetes e hipertensión se generan con sus propios scripts NHANES:
+`prepare_datasets.py` ya **no las toca** (solo construye cardiovascular), así que
+correrlo completo no pisa esos datasets. `curate_and_synthesize.py` y
+`train_models.py` sí operan sobre ellos, porque leen el CSV ya generado.
+
+**Hipertensión (AUD-1):** el dataset venía de un CSV de ENSANUT cuyo target
+`riesgo_hipertension` era una fórmula del autor, no un desenlace clínico. El modelo
+la reaprendía y devolvía relaciones invertidas (a más edad, menos riesgo; 100% de
+riesgo para un joven sano). Migrado a NHANES: prevalencia realista (36%), gradiente
+correcto por edad (4,8% a los 18-27 → 62% a los 78-87) e IMC, y AUC honesto de
+**0.80** en vez del 0.95 que producía la fórmula memorizada. La presión arterial
+**no es feature** del modelo —sería un umbral disfrazado— sino un dato opcional que
+alimenta la capa clínica ACC/AHA.
 
 ### Tests
 
@@ -241,6 +251,7 @@ chronic-risk-backend/
 ├── app.py                       # API Flask: modelos + SHAP + calibración + capa clínica + admin
 ├── prepare_datasets.py          # CSVs crudos → dataset limpio (hipertensión, cardiovascular)
 ├── prepare_nhanes_diabetes.py   # NHANES 2021-2023 (.xpt) → dataset de diabetes
+├── prepare_nhanes_hipertension.py # NHANES 2021-2023 (.xpt) → dataset de hipertensión
 ├── curate_and_synthesize.py     # Split estratificado + síntesis CTGAN/TVAE
 ├── build_quality_reports.py     # Precomputa el informe de calidad del sintético a JSON
 ├── synthetic_quality.py         # Cálculo SDMetrics + correlaciones (pipeline y fallback del API)

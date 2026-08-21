@@ -14,13 +14,15 @@
 #
 # Fuentes elegidas (ver BITACORA.md → B1):
 #   - cardiovascular  -> data_raw/cardio_train.csv                  (70k, sep=';')
-#   - hipertension    -> data_raw/Hipertension_Arterial_Mexico.csv  (4.4k, ENSANUT)
 #
-# DIABETES NO SE PROCESA AQUÍ: migró a NHANES 2021-2023 (datos reales de los CDC,
-# glucosa continua). Su dataset lo genera prepare_nhanes_diabetes.py y su modelo
-# híbrido lo entrena train_nhanes_diabetes.py. El flujo Kaggle viejo (glucosa
-# cuantizada, target escalonado) se retiró para que correr este script no pise
-# el dataset NHANES vivo.
+# DIABETES E HIPERTENSIÓN NO SE PROCESAN AQUÍ: las dos migraron a NHANES 2021-2023
+# (datos reales de los CDC). Sus datasets los generan prepare_nhanes_diabetes.py y
+# prepare_nhanes_hipertension.py. Los flujos viejos se retiraron de este script para
+# que correrlo NO pise los datasets NHANES vivos:
+#   - Kaggle de diabetes: glucosa cuantizada y target escalonado.
+#   - ENSANUT de hipertensión (AUD-1): el target `riesgo_hipertension` era una
+#     fórmula del autor del CSV, no un desenlace; el modelo la reaprendía y salían
+#     relaciones invertidas (a más edad, menos riesgo).
 #
 # Descartados a propósito:
 #   - data_raw/hypertension_dataset.csv  -> RUIDO (target aleatorio, corr ~0.00)
@@ -127,83 +129,13 @@ def build_cardiovascular():
 
 
 # =============================================================================
-# HIPERTENSIÓN  <- Hipertension_Arterial_Mexico.csv (ENSANUT, 4.4k)
-# Survey con 36 columnas; seleccionamos las con señal y descartamos el resto.
-# Target: riesgo_hipertension (0/1).
-# =============================================================================
-def build_hipertension():
-    print("\n=== HIPERTENSIÓN (Hipertension_Arterial_Mexico.csv) ===")
-    src = _read_csv(os.path.join(RAW_DIR, "Hipertension_Arterial_Mexico.csv"))
-    src.columns = [c.strip().lower() for c in src.columns]
-
-    # Mapa columna_origen -> nombre_destino (solo variables con sentido clínico)
-    colmap = {
-        "edad": "age",
-        "masa_corporal": "bmi",
-        "peso": "weight",
-        "medida_cintura": "waist_circumference",
-        "tension_arterial": "blood_pressure",
-        "resultado_glucosa": "glucose",
-        "valor_hemoglobina_glucosilada": "hba1c_level",
-        "valor_colesterol_total": "cholesterol_total",
-        "valor_colesterol_hdl": "hdl",
-        "valor_colesterol_ldl": "ldl",
-        "valor_trigliceridos": "triglycerides",
-        "valor_insulina": "insulin",
-    }
-
-    out = pd.DataFrame()
-    for srccol, dst in colmap.items():
-        if srccol in src.columns:
-            out[dst] = pd.to_numeric(src[srccol], errors="coerce")
-
-    # Saneamiento de rangos fisiológicos
-    if "age" in out: out["age"] = _clip(out["age"], 0, 120)
-    if "bmi" in out: out["bmi"] = _clip(out["bmi"], 12, 70)
-    if "blood_pressure" in out: out["blood_pressure"] = _clip(out["blood_pressure"], 70, 260)
-    if "glucose" in out: out["glucose"] = _clip(out["glucose"], 40, 500)
-    if "hba1c_level" in out: out["hba1c_level"] = _clip(out["hba1c_level"], 3.0, 18.0)
-    if "waist_circumference" in out: out["waist_circumference"] = _clip(out["waist_circumference"], 40, 200)
-    if "weight" in out: out["weight"] = _clip(out["weight"], 25, 250)
-
-    # Descartar columnas demasiado vacías (>40% NaN) para no reintroducir "sopa"
-    keep = []
-    for c in out.columns:
-        na_rate = out[c].isna().mean()
-        if na_rate > 0.40:
-            print(f"      -descartada '{c}' por {100*na_rate:.0f}% NaN")
-        else:
-            keep.append(c)
-    out = out[keep]
-
-    # Género (sexo: 1=hombre, 2=mujer según el survey)
-    if "sexo" in src.columns:
-        sexo = pd.to_numeric(src["sexo"], errors="coerce")
-        out["gender_Male"] = (sexo == 1).astype(int)
-        out["gender_Female"] = (sexo == 2).astype(int)
-
-    # Target
-    rh = pd.to_numeric(src["riesgo_hipertension"], errors="coerce")
-    out["target"] = (rh >= 0.5).astype(int)
-
-    # Imputación por mediana dentro de este único dataset real
-    num_cols = [c for c in out.columns if c not in ("target", "gender_Male", "gender_Female")]
-    out = _impute_median(out, num_cols)
-    out = out.dropna(subset=["target"]).reset_index(drop=True)
-
-    _report("hipertension", out)
-    return out
-
-
-# =============================================================================
 # MAIN
 # =============================================================================
 def main():
-    # Diabetes NO está aquí a propósito: su dataset canónico es NHANES y lo
-    # genera prepare_nhanes_diabetes.py (correr este script no debe pisarlo).
+    # Diabetes e hipertensión NO están aquí a propósito: sus datasets canónicos
+    # son NHANES y los generan prepare_nhanes_*.py (correr esto no debe pisarlos).
     builders = {
         "cardiovascular": build_cardiovascular,
-        "hipertension": build_hipertension,
     }
     print("Generando datasets limpios POR ENFERMEDAD (sin frame maestro)...")
     for name, fn in builders.items():
@@ -213,7 +145,8 @@ def main():
         print(f"   guardado -> {path}")
 
     print("\nListo. Cada enfermedad tiene su propio esquema, sin imputación cruzada.")
-    print("(Diabetes va aparte: python prepare_nhanes_diabetes.py)")
+    print("(Diabetes e hipertensión van aparte: python prepare_nhanes_diabetes.py"
+          " / python prepare_nhanes_hipertension.py)")
 
 
 if __name__ == "__main__":
