@@ -26,6 +26,7 @@ import pandas as pd
 import shap
 
 from flask import Flask, request, jsonify
+from werkzeug.exceptions import RequestEntityTooLarge
 from flask_cors import CORS
 from joblib import load
 
@@ -41,6 +42,15 @@ EXPLAINERS: Dict[str, Any] = {}
 
 app = Flask(__name__)
 CORS(app)
+# AUD-9: los payloads legitimos son de unos cientos de bytes (un puñado de
+# features numericas). Sin tope, cualquiera puede mandar un cuerpo gigante y
+# obligar al servidor a bufferearlo entero.
+app.config["MAX_CONTENT_LENGTH"] = 256 * 1024  # 256 KB
+
+
+@app.errorhandler(413)
+def _cuerpo_demasiado_grande(_e):
+    return jsonify({"error": "cuerpo demasiado grande"}), 413
 
 BASE_MODELS = "models"
 DB_NAME = "medical_history.db"  # <--- Nombre de la Base de Datos
@@ -205,6 +215,27 @@ def _to_float(feature: str, val):
     if not math.isfinite(f):
         raise InvalidPayload(f"'{feature}' debe ser un numero finito")
     return f
+
+
+# Claves que se persisten aunque no sean features del modelo servido: alimentan
+# la capa clinica (ADA) y son utiles para leer la simulacion en el admin.
+_LOG_EXTRA_KEYS = ("glucose", "blood_glucose_level", "hba1c_level")
+
+
+def _loggable_payload(key: str, payload: Dict[str, Any]) -> Dict[str, float]:
+    """Recorta el payload a lo que el modelo (o la capa clinica) usa de verdad.
+    Antes se guardaba el JSON entero tal cual: claves arbitrarias del cliente
+    engordando la BD sin aportar nada, y texto libre en una tabla que se exporta."""
+    permitidas = set(FEATURES.get(key, [])) | set(_LOG_EXTRA_KEYS)
+    limpio = {}
+    for k, v in payload.items():
+        if k not in permitidas:
+            continue
+        try:
+            limpio[k] = _to_float(k, v)
+        except InvalidPayload:
+            continue  # valor raro en una clave opcional: se descarta del log
+    return limpio
 
 
 _SESSION_ID_RE = re.compile(r"[^A-Za-z0-9_-]")
@@ -654,6 +685,8 @@ def predict(disease: str):
 
     try:
         payload = request.get_json(force=True) or {}
+    except RequestEntityTooLarge:
+        raise  # cuerpo por encima de MAX_CONTENT_LENGTH -> 413 (AUD-9)
     except Exception:
         return jsonify({"error": "invalid JSON"}), 400
     if not isinstance(payload, dict):
@@ -734,7 +767,7 @@ def predict(disease: str):
 
     used_glucose = model_key == DIABETES_GLUCOSE_KEY
     log_prediction_to_db(
-        disease, payload, pred_class, prob,
+        disease, _loggable_payload(model_key, payload), pred_class, prob,
         model_name=MODEL_NAMES.get(model_key),
         clinical_note=clinical_note,
         top_features=top_features,
@@ -770,6 +803,8 @@ def whatif(disease: str):
 
     try:
         body = request.get_json(force=True) or {}
+    except RequestEntityTooLarge:
+        raise  # cuerpo por encima de MAX_CONTENT_LENGTH -> 413 (AUD-9)
     except Exception:
         return jsonify({"error": "invalid JSON"}), 400
     if not isinstance(body, dict):

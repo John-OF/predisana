@@ -1,4 +1,4 @@
-# Regresiones de la auditoria 2026-08-20 (AUD-2, AUD-3, AUD-5, AUD-6, AUD-8, AUD-18).
+# Regresiones de la auditoria 2026-08-20 (AUD-2, 3, 5, 6, 7, 8, 9 y 18).
 # Cada test fija el comportamiento CORREGIDO para que no vuelva a colarse.
 import json
 import math
@@ -120,3 +120,40 @@ def test_health_reporta_estado_real_de_la_bd(client):
     assert d["database_ok"] is True
     assert d["database"] == "sqlite"          # el motor real, no un string fijo
     assert "diabetes" in d["models_loaded"]
+
+
+# ---------- AUD-7: solo se persiste lo que el modelo usa ----------
+
+def test_input_data_no_guarda_claves_arbitrarias(client, admin_headers, perfil_diabetes):
+    """El payload lo controla el cliente: guardarlo entero engordaba la BD con
+    texto libre que ademas acaba en el CSV del admin."""
+    r = client.post("/predict/diabetes",
+                    json={**perfil_diabetes, "basura": "x" * 500, "__proto__": "y"})
+    assert r.status_code == 200
+    guardado = client.get("/admin/predictions?limit=1",
+                          headers=admin_headers).get_json()["items"][0]["input_data"]
+    assert "basura" not in guardado and "__proto__" not in guardado
+    assert guardado["age"] == 55 and guardado["bmi"] == 31
+
+def test_input_data_conserva_la_glucosa_aunque_no_sea_del_modelo_base(client, admin_headers,
+                                                                     perfil_diabetes):
+    """La glucosa alimenta la capa clinica ADA: debe seguir en el log."""
+    client.post("/predict/diabetes", json={**perfil_diabetes, "blood_glucose_level": 170})
+    guardado = client.get("/admin/predictions?limit=1",
+                          headers=admin_headers).get_json()["items"][0]["input_data"]
+    assert guardado["blood_glucose_level"] == 170
+
+
+# ---------- AUD-9: tope de tamano del cuerpo ----------
+
+@pytest.mark.parametrize("ruta,cuerpo", [
+    ("/predict/diabetes", {"age": 40}),
+    ("/whatif/diabetes", {"feature": "age", "min": 20, "max": 80, "base": {"age": 40}}),
+])
+def test_cuerpo_gigante_da_413(client, ruta, cuerpo):
+    r = client.post(ruta, json={**cuerpo, "relleno": "x" * 300_000})
+    assert r.status_code == 413
+    assert r.get_json()["error"]
+
+def test_cuerpo_normal_no_se_ve_afectado(client, perfil_diabetes):
+    assert client.post("/predict/diabetes", json=perfil_diabetes).status_code == 200
