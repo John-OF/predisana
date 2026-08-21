@@ -363,7 +363,12 @@ const Simulacion = () => {
       resetWhatIf();
     } catch (err) {
       console.error(err);
-      setError("Error al procesar la predicción. Revisa que todos los campos numéricos tengan valores.");
+      if (err?.response?.status === 429) {
+        // AUD-4: el API limita las peticiones por IP para que nadie inunde la demo.
+        setError("Estás enviando demasiadas simulaciones seguidas. Espera un momento y vuelve a intentarlo.");
+      } else {
+        setError("Error al procesar la predicción. Revisa que todos los campos numéricos tengan valores.");
+      }
     } finally {
       setLoading(false);
     }

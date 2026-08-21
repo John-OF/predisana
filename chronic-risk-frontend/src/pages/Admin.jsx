@@ -62,6 +62,10 @@ const Admin = () => {
         setAuthError('La sesión expiró o el token es inválido.');
       } else if (err?.response?.status === 503) {
         setDataError('El panel admin está deshabilitado en el servidor (falta configurar ADMIN_TOKEN).');
+      } else if (err?.response?.status === 429) {
+        setDataError('Demasiadas peticiones al panel. Espera un momento y vuelve a intentar.');
+      } else if (err?.response?.status === 403) {
+        setDataError('Este origen no está autorizado para el panel admin (ADMIN_CORS_ORIGINS en el servidor).');
       } else {
         setDataError('No se pudieron cargar los datos del panel.');
       }
@@ -100,6 +104,11 @@ const Admin = () => {
     } catch (err) {
       if (err?.response?.status === 503) {
         setAuthError('El panel admin está deshabilitado en el servidor (falta configurar ADMIN_TOKEN).');
+      } else if (err?.response?.status === 429) {
+        // AUD-4: el servidor corta los intentos repetidos de token (anti fuerza bruta).
+        setAuthError('Demasiados intentos. Espera un minuto antes de volver a probar.');
+      } else if (err?.response?.status === 403) {
+        setAuthError('Este origen no está autorizado para el panel admin (ADMIN_CORS_ORIGINS en el servidor).');
       } else {
         setAuthError('Token incorrecto.');
       }

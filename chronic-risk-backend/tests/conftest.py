@@ -23,6 +23,16 @@ os.environ["DATABASE_URL"] = (
 TEST_ADMIN_TOKEN = "token-de-pruebas-pytest"
 os.environ["ADMIN_TOKEN"] = TEST_ADMIN_TOKEN
 
+# AUD-4: el rate limiting queda ACTIVO en los tests (los hooks del limiter se
+# registran al importar `app`, no se pueden encender despues), pero con cubetas
+# holgadas para que la suite no se auto-limite. El limite de /admin/verify se deja
+# bajo a proposito: es lo que `test_seguridad_cors_ratelimit.py` verifica, y cada
+# test usa su propia IP falsa (environ_base REMOTE_ADDR) para no pisarse.
+os.environ["RATE_LIMIT_DEFAULT"] = "100000 per hour"
+os.environ["RATE_LIMIT_PREDICT"] = "100000 per hour"
+os.environ["RATE_LIMIT_ADMIN"] = "100000 per hour"
+os.environ["RATE_LIMIT_ADMIN_VERIFY"] = "20 per minute"
+
 
 @pytest.fixture(scope="session")
 def app_module():

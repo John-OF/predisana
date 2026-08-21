@@ -3,6 +3,9 @@
 # requirements-pipeline.txt: el servidor no lo necesita. Ver AUD-17 en BITACORA.
 Flask==3.1.2
 flask-cors==6.0.2
+# Rate limiting de /admin/* y /predict (AUD-4). Almacenamiento en memoria por
+# defecto; con varios workers de gunicorn, apuntar RATE_LIMIT_STORAGE a Redis.
+flask-limiter==4.1.1
 gunicorn==23.0.0
 joblib==1.5.3
 lightgbm==4.6.0

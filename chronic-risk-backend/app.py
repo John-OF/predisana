@@ -27,7 +27,10 @@ import shap
 
 from flask import Flask, request, jsonify
 from werkzeug.exceptions import RequestEntityTooLarge
+from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from joblib import load
 
 from sqlalchemy import (
@@ -41,7 +44,69 @@ import synthetic_quality as sq
 EXPLAINERS: Dict[str, Any] = {}
 
 app = Flask(__name__)
-CORS(app)
+
+# ==========================================
+# CORS Y RATE LIMITING (AUD-4)
+# ==========================================
+def _origenes_desde_env(var: str, defecto: List[str]) -> List[str]:
+    """Lee una lista de origenes separada por comas de una env var."""
+    crudo = os.environ.get(var, "")
+    lista = [o.strip() for o in crudo.split(",") if o.strip()]
+    return lista or defecto
+
+
+# Origenes de desarrollo: el dev server de Vite (5173) y el preview del build (4173).
+DEV_ORIGINS = [
+    "http://localhost:5173", "http://127.0.0.1:5173",
+    "http://localhost:4173", "http://127.0.0.1:4173",
+]
+# Endpoints publicos: abiertos si no se configura nada (comodo en dev y para probar
+# el API con curl). En el deploy (#7) se setea CORS_ORIGINS al dominio del front.
+CORS_ORIGINS = _origenes_desde_env("CORS_ORIGINS", ["*"])
+# El admin NO hereda ese "*". Con "*" el navegador deja que CUALQUIER pagina lea la
+# respuesta de /admin/*, asi que una pagina hostil podria probar tokens desde el
+# navegador del dev y leer el resultado. Restringido, el navegador bloquea la lectura.
+# (Ojo: CORS no protege de un atacante que llame al API directamente sin navegador;
+# de eso se encarga el rate limiting de abajo.)
+ADMIN_CORS_ORIGINS = _origenes_desde_env("ADMIN_CORS_ORIGINS", DEV_ORIGINS)
+# flask-cors resuelve el recurso mas especifico primero, asi que /admin/* gana sobre /*.
+CORS(app, resources={
+    r"/admin/*": {"origins": ADMIN_CORS_ORIGINS},
+    r"/*": {"origins": CORS_ORIGINS},
+})
+
+# Detras de un proxy (Vercel/Render/Fly) request.remote_addr es la IP del proxy: sin
+# esto TODO el trafico compartiria la misma cubeta y el limite seria inservible. Es
+# opt-in porque confiar en X-Forwarded-For SIN un proxy delante permite falsear la IP
+# y saltarse el limite a voluntad.
+if os.environ.get("TRUST_PROXY_HEADERS", "").lower() in ("1", "true", "yes"):
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
+
+# Limites configurables por env var (el deploy puede aflojarlos o apretarlos sin tocar
+# codigo). El de /admin/verify es el importante: es el endpoint contra el que se
+# fuerza-bruta el ADMIN_TOKEN.
+RATE_LIMIT_DEFAULT = os.environ.get("RATE_LIMIT_DEFAULT", "300 per minute")
+RATE_LIMIT_PREDICT = os.environ.get("RATE_LIMIT_PREDICT", "60 per minute")
+RATE_LIMIT_ADMIN = os.environ.get("RATE_LIMIT_ADMIN", "60 per minute")
+RATE_LIMIT_ADMIN_VERIFY = os.environ.get("RATE_LIMIT_ADMIN_VERIFY", "10 per minute")
+
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=[RATE_LIMIT_DEFAULT],
+    storage_uri=os.environ.get("RATE_LIMIT_STORAGE", "memory://"),
+    strategy="fixed-window",
+    headers_enabled=True,
+)
+
+
+@app.errorhandler(429)
+def _demasiadas_peticiones(e):
+    return jsonify({
+        "error": "demasiadas peticiones, intenta de nuevo en un momento",
+        "limite": str(getattr(e, "description", "")),
+    }), 429
+
 # AUD-9: los payloads legitimos son de unos cientos de bytes (un puñado de
 # features numericas). Sin tope, cualquiera puede mandar un cuerpo gigante y
 # obligar al servidor a bufferearlo entero.
@@ -291,6 +356,13 @@ def require_admin(fn):
     def wrapper(*args, **kwargs):
         if not ADMIN_TOKEN:
             return jsonify({"error": "admin deshabilitado: configura ADMIN_TOKEN"}), 503
+        # AUD-4: CORS solo *oculta* la respuesta al navegador; la peticion igual se
+        # ejecuta. Rechazando aqui los Origin no permitidos, una pagina hostil no
+        # llega ni a probar tokens desde el navegador del dev. Sin cabecera Origin
+        # (curl, el propio deploy) se sigue permitiendo: ahi manda el token.
+        origen = request.headers.get("Origin")
+        if origen and "*" not in ADMIN_CORS_ORIGINS and origen not in ADMIN_CORS_ORIGINS:
+            return jsonify({"error": "origen no permitido (revisa ADMIN_CORS_ORIGINS)"}), 403
         # compare_digest: comparacion en tiempo constante (sin canal lateral por
         # tiempo, a diferencia de `!=`, que corta en el primer caracter distinto).
         enviado = (request.headers.get("X-Admin-Token") or "").encode("utf-8")
@@ -555,6 +627,7 @@ def get_random_sample(disease):
     return _sample_row_from_csv(csv_path, source_type)
 
 @app.get("/health")
+@limiter.exempt
 def health():
     """Liveness + comprobacion REAL de la BD (antes devolvia el string fijo
     'sqlite_connected', que ademas mentiria al pasar a Postgres en el deploy)."""
@@ -690,6 +763,7 @@ def _resolve_model_key(disease: str, payload: Dict[str, Any]) -> str:
 
 
 @app.post("/predict/<disease>")
+@limiter.limit(RATE_LIMIT_PREDICT)
 def predict(disease: str):
     disease = disease.lower()
     # Enfermedad inexistente -> 404 (coherente con /config y /metrics); el 500
@@ -816,6 +890,7 @@ def predict(disease: str):
 
 
 @app.post("/whatif/<disease>")
+@limiter.limit(RATE_LIMIT_PREDICT)
 def whatif(disease: str):
     """Análisis contrafactual: fija un caso base y barre UNA feature sobre un rango,
     devolviendo la curva de riesgo (probabilidad calibrada) a lo largo de esa
@@ -1005,6 +1080,7 @@ def get_synthetic_quality(disease):
 # PANEL ADMIN (dev-only, anónimo, server-side — A3)
 # ==========================================
 @app.get("/admin/verify")
+@limiter.limit(RATE_LIMIT_ADMIN_VERIFY)
 @require_admin
 def admin_verify():
     """El frontend lo usa para validar el token antes de mostrar el dashboard."""
@@ -1037,6 +1113,7 @@ def _query_predictions_filtered(s):
 
 
 @app.get("/admin/stats")
+@limiter.limit(RATE_LIMIT_ADMIN)
 @require_admin
 def admin_stats():
     """Analítica de uso AGREGADA y anónima (sin datos personales). Solo cuenta las
@@ -1127,6 +1204,7 @@ def admin_stats():
 
 
 @app.get("/admin/predictions")
+@limiter.limit(RATE_LIMIT_ADMIN)
 @require_admin
 def admin_predictions():
     """Lista las simulaciones más recientes (server-side, anónimas)."""
@@ -1160,6 +1238,7 @@ def admin_predictions():
 
 
 @app.get("/admin/export.csv")
+@limiter.limit(RATE_LIMIT_ADMIN)
 @require_admin
 def admin_export_csv():
     """Exporta las simulaciones (anónimas) como CSV server-side. Respeta el filtro

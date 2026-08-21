@@ -16,7 +16,7 @@ API REST en Python/Flask que sirve modelos de Machine Learning para la estimaci�
 - **Generación de datos sintéticos** con SDV (CTGAN por defecto, TVAE opcional) + endpoints de comparación real vs sintético (muestras, distribuciones, calidad SDMetrics) que alimentan el laboratorio del frontend.
 - **Pipeline de datos por enfermedad** — desde fuentes públicas a un dataset limpio por enfermedad (sin frame maestro concatenado ni imputación cruzada).
 - **Registro anónimo de uso** sobre SQLAlchemy (`DATABASE_URL`: SQLite en dev, Postgres en prod con el mismo código) + **panel admin dev-only** con analítica agregada, protegido por `X-Admin-Token`.
-- **Suite de 90 tests (pytest)** sobre los invariantes delicados de la API.
+- **Suite de 108 tests (pytest)** sobre los invariantes delicados de la API.
 
 ---
 
@@ -73,7 +73,20 @@ Al arrancar, `app.py` ejecuta automáticamente:
 2. `init_db()` — crea la tabla `predictions` vía SQLAlchemy (por defecto `sqlite:///medical_history.db`; con `DATABASE_URL` apunta a Postgres u otro motor) y migra columnas nuevas si la BD venía del esquema viejo.
 
 Variables de entorno: `DATABASE_URL` (motor de BD), `ADMIN_TOKEN` (habilita los endpoints
-`/admin/*`; sin ella responden 503) y `FLASK_DEBUG` (debugger local). Plantilla en `.env.example`.
+`/admin/*`; sin ella responden 503), `FLASK_DEBUG` (debugger local) y las de CORS / rate limiting
+(`CORS_ORIGINS`, `ADMIN_CORS_ORIGINS`, `RATE_LIMIT_*`, `TRUST_PROXY_HEADERS`). Plantilla comentada
+en `.env.example`.
+
+**CORS y rate limiting.** Los endpoints públicos quedan abiertos si no se define `CORS_ORIGINS`
+(cómodo en dev y para probar con curl); en producción se le pasa el dominio del front. `/admin/*`
+**no hereda** ese `*`: solo acepta los orígenes de `ADMIN_CORS_ORIGINS` (por defecto, localhost de
+desarrollo) y además rechaza con **403** cualquier `Origin` fuera de la lista — CORS por sí solo
+únicamente le oculta la respuesta al navegador, la petición se ejecuta igual. Los límites son **por
+IP**: `RATE_LIMIT_DEFAULT` global, `RATE_LIMIT_PREDICT` en `/predict` y `/whatif`, `RATE_LIMIT_ADMIN`
+en el panel y uno estricto (`RATE_LIMIT_ADMIN_VERIFY`, 10/min) en `/admin/verify`, que es contra lo
+que se fuerza-brutea el token. `/health` está exento para no romper los monitores de uptime. Detrás
+de un proxy hay que activar `TRUST_PROXY_HEADERS=1` (si no, todo el tráfico comparte una sola
+cubeta); sin proxy delante, activarlo permitiría falsear la IP con `X-Forwarded-For`.
 
 ### Pipeline de datos y entrenamiento
 
@@ -236,7 +249,7 @@ Histograma comparado real vs sintético de una variable numérica, sobre bins co
 Score de fidelidad del sintético (SDMetrics `QualityReport`: overall, column shapes, pair trends, detalle por columna) + matrices de correlación real/sintético para el heatmap comparado. El informe se **precomputa** en el pipeline (`build_quality_reports.py` → `data_curated/<enfermedad>/<enfermedad>_quality.json`) y la API lo sirve tal cual, así que producción no necesita `sdmetrics` (que arrastra torch). Solo lo recalcula si el JSON falta y la librería está instalada.
 
 ### Admin (dev-only): `GET /admin/verify` · `/admin/stats` · `/admin/predictions` · `/admin/export.csv`
-Protegidos por el header `X-Admin-Token`, que debe coincidir con la env var `ADMIN_TOKEN` (sin ella responden **503**; token incorrecto, **401**). No es auth de usuario — los usuarios nunca se loguean.
+Protegidos por el header `X-Admin-Token`, que debe coincidir con la env var `ADMIN_TOKEN` (sin ella responden **503**; token incorrecto, **401**). No es auth de usuario — los usuarios nunca se loguean. Además: `Origin` no permitido → **403**, y más de `RATE_LIMIT_ADMIN_VERIFY` intentos de token por minuto y por IP → **429**.
 
 - `/admin/stats` — analítica **agregada y anónima**: totales, sesiones únicas, conteo/tasa de positivos/probabilidad media por enfermedad, histograma de probabilidades, timeline diario, uso por hora y features SHAP más frecuentes. Acepta `?from=YYYY-MM-DD&to=YYYY-MM-DD`.
 - `/admin/predictions?limit=&disease=&from=&to=` — simulaciones recientes.
@@ -257,7 +270,7 @@ chronic-risk-backend/
 ├── synthetic_quality.py         # Cálculo SDMetrics + correlaciones (pipeline y fallback del API)
 ├── train_models.py              # Bake-off multi-modelo por CV (hipertensión, cardiovascular)
 ├── train_nhanes_diabetes.py     # Diabetes híbrida: variantes con/sin glucosa + calibradores
-├── tests/                       # Suite pytest (90 tests; BD temporal propia)
+├── tests/                       # Suite pytest (108 tests; BD temporal propia)
 ├── pytest.ini
 ├── .env.example                 # Plantilla de variables de entorno
 ├── requirements.txt             # Runtime del API (directas, UTF-8)
