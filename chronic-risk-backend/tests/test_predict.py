@@ -63,7 +63,7 @@ def test_features_ausentes_se_reportan(client, perfil_diabetes):
 
 def test_enfermedad_desconocida(client):
     r = client.post("/predict/obesidad", json={"age": 40})
-    assert r.status_code == 500  # comportamiento actual: modelo no cargado
+    assert r.status_code == 404  # AUD-3: coherente con /config y /metrics
 
 
 # ---------- SHAP ----------

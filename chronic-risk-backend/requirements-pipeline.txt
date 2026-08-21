@@ -1,0 +1,8 @@
+# Dependencias SOLO del pipeline de datos y entrenamiento (NO del API).
+# Instalar cuando se vaya a regenerar datos, sinteticos o modelos:
+#   pip install -r requirements-pipeline.txt
+# Pesa mucho (SDV/CTGAN arrastran torch, ~479 MB), por eso no esta en requirements.txt.
+# Consumidores: curate_and_synthesize.py (SDV) y build_quality_reports.py (sdmetrics).
+-r requirements.txt
+sdv==1.33.0
+sdmetrics==0.27.0

@@ -3,6 +3,9 @@ import os
 import sys
 import csv
 import io
+import re
+import math
+import hmac
 from datetime import datetime, timedelta
 from functools import wraps
 from typing import Dict, Any, List, Optional
@@ -31,6 +34,8 @@ from sqlalchemy import (
     Column, Integer, String, Float, Text as SAText, DateTime,
 )
 from sqlalchemy.orm import declarative_base, sessionmaker
+
+import synthetic_quality as sq
 
 EXPLAINERS: Dict[str, Any] = {}
 
@@ -166,6 +171,65 @@ def log_prediction_to_db(disease, input_data, prediction, probability,
         print(f"[WARN] Error guardando en BD: {e}")
 
 
+class InvalidPayload(ValueError):
+    """Valor de entrada no numerico o no finito. Se traduce a HTTP 400 (antes
+    reventaba en `np.array(dtype=float)` como un 500 sin control)."""
+
+
+def _json_safe(val):
+    """Tipos numpy -> nativos y NaN/inf -> None. Flask serializa NaN como el
+    literal `NaN`, que NO es JSON valido y rompe el JSON.parse del navegador
+    (los datos reales de NHANES traen labs ausentes)."""
+    if val is None:
+        return None
+    if isinstance(val, (np.integer, np.int64)):
+        return int(val)
+    if isinstance(val, (np.floating, np.float64, float)):
+        f = float(val)
+        return round(f, 2) if math.isfinite(f) else None
+    if isinstance(val, np.bool_):
+        return bool(val)
+    return val
+
+
+def _to_float(feature: str, val):
+    """Convierte un valor del payload a float o lanza InvalidPayload (-> 400)."""
+    if isinstance(val, bool):
+        return float(val)
+    if isinstance(val, (list, dict, tuple, set)):
+        raise InvalidPayload(f"'{feature}' debe ser un numero, no una lista u objeto")
+    try:
+        f = float(val)
+    except (TypeError, ValueError):
+        raise InvalidPayload(f"'{feature}' debe ser numerico (recibido: {val!r})")
+    if not math.isfinite(f):
+        raise InvalidPayload(f"'{feature}' debe ser un numero finito")
+    return f
+
+
+_SESSION_ID_RE = re.compile(r"[^A-Za-z0-9_-]")
+
+
+def _clean_session_id(raw):
+    """El header X-Session-Id lo controla el cliente: se acepta solo un id corto y
+    sano. Evita romper VARCHAR(64) en Postgres (donde el INSERT fallaria en
+    silencio) y de paso cierra la via de inyeccion de formulas en el CSV."""
+    if not raw:
+        return None
+    sid = _SESSION_ID_RE.sub("", str(raw))[:64]
+    return sid or None
+
+
+def _csv_safe(val):
+    """Antepone una comilla a las celdas que empiezan por = + - @ (o control):
+    Excel/Sheets las interpretarian como formula (inyeccion via campos de texto
+    controlados por el cliente)."""
+    txt = "" if val is None else str(val)
+    if txt[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + txt
+    return txt
+
+
 def _safe_json_loads(raw):
     if not raw:
         return None
@@ -186,7 +250,10 @@ def require_admin(fn):
     def wrapper(*args, **kwargs):
         if not ADMIN_TOKEN:
             return jsonify({"error": "admin deshabilitado: configura ADMIN_TOKEN"}), 503
-        if request.headers.get("X-Admin-Token") != ADMIN_TOKEN:
+        # compare_digest: comparacion en tiempo constante (sin canal lateral por
+        # tiempo, a diferencia de `!=`, que corta en el primer caracter distinto).
+        enviado = (request.headers.get("X-Admin-Token") or "").encode("utf-8")
+        if not hmac.compare_digest(enviado, ADMIN_TOKEN.encode("utf-8")):
             return jsonify({"error": "no autorizado"}), 401
         return fn(*args, **kwargs)
     return wrapper
@@ -394,11 +461,7 @@ def _sample_row_from_csv(csv_path, source_type):
         if "target" in df.columns:
             df = df.drop(columns=["target"])
         sample = df.sample(1).iloc[0].to_dict()
-        for key, val in sample.items():
-            if isinstance(val, (np.integer, np.int64)):
-                sample[key] = int(val)
-            elif isinstance(val, (np.floating, np.float64)):
-                sample[key] = round(float(val), 2)
+        sample = {k: _json_safe(v) for k, v in sample.items()}
         sample['_source_type'] = source_type
         return sample
     except Exception as e:
@@ -447,32 +510,27 @@ def get_random_sample(disease):
         csv_path = os.path.join("data_processed", f"{disease}_dataset.csv")
         print(f"⚠️ No se hallaron sintéticos para {disease}. Usando datos reales procesados.")
 
-    if not os.path.exists(csv_path):
-        return None
-
-    try:
-        df = pd.read_csv(csv_path)
-        
-        if "target" in df.columns:
-            df = df.drop(columns=["target"])
-            
-        sample = df.sample(1).iloc[0].to_dict()
-        
-        for key, val in sample.items():
-            if isinstance(val, (np.integer, np.int64)):
-                sample[key] = int(val)
-            elif isinstance(val, (np.floating, np.float64)):
-                sample[key] = round(float(val), 2)
-        
-        sample['_source_type'] = source_type
-        return sample
-    except Exception as e:
-        print(f"⚠️ Error leyendo CSV: {e}")
-        return None
+    # Misma normalizacion que la ficha real (incluido NaN -> None).
+    return _sample_row_from_csv(csv_path, source_type)
 
 @app.get("/health")
 def health():
-    return jsonify({"status": "ok", "database": "sqlite_connected"})
+    """Liveness + comprobacion REAL de la BD (antes devolvia el string fijo
+    'sqlite_connected', que ademas mentiria al pasar a Postgres en el deploy)."""
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        db_ok = True
+    except Exception as e:
+        db_ok = False
+        print(f"[WARN] /health: la BD no responde: {e}")
+    payload = {
+        "status": "ok" if db_ok else "degraded",
+        "database": engine.url.get_backend_name(),   # sqlite | postgresql | ...
+        "database_ok": db_ok,
+        "models_loaded": sorted(MODELS.keys()),
+    }
+    return jsonify(payload), (200 if db_ok else 503)
 
 @app.get("/metrics/<disease>")
 def get_metrics(disease: str):
@@ -534,17 +592,20 @@ def _build_row(key: str, payload: Dict[str, Any]):
     clin = {"glucose": 0.0, "hba1c": 0.0, "bp": 0.0}
     for f in feats:
         val = _safe_get(payload, f)
-        if f in ("glucose", "blood_glucose_level"): clin["glucose"] = float(val or 0)
-        if f == "hba1c_level": clin["hba1c"] = float(val or 0)
-        # Sistólica: hipertensión usa 'blood_pressure'; cardiovascular usa 'ap_hi'.
-        if f in ("blood_pressure", "ap_hi"): clin["bp"] = float(val or 0)
-        if val is None:
+        # Ausente = no viene o viene vacio (un input borrado en el form manda "").
+        if val is None or (isinstance(val, str) and not val.strip()):
             # Las dummies (one-hot, con "_") no se reportan como ausentes.
             if not (f.startswith(("gender_", "smoking_history_", "cholesterol_",
                                   "glucose_", "bp_", "ethnicity_", "race_")) or "_" in f):
                 missing.append(f)
-            val = 0
-        row.append(val)
+            num = 0.0
+        else:
+            num = _to_float(f, val)  # no numerico -> InvalidPayload -> 400
+        if f in ("glucose", "blood_glucose_level"): clin["glucose"] = num
+        if f == "hba1c_level": clin["hba1c"] = num
+        # Sistólica: hipertensión usa 'blood_pressure'; cardiovascular usa 'ap_hi'.
+        if f in ("blood_pressure", "ap_hi"): clin["bp"] = num
+        row.append(num)
     return np.array([row], dtype=float), missing, clin
 
 
@@ -584,6 +645,10 @@ def _resolve_model_key(disease: str, payload: Dict[str, Any]) -> str:
 @app.post("/predict/<disease>")
 def predict(disease: str):
     disease = disease.lower()
+    # Enfermedad inexistente -> 404 (coherente con /config y /metrics); el 500
+    # queda solo para el caso real de servidor mal cargado.
+    if disease not in FILES:
+        return jsonify({"error": "unknown disease"}), 404
     if disease not in MODELS or disease not in FEATURES:
         return jsonify({"error": "model or features not loaded"}), 500
 
@@ -591,12 +656,17 @@ def predict(disease: str):
         payload = request.get_json(force=True) or {}
     except Exception:
         return jsonify({"error": "invalid JSON"}), 400
+    if not isinstance(payload, dict):
+        return jsonify({"error": "el cuerpo debe ser un objeto JSON"}), 400
 
     payload = _normalize_glucose_alias(payload)
     # Ruteo híbrido: modelo con glucosa si el usuario la aportó, si no self-report.
     model_key = _resolve_model_key(disease, payload)
     feats = FEATURES[model_key]
-    X, missing, clin = _build_row(model_key, payload)
+    try:
+        X, missing, clin = _build_row(model_key, payload)
+    except InvalidPayload as e:
+        return jsonify({"error": str(e)}), 400
     clinical_glucose, clinical_hba1c, clinical_bp = clin["glucose"], clin["hba1c"], clin["bp"]
     # La glucosa puede venir en el payload aunque el modelo base no la use: para la
     # capa clínica ADA se toma directamente del payload si el modelo no la capturó.
@@ -668,7 +738,7 @@ def predict(disease: str):
         model_name=MODEL_NAMES.get(model_key),
         clinical_note=clinical_note,
         top_features=top_features,
-        session_id=request.headers.get("X-Session-Id"),
+        session_id=_clean_session_id(request.headers.get("X-Session-Id")),
     )
 
     return jsonify({
@@ -702,6 +772,8 @@ def whatif(disease: str):
         body = request.get_json(force=True) or {}
     except Exception:
         return jsonify({"error": "invalid JSON"}), 400
+    if not isinstance(body, dict):
+        return jsonify({"error": "el cuerpo debe ser un objeto JSON"}), 400
 
     feature = body.get("feature")
     if not feature:
@@ -715,7 +787,10 @@ def whatif(disease: str):
         return jsonify({"error": "'max' must be greater than 'min'"}), 400
     steps = max(2, min(steps, 100))
 
-    base = dict(body.get("base") or {})
+    base_raw = body.get("base") or {}
+    if not isinstance(base_raw, dict):
+        return jsonify({"error": "'base' debe ser un objeto JSON"}), 400
+    base = dict(base_raw)
     # Mismo ruteo híbrido que /predict: si se barre la glucosa (o el base la trae),
     # se usa el modelo con glucosa; si no, el self-report.
     route_payload = _normalize_glucose_alias(dict(base))
@@ -723,15 +798,23 @@ def whatif(disease: str):
         route_payload["blood_glucose_level"] = vmax
     model_key = _resolve_model_key(disease, route_payload)
 
+    # Barrer una feature que el modelo no usa daba una curva plana sin sentido.
+    # Se aceptan los alias de glucosa porque _normalize_glucose_alias los refleja.
+    if feature not in FEATURES[model_key] + ["glucose", "blood_glucose_level"]:
+        return jsonify({"error": f"'{feature}' no es una feature de {disease}"}), 400
+
     curve = []
-    for i in range(steps):
-        v = vmin + (vmax - vmin) * i / (steps - 1)
-        payload = dict(base)
-        payload[feature] = v
-        payload = _normalize_glucose_alias(payload)
-        X, _, _ = _build_row(model_key, payload)
-        raw, cal = _predict_proba(model_key, X)
-        curve.append({"value": round(v, 2), "probability": cal, "raw_probability": raw})
+    try:
+        for i in range(steps):
+            v = vmin + (vmax - vmin) * i / (steps - 1)
+            payload = dict(base)
+            payload[feature] = v
+            payload = _normalize_glucose_alias(payload)
+            X, _, _ = _build_row(model_key, payload)
+            raw, cal = _predict_proba(model_key, X)
+            curve.append({"value": round(v, 2), "probability": cal, "raw_probability": raw})
+    except InvalidPayload as e:
+        return jsonify({"error": str(e)}), 400
 
     return jsonify({
         "disease": disease,
@@ -840,82 +923,19 @@ def get_distribution(disease):
         return jsonify({"error": "could not compute distribution"}), 500
 
 
-# Variables continuas por enfermedad para el heatmap de correlaciones.
-CORR_FEATURES = {
-    "diabetes": ["age", "bmi", "blood_glucose_level", "hba1c_level"],
-    "hipertension": ["age", "bmi", "weight", "waist_circumference", "blood_pressure", "glucose"],
-    "cardiovascular": ["age", "bmi", "ap_hi", "ap_lo"],
-}
-
 _QUALITY_CACHE = {}
-
-
-def _compute_quality(disease):
-    """Calidad del sintético vs real: score SDMetrics (submuestreado, rápido) +
-    matrices de correlación (pandas) para el heatmap comparado."""
-    real_path = os.path.join("data_curated", disease, f"{disease}_train.csv")
-    synth_files = glob.glob(os.path.join("data_curated", disease, f"{disease}_synthetic_ctgan*.csv")) \
-        or glob.glob(os.path.join("data_curated", disease, f"{disease}_synthetic*.csv"))
-    if not os.path.exists(real_path) or not synth_files:
-        return None
-
-    real = pd.read_csv(real_path)
-    synth = pd.read_csv(synth_files[0])
-    for d in (real, synth):
-        if "target" in d.columns:
-            d.drop(columns=["target"], inplace=True)
-    cols = [c for c in real.columns if c in synth.columns]
-    real, synth = real[cols], synth[cols]
-    n = min(2000, len(real), len(synth))
-    real_s = real.sample(n, random_state=42)
-    synth_s = synth.sample(n, random_state=42)
-
-    result = {"n_used": int(n)}
-
-    # --- Score de fidelidad (SDMetrics) ---
-    try:
-        from sdmetrics.reports.single_table import QualityReport
-        meta = {"columns": {c: {"sdtype": "categorical" if real_s[c].nunique() <= 10 else "numerical"} for c in cols}}
-        rep = QualityReport()
-        rep.generate(real_s, synth_s, meta, verbose=False)
-        prop_scores = dict(zip(rep.get_properties()["Property"], rep.get_properties()["Score"]))
-        result["overall"] = round(float(rep.get_score()), 4)
-        result["column_shapes"] = round(float(prop_scores.get("Column Shapes", 0)), 4)
-        result["column_pair_trends"] = round(float(prop_scores.get("Column Pair Trends", 0)), 4)
-        try:
-            details = rep.get_details("Column Shapes")
-            per = [{"column": str(r["Column"]), "score": round(float(r["Score"]), 3)}
-                   for _, r in details.iterrows() if pd.notna(r.get("Score"))]
-            per.sort(key=lambda x: x["score"], reverse=True)
-            result["per_column"] = per
-        except Exception as e:
-            print(f"quality details fail ({disease}): {e}")
-            result["per_column"] = []
-    except Exception as e:
-        print(f"sdmetrics fail ({disease}): {e}")
-        result["overall"] = None
-        result["per_column"] = []
-
-    # --- Correlaciones (pandas, robusto) ---
-    corr_cols = [c for c in CORR_FEATURES.get(disease, []) if c in cols]
-    if len(corr_cols) >= 2:
-        rc = real_s[corr_cols].corr().fillna(0).round(2)
-        sc = synth_s[corr_cols].corr().fillna(0).round(2)
-        result["corr"] = {
-            "features": corr_cols,
-            "real": rc.values.tolist(),
-            "synthetic": sc.values.tolist(),
-        }
-    return result
 
 
 @app.get("/synthetic_quality/<disease>")
 def get_synthetic_quality(disease):
+    """Calidad del sintetico. Sirve el informe PRECOMPUTADO por el pipeline
+    (build_quality_reports.py); solo lo recalcula si falta y hay sdmetrics
+    instalado, porque en produccion no lo hay (arrastra torch, ~479 MB)."""
     disease = disease.lower()
     if disease not in FILES:
         return jsonify({"error": "disease not supported"}), 404
     if disease not in _QUALITY_CACHE:
-        res = _compute_quality(disease)
+        res = sq.load_precomputed(disease) or sq.compute(disease)
         if res is None:
             return jsonify({"error": "data not available"}), 500
         _QUALITY_CACHE[disease] = res
@@ -1100,13 +1120,13 @@ def admin_export_csv():
         writer.writerow([
             r.id,
             r.timestamp.isoformat() if r.timestamp else "",
-            r.disease,
-            r.model_name or "",
+            _csv_safe(r.disease),
+            _csv_safe(r.model_name or ""),
             r.prediction,
             r.probability,
-            r.session_id or "",
-            (r.clinical_note or "").replace("\n", " "),
-            r.input_data or "",
+            _csv_safe(r.session_id or ""),
+            _csv_safe((r.clinical_note or "").replace("\n", " ")),
+            _csv_safe(r.input_data or ""),
         ])
     csv_data = buf.getvalue()
     return app.response_class(
@@ -1122,4 +1142,10 @@ init_db()
 
 # Inicialización local
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8000, debug=True)
+    # debug=True expone el debugger interactivo de Werkzeug (traceback + consola)
+    # a toda la red al escuchar en 0.0.0.0. Ahora es opt-in por env var.
+    debug = os.environ.get("FLASK_DEBUG", "").lower() in ("1", "true", "yes", "on")
+    if not debug:
+        print("[info] debug OFF (sin recarga automatica). Para activarlo: "
+              "$env:FLASK_DEBUG=\"1\"; python app.py")
+    app.run(host="0.0.0.0", port=8000, debug=debug)

@@ -1,0 +1,112 @@
+{
+  "n_used": 2000,
+  "overall": 0.7536,
+  "column_shapes": 0.868,
+  "column_pair_trends": 0.6392,
+  "per_column": [
+    {
+      "column": "hypertension",
+      "score": 0.968
+    },
+    {
+      "column": "heart_disease",
+      "score": 0.964
+    },
+    {
+      "column": "smoking_history_former",
+      "score": 0.962
+    },
+    {
+      "column": "bmi",
+      "score": 0.937
+    },
+    {
+      "column": "smoking_history_current",
+      "score": 0.931
+    },
+    {
+      "column": "gender_Male",
+      "score": 0.907
+    },
+    {
+      "column": "gender_Female",
+      "score": 0.897
+    },
+    {
+      "column": "smoking_history_never",
+      "score": 0.813
+    },
+    {
+      "column": "age",
+      "score": 0.774
+    },
+    {
+      "column": "hba1c_level",
+      "score": 0.765
+    },
+    {
+      "column": "blood_glucose_level",
+      "score": 0.63
+    }
+  ],
+  "corr": {
+    "features": [
+      "age",
+      "bmi",
+      "blood_glucose_level",
+      "hba1c_level"
+    ],
+    "real": [
+      [
+        1.0,
+        0.02,
+        0.14,
+        0.24
+      ],
+      [
+        0.02,
+        1.0,
+        0.12,
+        0.18
+      ],
+      [
+        0.14,
+        0.12,
+        1.0,
+        0.8
+      ],
+      [
+        0.24,
+        0.18,
+        0.8,
+        1.0
+      ]
+    ],
+    "synthetic": [
+      [
+        1.0,
+        0.05,
+        0.02,
+        0.0
+      ],
+      [
+        0.05,
+        1.0,
+        -0.01,
+        -0.02
+      ],
+      [
+        0.02,
+        -0.01,
+        1.0,
+        -0.02
+      ],
+      [
+        0.0,
+        -0.02,
+        -0.02,
+        1.0
+      ]
+    ]
+  }
+}

@@ -16,7 +16,7 @@ API REST en Python/Flask que sirve modelos de Machine Learning para la estimaci�
 - **Generación de datos sintéticos** con SDV (CTGAN por defecto, TVAE opcional) + endpoints de comparación real vs sintético (muestras, distribuciones, calidad SDMetrics) que alimentan el laboratorio del frontend.
 - **Pipeline de datos por enfermedad** — desde fuentes públicas a un dataset limpio por enfermedad (sin frame maestro concatenado ni imputación cruzada).
 - **Registro anónimo de uso** sobre SQLAlchemy (`DATABASE_URL`: SQLite en dev, Postgres en prod con el mismo código) + **panel admin dev-only** con analítica agregada, protegido por `X-Admin-Token`.
-- **Suite de 65 tests (pytest)** sobre los invariantes delicados de la API.
+- **Suite de 85 tests (pytest)** sobre los invariantes delicados de la API.
 
 ---
 
@@ -36,11 +36,17 @@ python -m venv venv
 .\venv\Scripts\Activate.ps1     # Windows PowerShell
 # source venv/bin/activate      # Linux/Mac
 
-# Instalar dependencias
+# Instalar dependencias del API
 pip install -r requirements.txt
+
+# Solo si vas a regenerar datos/sintéticos/modelos (añade SDV+CTGAN y sdmetrics)
+pip install -r requirements-pipeline.txt
 ```
 
-> Nota: `requirements.txt` lista solo las dependencias **directas** (las transitivas las resuelve pip). Está en UTF-8.
+> `requirements.txt` es el **runtime del API** y lista solo dependencias directas (las
+> transitivas las resuelve pip). SDV/CTGAN viven aparte en `requirements-pipeline.txt`
+> porque arrastran torch (~479 MB) y el servidor no los necesita: el informe de calidad
+> del sintético se precomputa en el pipeline y la API sirve el JSON.
 
 ---
 
@@ -50,7 +56,10 @@ pip install -r requirements.txt
 
 ```powershell
 python app.py
-# Servidor en http://0.0.0.0:8000 (modo debug)
+# Servidor en http://0.0.0.0:8000
+
+# Debugger interactivo de Werkzeug (opt-in, NUNCA en producción):
+$env:FLASK_DEBUG = "1"; python app.py
 ```
 
 Producción (con `gunicorn`, ya incluido en requirements):
@@ -63,7 +72,8 @@ Al arrancar, `app.py` ejecuta automáticamente:
 1. `_load_all()` — carga los pipelines de `models/` (las 3 enfermedades + la variante `diabetes_glucosa`), sus calibradores isotónicos, lee el modelo ganador de cada `_metrics.json` y construye un explainer SHAP acorde al tipo de cada modelo (Linear o Tree).
 2. `init_db()` — crea la tabla `predictions` vía SQLAlchemy (por defecto `sqlite:///medical_history.db`; con `DATABASE_URL` apunta a Postgres u otro motor) y migra columnas nuevas si la BD venía del esquema viejo.
 
-Variables de entorno útiles: `DATABASE_URL` (motor de BD) y `ADMIN_TOKEN` (habilita los endpoints `/admin/*`; sin ella responden 503).
+Variables de entorno: `DATABASE_URL` (motor de BD), `ADMIN_TOKEN` (habilita los endpoints
+`/admin/*`; sin ella responden 503) y `FLASK_DEBUG` (debugger local). Plantilla en `.env.example`.
 
 ### Pipeline de datos y entrenamiento
 
@@ -78,6 +88,9 @@ python prepare_nhanes_diabetes.py     # diabetes (NHANES 2021-2023)
 
 # 2. Split estratificado + síntesis CTGAN/TVAE por enfermedad
 python curate_and_synthesize.py
+
+# 2b. Informe de calidad del sintético (SDMetrics) precomputado a JSON
+python build_quality_reports.py
 
 # Opciones útiles
 python curate_and_synthesize.py `
@@ -117,10 +130,15 @@ python -m pytest
 Todos los endpoints aceptan/devuelven JSON. CORS está habilitado globalmente.
 
 ### `GET /health`
-Liveness check.
+Liveness + comprobación real de la BD (`SELECT 1`). Devuelve **503** si la base no responde.
 
 ```json
-{ "status": "ok", "database": "sqlite_connected" }
+{
+  "status": "ok",
+  "database": "sqlite",
+  "database_ok": true,
+  "models_loaded": ["cardiovascular", "diabetes", "diabetes_glucosa", "hipertension"]
+}
 ```
 
 ### `GET /metrics/<disease>`
@@ -205,7 +223,7 @@ Una ficha de paciente del origen pedido, en formato homogéneo. Alimenta el jueg
 Histograma comparado real vs sintético de una variable numérica, sobre bins comunes y normalizado a % (compara la *forma* aunque difiera el tamaño de muestra).
 
 ### `GET /synthetic_quality/<disease>`
-Score de fidelidad del sintético (SDMetrics `QualityReport`: overall, column shapes, pair trends, detalle por columna) + matrices de correlación real/sintético para el heatmap comparado. Se computa en runtime sobre una submuestra y se cachea en memoria.
+Score de fidelidad del sintético (SDMetrics `QualityReport`: overall, column shapes, pair trends, detalle por columna) + matrices de correlación real/sintético para el heatmap comparado. El informe se **precomputa** en el pipeline (`build_quality_reports.py` → `data_curated/<enfermedad>/<enfermedad>_quality.json`) y la API lo sirve tal cual, así que producción no necesita `sdmetrics` (que arrastra torch). Solo lo recalcula si el JSON falta y la librería está instalada.
 
 ### Admin (dev-only): `GET /admin/verify` · `/admin/stats` · `/admin/predictions` · `/admin/export.csv`
 Protegidos por el header `X-Admin-Token`, que debe coincidir con la env var `ADMIN_TOKEN` (sin ella responden **503**; token incorrecto, **401**). No es auth de usuario — los usuarios nunca se loguean.
@@ -224,11 +242,15 @@ chronic-risk-backend/
 ├── prepare_datasets.py          # CSVs crudos → dataset limpio (hipertensión, cardiovascular)
 ├── prepare_nhanes_diabetes.py   # NHANES 2021-2023 (.xpt) → dataset de diabetes
 ├── curate_and_synthesize.py     # Split estratificado + síntesis CTGAN/TVAE
+├── build_quality_reports.py     # Precomputa el informe de calidad del sintético a JSON
+├── synthetic_quality.py         # Cálculo SDMetrics + correlaciones (pipeline y fallback del API)
 ├── train_models.py              # Bake-off multi-modelo por CV (hipertensión, cardiovascular)
 ├── train_nhanes_diabetes.py     # Diabetes híbrida: variantes con/sin glucosa + calibradores
-├── tests/                       # Suite pytest (65 tests; BD temporal propia)
+├── tests/                       # Suite pytest (85 tests; BD temporal propia)
 ├── pytest.ini
-├── requirements.txt             # Dependencias directas (UTF-8)
+├── .env.example                 # Plantilla de variables de entorno
+├── requirements.txt             # Runtime del API (directas, UTF-8)
+├── requirements-pipeline.txt    # + SDV/CTGAN y sdmetrics (solo pipeline de datos)
 ├── requirements-dev.txt         # + pytest
 ├── runtime.txt                  # python-3.12.8
 ├── medical_history.db           # SQLite generada en runtime (gitignored)

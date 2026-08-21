@@ -1,0 +1,112 @@
+{
+  "n_used": 2000,
+  "overall": 0.8915,
+  "column_shapes": 0.9147,
+  "column_pair_trends": 0.8683,
+  "per_column": [
+    {
+      "column": "ap_lo",
+      "score": 0.965
+    },
+    {
+      "column": "active",
+      "score": 0.945
+    },
+    {
+      "column": "ap_hi",
+      "score": 0.944
+    },
+    {
+      "column": "gluc",
+      "score": 0.925
+    },
+    {
+      "column": "age",
+      "score": 0.909
+    },
+    {
+      "column": "gender_Male",
+      "score": 0.908
+    },
+    {
+      "column": "gender_Female",
+      "score": 0.902
+    },
+    {
+      "column": "bmi",
+      "score": 0.896
+    },
+    {
+      "column": "smoke",
+      "score": 0.896
+    },
+    {
+      "column": "alco",
+      "score": 0.893
+    },
+    {
+      "column": "cholesterol",
+      "score": 0.878
+    }
+  ],
+  "corr": {
+    "features": [
+      "age",
+      "bmi",
+      "ap_hi",
+      "ap_lo"
+    ],
+    "real": [
+      [
+        1.0,
+        0.12,
+        0.19,
+        0.14
+      ],
+      [
+        0.12,
+        1.0,
+        0.28,
+        0.25
+      ],
+      [
+        0.19,
+        0.28,
+        1.0,
+        0.74
+      ],
+      [
+        0.14,
+        0.25,
+        0.74,
+        1.0
+      ]
+    ],
+    "synthetic": [
+      [
+        1.0,
+        0.23,
+        0.16,
+        0.2
+      ],
+      [
+        0.23,
+        1.0,
+        0.33,
+        0.29
+      ],
+      [
+        0.16,
+        0.33,
+        1.0,
+        0.44
+      ],
+      [
+        0.2,
+        0.29,
+        0.44,
+        1.0
+      ]
+    ]
+  }
+}

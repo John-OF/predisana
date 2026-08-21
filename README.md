@@ -70,7 +70,7 @@ las probabilidades (calibración isotónica con curva de fiabilidad).
   devuelven como `clinical_flags` junto al número del modelo, nunca encima de él.
 - **Capa de datos agnóstica al motor** (SQLAlchemy): SQLite en dev, Postgres en
   producción cambiando solo `DATABASE_URL`.
-- **65 tests de pytest** sobre los invariantes delicados: ruteo híbrido, alias de
+- **85 tests de pytest** sobre los invariantes delicados: ruteo híbrido, alias de
   features, monotonía riesgo↔glucosa, calibración, capa clínica y auth del admin.
 
 ## Arquitectura
@@ -117,8 +117,9 @@ Monorepo con dos componentes:
 ```powershell
 python -m venv venv
 .\venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-python app.py            # http://localhost:8000
+pip install -r requirements.txt   # runtime del API (el pipeline de datos va en
+                                  # requirements-pipeline.txt: SDV/CTGAN, pesado)
+python app.py                     # http://localhost:8000
 ```
 
 **Frontend** (`chronic-risk-frontend/`):
@@ -133,7 +134,7 @@ admin requiere definir la variable de entorno `ADMIN_TOKEN` en el backend.
 **Tests del backend:**
 ```powershell
 pip install -r requirements-dev.txt
-python -m pytest         # 65 tests, ~3 s (BD temporal, no toca la de dev)
+python -m pytest         # 85 tests, ~3 s (BD temporal, no toca la de dev)
 ```
 
 Consulta los README de cada subcarpeta para el detalle del pipeline de datos,
