@@ -48,15 +48,14 @@ const WHATIF_FEATURES = {
 };
 
 // --- CONFIGURACIÓN DE LÍMITES CLÍNICOS REALISTAS ---
+// Rango aceptado por el input (min/max) y rango recomendado que se muestra como
+// ayuda. La edad arranca en 18: el simulador es de cribado en adultos y ningun
+// modelo vio menores en entrenamiento.
 const CLINICAL_LIMITS = {
-  age: { min: 1, max: 120, label: "1 - 100 años", step: 1 },
-  pregnancies: { min: 0, max: 20, label: "0 - 10", step: 1 },
+  age: { min: 18, max: 100, label: "18 - 100 años", step: 1 },
   glucose: { min: 40, max: 500, label: "70 - 200 mg/dL", step: 1 },
   blood_pressure: { min: 50, max: 300, label: "90 - 180 mmHg", step: 1 },
-  skin_thickness: { min: 0, max: 99, label: "10 - 50 mm", step: 1 },
-  insulin: { min: 0, max: 900, label: "15 - 276 mu U/ml", step: 1 },
   bmi: { min: 10, max: 90, label: "18.5 - 40", step: 0.1 },
-  diabetes_pedigree: { min: 0, max: 3, label: "0.08 - 2.42", step: 0.01 },
   hba1c_level: { min: 3, max: 15, label: "4 - 9 %", step: 0.1 },
   heart_disease: { min: 0, max: 1, label: "0 (No) - 1 (Sí)", step: 1 },
   hypertension: { min: 0, max: 1, label: "0 (No) - 1 (Sí)", step: 1 },
@@ -361,8 +360,6 @@ const Simulacion = () => {
   const renderNumberInput = (feat, optional = false) => {
     const isCategoricalPart = config.categoricals && Object.keys(config.categoricals).some(cat => feat.startsWith(cat + "_"));
     if (isCategoricalPart) return null;
-    if (feat === 'pregnancies' && formData['gender'] === 'Male') return null;
-
     const limits = CLINICAL_LIMITS[feat] || CLINICAL_LIMITS.default;
     return (
       <Form.Group className="ps-field" key={feat}>
@@ -557,6 +554,22 @@ const Simulacion = () => {
     );
   };
 
+  // Aviso de campos que el backend no recibió y asumió como 0. Antes la respuesta
+  // traía `missing_filled_as_zero` y la UI lo ignoraba: el usuario veía un riesgo
+  // calculado con un IMC de 0 sin enterarse.
+  const renderMissing = () => {
+    const faltantes = currentResult?.missing_filled_as_zero || [];
+    if (!faltantes.length) return null;
+    return (
+      <Alert variant="warning" className="py-2 mt-3 text-start">
+        <small>
+          <strong>Sin dato:</strong> {faltantes.map(f => getLabel(f)).join(', ')}.
+          Se calculó asumiendo 0, así que la estimación es menos fiable. Complétalos y recalcula.
+        </small>
+      </Alert>
+    );
+  };
+
   // Capa clínica de referencia (ADA / ACC-AHA)
   const renderClinic = () => {
     if (!currentResult) return null;
@@ -715,6 +728,7 @@ const Simulacion = () => {
                       arriba para una lectura mucho más precisa.
                     </p>
                   ))}
+                  {renderMissing()}
                   {renderShap()}
                   {renderClinic()}
                   {renderWhatIf()}

@@ -625,9 +625,11 @@ def _build_row(key: str, payload: Dict[str, Any]):
         val = _safe_get(payload, f)
         # Ausente = no viene o viene vacio (un input borrado en el form manda "").
         if val is None or (isinstance(val, str) and not val.strip()):
-            # Las dummies (one-hot, con "_") no se reportan como ausentes.
-            if not (f.startswith(("gender_", "smoking_history_", "cholesterol_",
-                                  "glucose_", "bp_", "ethnicity_", "race_")) or "_" in f):
+            # Las dummies (one-hot) no se reportan como ausentes; el resto si.
+            # OJO: antes esto llevaba un `or "_" in f` que silenciaba features
+            # reales como blood_pressure, ap_hi o blood_glucose_level.
+            if not f.startswith(("gender_", "smoking_history_", "cholesterol_",
+                                 "glucose_", "bp_", "ethnicity_", "race_")):
                 missing.append(f)
             num = 0.0
         else:

@@ -16,7 +16,7 @@ API REST en Python/Flask que sirve modelos de Machine Learning para la estimaci�
 - **Generación de datos sintéticos** con SDV (CTGAN por defecto, TVAE opcional) + endpoints de comparación real vs sintético (muestras, distribuciones, calidad SDMetrics) que alimentan el laboratorio del frontend.
 - **Pipeline de datos por enfermedad** — desde fuentes públicas a un dataset limpio por enfermedad (sin frame maestro concatenado ni imputación cruzada).
 - **Registro anónimo de uso** sobre SQLAlchemy (`DATABASE_URL`: SQLite en dev, Postgres en prod con el mismo código) + **panel admin dev-only** con analítica agregada, protegido por `X-Admin-Token`.
-- **Suite de 85 tests (pytest)** sobre los invariantes delicados de la API.
+- **Suite de 90 tests (pytest)** sobre los invariantes delicados de la API.
 
 ---
 
@@ -246,7 +246,7 @@ chronic-risk-backend/
 ├── synthetic_quality.py         # Cálculo SDMetrics + correlaciones (pipeline y fallback del API)
 ├── train_models.py              # Bake-off multi-modelo por CV (hipertensión, cardiovascular)
 ├── train_nhanes_diabetes.py     # Diabetes híbrida: variantes con/sin glucosa + calibradores
-├── tests/                       # Suite pytest (85 tests; BD temporal propia)
+├── tests/                       # Suite pytest (90 tests; BD temporal propia)
 ├── pytest.ini
 ├── .env.example                 # Plantilla de variables de entorno
 ├── requirements.txt             # Runtime del API (directas, UTF-8)
