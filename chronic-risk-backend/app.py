@@ -498,6 +498,14 @@ def _load_all():
             print(f"⚠️ SHAP no disponible para {dis}: {e}")
     # >>> SHAP END
 
+    # Cobertura de datos por enfermedad (AUD-16). Se indexa por carpeta de datos, no
+    # por modelo: la variante con glucosa comparte el train de diabetes.
+    for dis in set(_data_disease(k) for k in MODELS):
+        try:
+            SUPPORT[dis] = _build_support_stats(dis)
+        except Exception as e:
+            print(f"⚠️ Cobertura de datos no disponible para {dis}: {e}")
+
 
 def _safe_get(payload: Dict[str, Any], key: str):
     if key in payload: return payload[key]
@@ -558,6 +566,108 @@ def compute_clinical_flags(glucose_mgdl: float, hba1c: float, systolic: float) -
                       "source": "ACC/AHA", "detail": "Sistólica 120–129 mmHg: presión elevada."})
 
     return flags
+
+
+# ==========================================
+# COBERTURA DE DATOS DE ENTRENAMIENTO (AUD-16)
+# ==========================================
+# Un modelo no avisa de que esta extrapolando: devuelve un numero igual de firme
+# para una edad que vio 5000 veces que para una que no vio nunca. Cardiovascular se
+# entreno con edades 29.7-64.9 y el formulario acepta 18-100, asi que a los 90 anos
+# la respuesta era una extrapolacion presentada como una estimacion normal.
+# Esto NO toca la probabilidad (misma decision que la capa clinica en A4): se calcula
+# aparte y se devuelve al lado del numero para que el usuario sepa cuanto fiarse.
+SUPPORT: Dict[str, Dict[str, Dict[str, float]]] = {}
+
+# Cuantos valores distintos hace falta para tratar una columna como continua: las
+# dummies (0/1) y las escalas cortas (colesterol 1-3) no tienen "rango de soporte".
+_MIN_VALORES_CONTINUA = 6
+
+
+def _build_support_stats(disease: str) -> Dict[str, Dict[str, float]]:
+    """Rango observado en el TRAIN real de cada feature continua. Se calcula una vez
+    al arrancar, sobre el mismo CSV que alimenta el fondo de SHAP."""
+    curated = os.path.join("data_curated", disease, f"{disease}_train.csv")
+    processed = os.path.join("data_processed", f"{disease}_dataset.csv")
+    path = curated if os.path.exists(curated) else processed
+    if not os.path.exists(path):
+        return {}
+
+    df = pd.read_csv(path, low_memory=False)
+    stats: Dict[str, Dict[str, float]] = {}
+    for col in df.columns:
+        if col == "target":
+            continue
+        serie = pd.to_numeric(df[col], errors="coerce").dropna()
+        if serie.nunique() < _MIN_VALORES_CONTINUA:
+            continue
+        stats[col] = {
+            "min": float(serie.min()),
+            "max": float(serie.max()),
+            "p1": float(serie.quantile(0.01)),
+            "p99": float(serie.quantile(0.99)),
+            "n": int(len(serie)),
+        }
+    return stats
+
+
+def compute_support_warnings(key: str, payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Avisos por feature cuando el valor cae donde el modelo tiene pocos datos o
+    ninguno. Solo mira las features que el modelo USA, y solo las que el usuario
+    rellenó (un campo vacío ya se reporta por `missing_filled_as_zero`)."""
+    stats = SUPPORT.get(_data_disease(key), {})
+    if not stats:
+        return []
+
+    avisos: List[Dict[str, Any]] = []
+    for feat in FEATURES.get(key, []):
+        rango = stats.get(feat)
+        if not rango:
+            continue
+        crudo = _safe_get(payload, feat)
+        if crudo is None or crudo == "":
+            continue
+        try:
+            valor = _to_float(feat, crudo)
+        except InvalidPayload:
+            continue
+        if valor is None:
+            continue
+
+        lo, hi, p1, p99 = rango["min"], rango["max"], rango["p1"], rango["p99"]
+        if valor < lo or valor > hi:
+            avisos.append({
+                "feature": feat, "value": valor, "level": "sin_datos",
+                "trained_range": [lo, hi],
+                "detail": (f"El modelo no vio ningún caso con este valor: en los datos de "
+                           f"entrenamiento va de {lo:g} a {hi:g}. Aquí la estimación es una "
+                           f"extrapolación."),
+            })
+        elif valor < p1 or valor > p99:
+            avisos.append({
+                "feature": feat, "value": valor, "level": "pocos_datos",
+                "trained_range": [lo, hi], "common_range": [p1, p99],
+                "detail": (f"Valor poco frecuente: el 98% de los datos de entrenamiento está "
+                           f"entre {p1:g} y {p99:g}. La estimación aquí es menos fiable."),
+            })
+    return avisos
+
+
+def _supported_range(key: str, feature: str) -> Optional[List[float]]:
+    """[min, max] observado en el train para esa feature, o None si no aplica
+    (categorica, o enfermedad sin datos curados)."""
+    rango = SUPPORT.get(_data_disease(key), {}).get(feature)
+    return [rango["min"], rango["max"]] if rango else None
+
+
+def support_note(avisos: List[Dict[str, Any]]) -> str:
+    if not avisos:
+        return "Todos los valores caen dentro del rango con datos de entrenamiento."
+    if any(a["level"] == "sin_datos" for a in avisos):
+        return ("Alguno de los datos queda fuera del rango que el modelo llegó a ver, "
+                "así que este resultado es una extrapolación: tómalo con reservas.")
+    return ("Alguno de los datos cae en una zona con pocos ejemplos de entrenamiento, "
+            "así que la estimación es menos fiable de lo habitual.")
 
 
 # ==========================================
@@ -686,6 +796,10 @@ def get_config(disease: str):
         "features": feats,
         "optional_features": optional,
         "ranges": ranges,
+        # AUD-16: rango REAL de los datos de entrenamiento, para que el front pueda
+        # avisar de que fuera de ahi el modelo extrapola. `ranges` de arriba son los
+        # limites del formulario, que es otra cosa.
+        "feature_support": SUPPORT.get(disease, {}),
         "categoricals": { "gender": gender_opts, "smoking_history": smoke_opts }
     })
 
@@ -863,6 +977,9 @@ def predict(disease: str):
     clinical_note = " ".join(f["detail"] for f in clinical_flags) or \
         "Sin indicadores clínicos por encima de umbrales de referencia."
 
+    # AUD-16: igual que la capa clínica, se calcula APARTE y no toca la probabilidad.
+    support_warnings = compute_support_warnings(model_key, payload)
+
     used_glucose = model_key == DIABETES_GLUCOSE_KEY
     log_prediction_to_db(
         disease, _loggable_payload(model_key, payload), pred_class, prob,
@@ -885,7 +1002,9 @@ def predict(disease: str):
         "top_features": top_features,
         "clinical_flags": clinical_flags,
         "clinical_note": clinical_note,
-        "explain_note": "La probabilidad mostrada es la salida del modelo calibrada (isotónica); `raw_model_probability` es la salida cruda. Los valores SHAP explican el modelo crudo (la calibración es un reescalado monótono posterior). Los indicadores clínicos (ADA/ACC-AHA) se muestran aparte como referencia y NO modifican la probabilidad."
+        "support_warnings": support_warnings,
+        "support_note": support_note(support_warnings),
+        "explain_note": "La probabilidad mostrada es la salida del modelo calibrada (isotónica); `raw_model_probability` es la salida cruda. Los valores SHAP explican el modelo crudo (la calibración es un reescalado monótono posterior). Los indicadores clínicos (ADA/ACC-AHA) y los avisos de cobertura de datos (`support_warnings`) se muestran aparte como referencia y NO modifican la probabilidad."
     })
 
 
@@ -957,6 +1076,11 @@ def whatif(disease: str):
         "variant": "glucosa" if model_key == DIABETES_GLUCOSE_KEY else "base",
         "calibrated": model_key in CALIBRATORS,
         "curve": curve,
+        # AUD-16: rango de la feature barrida en el train real. El barrido puede pasarse
+        # de largo (edad hasta 100 con un modelo entrenado hasta 65) y la curva no lo
+        # delata por si sola: fuera de aqui se aplana porque no hay datos, no porque el
+        # riesgo deje de subir.
+        "supported_range": _supported_range(model_key, feature),
     })
 
 @app.get("/synthetic/<disease>")

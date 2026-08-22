@@ -5,7 +5,7 @@ import { getLabel } from '../utils/translations';
 import Swal from 'sweetalert2';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend,
-  ResponsiveContainer, AreaChart, Area, ReferenceLine, ReferenceDot,
+  ResponsiveContainer, AreaChart, Area, ReferenceLine, ReferenceDot, ReferenceArea,
 } from 'recharts';
 import {
   ArrowUpShort, ArrowDownShort, PencilSquare, ArrowCounterclockwise, Dice5Fill,
@@ -514,7 +514,11 @@ const Simulacion = () => {
           Math.abs(b.value - currentVal) < Math.abs(a.value - currentVal) ? b : a);
         currentPct = nearest.pct;
       }
-      setWhatIf({ feature: feat, curve, current: Number.isFinite(currentVal) ? currentVal : null, currentPct });
+      setWhatIf({
+        feature: feat, curve, current: Number.isFinite(currentVal) ? currentVal : null, currentPct,
+        // AUD-16: hasta donde llegan los datos reales de entrenamiento.
+        supported: data.supported_range || null,
+      });
     } catch (err) {
       console.error(err);
       setWhatIf(null);
@@ -554,6 +558,7 @@ const Simulacion = () => {
         )}
 
         {whatIf && !whatIfLoading && (
+          <>
           <div style={{ width: '100%', height: 250 }}>
             <ResponsiveContainer>
               <AreaChart data={whatIf.curve} margin={{ top: 6, right: 12, bottom: 22, left: 0 }}>
@@ -573,6 +578,20 @@ const Simulacion = () => {
                   labelFormatter={(v) => `${labelES(whatIf.feature)}: ${v}`} />
                 <Area type="monotone" dataKey="pct" stroke="var(--accent, #2f9e8f)" strokeWidth={2}
                   fill="url(#wiFill)" />
+                {/* AUD-16: el barrido puede pasarse del rango entrenado (edad hasta 100
+                    con un modelo que vio hasta 65) y la curva no lo delata: se aplana
+                    porque no hay datos, no porque el riesgo deje de subir. */}
+                {whatIf.supported && whatIf.curve.length > 0 && (() => {
+                  const [lo, hi] = whatIf.supported;
+                  const x0 = whatIf.curve[0].value;
+                  const x1 = whatIf.curve[whatIf.curve.length - 1].value;
+                  return (
+                    <>
+                      {x0 < lo && <ReferenceArea x1={x0} x2={lo} fill="var(--text-faint)" fillOpacity={0.12} />}
+                      {x1 > hi && <ReferenceArea x1={hi} x2={x1} fill="var(--text-faint)" fillOpacity={0.12} />}
+                    </>
+                  );
+                })()}
                 {whatIf.current != null && (
                   <ReferenceLine x={whatIf.current} stroke="var(--text-faint)" strokeDasharray="4 4"
                     label={{ value: 'tú', position: 'top', fontSize: 11, fill: 'var(--text-faint)' }} />
@@ -584,6 +603,16 @@ const Simulacion = () => {
               </AreaChart>
             </ResponsiveContainer>
           </div>
+          {/* Fuera del div de altura fija del grafico: dentro se solapaba con el
+              boton de comparar y el aviso se leia a medias. */}
+          {whatIf.supported && (
+            <p className="text-secondary small mt-2 mb-0">
+              Zona sombreada: fuera de los datos de entrenamiento
+              ({labelES(whatIf.feature).toLowerCase()} de {whatIf.supported[0]} a {whatIf.supported[1]}).
+              Ahí la curva es una extrapolación.
+            </p>
+          )}
+          </>
         )}
       </div>
     );
@@ -604,6 +633,30 @@ const Simulacion = () => {
         <small>
           <strong>Sin dato:</strong> {faltantes.map(f => getLabel(f)).join(', ')}.
           Se calculó asumiendo 0, así que la estimación es menos fiable. Complétalos y recalcula.
+        </small>
+      </Alert>
+    );
+  };
+
+  // AUD-16: cobertura de datos. Un modelo no avisa de que está extrapolando —
+  // devuelve un número igual de firme para una edad que vio 5000 veces que para una
+  // que no vio nunca (cardiovascular se entrenó con 29-65 años y aquí se puede pedir
+  // 90). El backend lo calcula aparte, sin tocar la probabilidad.
+  const renderSoporte = () => {
+    const avisos = currentResult?.support_warnings || [];
+    if (!avisos.length) return null;
+    const extrapola = avisos.some(a => a.level === 'sin_datos');
+    return (
+      <Alert variant={extrapola ? 'warning' : 'secondary'} className="py-2 mt-3 text-start">
+        <small>
+          <strong>{extrapola ? 'Fuera del rango con datos:' : 'Zona con pocos datos:'}</strong>{' '}
+          {avisos.map(a => {
+            const [lo, hi] = a.trained_range;
+            return `${getLabel(a.feature)} (${a.value}; el modelo aprendió con ${lo}–${hi})`;
+          }).join(', ')}.{' '}
+          {extrapola
+            ? 'Ahí el resultado es una extrapolación: el modelo nunca vio casos así.'
+            : 'La estimación es menos fiable de lo habitual en esa zona.'}
         </small>
       </Alert>
     );
@@ -761,6 +814,7 @@ const Simulacion = () => {
                     <p className="small text-faint mt-2 mb-0">{resultNote}</p>
                   ))}
                   {renderMissing()}
+                  {renderSoporte()}
                   {renderShap()}
                   {renderClinic()}
                   {renderWhatIf()}
