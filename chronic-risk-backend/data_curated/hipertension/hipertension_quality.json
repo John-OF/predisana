@@ -1,56 +1,56 @@
 {
   "n_used": 2000,
-  "overall": 0.8495,
-  "column_shapes": 0.9235,
-  "column_pair_trends": 0.7754,
+  "overall": 0.9141,
+  "column_shapes": 0.9288,
+  "column_pair_trends": 0.8994,
   "per_column": [
     {
-      "column": "gender_Male",
-      "score": 0.998
-    },
-    {
-      "column": "gender_Female",
-      "score": 0.998
-    },
-    {
-      "column": "high_cholesterol",
-      "score": 0.995
-    },
-    {
       "column": "smoking_history_current",
-      "score": 0.967
+      "score": 0.987
     },
     {
       "column": "smoking_history_former",
-      "score": 0.962
-    },
-    {
-      "column": "diabetes",
-      "score": 0.943
-    },
-    {
-      "column": "heart_disease",
-      "score": 0.94
-    },
-    {
-      "column": "age",
-      "score": 0.934
-    },
-    {
-      "column": "smoking_history_never",
-      "score": 0.931
+      "score": 0.986
     },
     {
       "column": "weight",
-      "score": 0.83
+      "score": 0.976
     },
     {
-      "column": "bmi",
-      "score": 0.797
+      "column": "smoking_history_never",
+      "score": 0.971
+    },
+    {
+      "column": "diabetes",
+      "score": 0.931
+    },
+    {
+      "column": "heart_disease",
+      "score": 0.93
     },
     {
       "column": "waist_circumference",
-      "score": 0.789
+      "score": 0.925
+    },
+    {
+      "column": "bmi",
+      "score": 0.917
+    },
+    {
+      "column": "gender_Male",
+      "score": 0.908
+    },
+    {
+      "column": "gender_Female",
+      "score": 0.908
+    },
+    {
+      "column": "age",
+      "score": 0.906
+    },
+    {
+      "column": "high_cholesterol",
+      "score": 0.8
     }
   ],
   "corr": {
@@ -89,26 +89,26 @@
     "synthetic": [
       [
         1.0,
-        -0.03,
-        0.07,
-        0.05
+        0.1,
+        0.14,
+        0.24
       ],
       [
-        -0.03,
+        0.1,
         1.0,
-        0.09,
-        0.04
+        0.68,
+        0.73
       ],
       [
-        0.07,
-        0.09,
+        0.14,
+        0.68,
         1.0,
-        -0.08
+        0.7
       ],
       [
-        0.05,
-        0.04,
-        -0.08,
+        0.24,
+        0.73,
+        0.7,
         1.0
       ]
     ]

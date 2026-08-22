@@ -1,5 +1,6 @@
 # curate_and_synthesize.py
 import os
+import math
 import argparse
 import numpy as np
 import pandas as pd
@@ -58,6 +59,30 @@ def _detect_categorical_columns(df: pd.DataFrame) -> List[str]:
         if _is_binary(df[c]):
             cats.append(c)
     return cats
+
+# --------- CUANTO ENTRENAR EL GAN (AUD-24) ---------
+# CTGAN no cuenta epocas, cuenta PASOS de gradiente: ceil(n_filas / batch_size) por
+# epoca. Con --epochs fijo, un dataset de 4.8k filas recibia 10x menos entrenamiento
+# que uno de 55k, y se notaba: a 50 epocas la correlacion peso-cintura del sintetico
+# de hipertension era -0.08 (real +0.90) y el 22% de las filas eran fisicamente
+# imposibles (peso <75 kg con cintura >115 cm). Por eso el parametro natural es el
+# numero de pasos, y las epocas se derivan de el para cada dataset.
+BATCH_SIZE_CTGAN = 500  # el default de SDV; si se cambia alli, cambiarlo aqui
+
+# Mas entrenamiento no es gratis: el training-by-sampling de CTGAN aplana las
+# marginales categoricas segun avanza. Medido en cardiovascular al pasar de 5,4k a
+# 15k pasos: la proporcion de hombres se va del 0.350 real al 0.485 (hacia el 50/50),
+# y colesterol y glucosa se desplazan igual; su score SDMetrics baja de 0.924 a 0.893
+# aunque la correlacion ap_hi/ap_lo mejore (0.47 -> 0.65). Como ya venia bien
+# entrenado (55k filas dan 109 pasos por epoca), se queda donde estaba. Los datasets
+# pequenos SI mejoran en todo con 15k pasos, que es el default.
+PASOS_POR_DATASET = {"cardiovascular": 5500}
+
+
+def _epocas_para(n_filas: int, pasos_objetivo: int) -> int:
+    pasos_por_epoca = max(1, math.ceil(n_filas / BATCH_SIZE_CTGAN))
+    return max(1, round(pasos_objetivo / pasos_por_epoca))
+
 
 # --------- ONE-HOT COMO UNA SOLA CATEGORICA (AUD-13) ---------
 # El GAN veia `gender_Male` y `gender_Female` como dos binarias independientes, asi
@@ -184,7 +209,7 @@ def _sanitize_for_sdv(train_df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 # --------- SÍNTESIS ---------
-def fit_and_sample_sdv(train_df, model, synth_multiplier, seed, epochs, max_train_rows):
+def fit_and_sample_sdv(train_df, model, synth_multiplier, seed, epochs, max_train_rows, pasos_objetivo):
     if not SDV_AVAILABLE:
         raise RuntimeError("SDV no disponible. Revisa instalación.")
 
@@ -216,6 +241,12 @@ def fit_and_sample_sdv(train_df, model, synth_multiplier, seed, epochs, max_trai
     if max_train_rows and len(df) > max_train_rows:
         df = df.sample(n=max_train_rows, random_state=seed).reset_index(drop=True)
 
+    # Las epocas se derivan del objetivo de pasos, ya con el numero final de filas.
+    if epochs is None:
+        epochs = _epocas_para(len(df), pasos_objetivo)
+    pasos = epochs * max(1, math.ceil(len(df) / BATCH_SIZE_CTGAN))
+    print(f"   entrenando el GAN: {epochs} epocas sobre {len(df)} filas (~{pasos} pasos)")
+
     if SDV_API_V1:
         metadata = SingleTableMetadata()
         metadata.detect_from_dataframe(df)
@@ -244,7 +275,8 @@ def fit_and_sample_sdv(train_df, model, synth_multiplier, seed, epochs, max_trai
     return muestra[orden + [c for c in muestra.columns if c not in orden]]
 
 # --------- PROCESO PRINCIPAL ---------
-def process_one_dataset(name, test_size, seed, model, synth_multiplier, balance, epochs, max_train_rows):
+def process_one_dataset(name, test_size, seed, model, synth_multiplier, balance, epochs, max_train_rows,
+                        pasos_objetivo):
     src = os.path.join(PROCESSED_DIR, FILENAME.format(name=name))
     if not os.path.exists(src):
         print(f"No existe {src}, se omite.")
@@ -267,7 +299,8 @@ def process_one_dataset(name, test_size, seed, model, synth_multiplier, balance,
     test_df.to_csv(os.path.join(out_dir, f"{name}_test.csv"), index=False)
 
     try:
-        synth_df = fit_and_sample_sdv(train_df, model, synth_multiplier, seed, epochs, max_train_rows)
+        synth_df = fit_and_sample_sdv(train_df, model, synth_multiplier, seed, epochs, max_train_rows,
+                                      PASOS_POR_DATASET.get(name, pasos_objetivo))
         synth_df["target"] = pd.to_numeric(synth_df["target"], errors="coerce").fillna(0).astype(int)
         if balance:
             ones = synth_df[synth_df["target"] == 1]
@@ -299,7 +332,11 @@ def main():
     parser.add_argument("--model", type=str, default="ctgan", choices=["ctgan", "tvae"])
     parser.add_argument("--synth_multiplier", type=float, default=1.0)
     parser.add_argument("--balance", action="store_true")
-    parser.add_argument("--epochs", type=int, default=50)
+    parser.add_argument("--epochs", type=int, default=None,
+                        help="Epocas fijas. Por defecto se derivan de --steps segun el "
+                             "tamano del dataset (ver AUD-24).")
+    parser.add_argument("--steps", type=int, default=15000,
+                        help="Pasos de gradiente objetivo para el GAN (default 15000).")
     parser.add_argument("--max_train_rows", type=int, default=60000)
     parser.add_argument("--only", type=str, default="", help="Lista separada por comas de datasets a procesar")
     args = parser.parse_args()
@@ -309,7 +346,8 @@ def main():
 
     targets = DATASETS if not args.only else [s.strip() for s in args.only.split(",") if s.strip()]
     for name in targets:
-        process_one_dataset(name, args.test_size, args.seed, args.model, args.synth_multiplier, args.balance, args.epochs, args.max_train_rows)
+        process_one_dataset(name, args.test_size, args.seed, args.model, args.synth_multiplier,
+                            args.balance, args.epochs, args.max_train_rows, args.steps)
 
 if __name__ == "__main__":
     main()

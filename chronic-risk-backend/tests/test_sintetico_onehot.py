@@ -11,6 +11,7 @@ Estos tests cubren las dos mitades: los helpers (round-trip exacto) y el ARTEFAC
 que el API sirve de verdad (los CSV de data_curated).
 """
 import glob
+import math
 import os
 
 import pandas as pd
@@ -101,6 +102,23 @@ def test_si_son_muchas_no_se_descartan():
     })
     grupos = cs._detect_onehot_groups(df)
     assert len(cs._descartar_sin_categoria(df, grupos)) == 4
+
+
+# ---------- cuanto entrena el GAN (AUD-24) ----------
+def test_las_epocas_se_derivan_del_tamano_del_dataset():
+    """CTGAN cuenta pasos, no epocas: con --epochs fijo un dataset pequeno recibia
+    10x menos entrenamiento que uno grande (correlaciones destruidas en el sintetico).
+    Las epocas se derivan para que todos reciban los mismos pasos."""
+    pequeno = cs._epocas_para(4789, 15000)     # hipertension
+    grande = cs._epocas_para(54392, 15000)     # cardiovascular
+    assert pequeno > grande * 5, (pequeno, grande)
+    # y en pasos reales acaban en el mismo orden de magnitud
+    pasos = lambda n, e: e * math.ceil(n / cs.BATCH_SIZE_CTGAN)
+    assert 0.8 < pasos(4789, pequeno) / pasos(54392, grande) < 1.25
+
+
+def test_nunca_menos_de_una_epoca():
+    assert cs._epocas_para(10_000_000, 10) == 1
 
 
 # ---------- el artefacto que sirve el API ----------
