@@ -75,7 +75,7 @@ las probabilidades (calibración isotónica con curva de fiabilidad).
   devuelven como `clinical_flags` junto al número del modelo, nunca encima de él.
 - **Capa de datos agnóstica al motor** (SQLAlchemy): SQLite en dev, Postgres en
   producción cambiando solo `DATABASE_URL`.
-- **108 tests de pytest** sobre los invariantes delicados: ruteo híbrido, alias de
+- **148 tests de pytest** sobre los invariantes delicados: ruteo híbrido, alias de
   features, monotonía riesgo↔glucosa, calibración, capa clínica y auth del admin.
 
 ## Arquitectura
@@ -139,7 +139,7 @@ admin requiere definir la variable de entorno `ADMIN_TOKEN` en el backend.
 **Tests del backend:**
 ```powershell
 pip install -r requirements-dev.txt
-python -m pytest         # 108 tests, ~3 s (BD temporal, no toca la de dev)
+python -m pytest         # 148 tests, ~3 s (BD temporal, no toca la de dev)
 ```
 
 **CI:** cada push y pull request a `main` corre en GitHub Actions la suite de pytest

@@ -6,20 +6,28 @@
 # calibracion isotonica out-of-fold. Reporta AUCs y la curva glucosa->riesgo.
 # Escribe los modelos vivos: 'diabetes' (self-report, por defecto) y
 # 'diabetes_glucosa' (variante con glucosa opcional).
+#
+# AUD-15: el split sale de data_curated (el MISMO que produce curate_and_synthesize.py
+# y que usa train_models.py), no de un train_test_split propio. Antes convivian dos
+# splits distintos del mismo CSV: el test que reportaban las metricas no era el test
+# curado, y el fondo de SHAP -que se carga de data_curated/diabetes_train.csv- podia
+# contener filas del test real del modelo.
 import os, json
 import numpy as np
 import pandas as pd
 
 from sklearn.metrics import classification_report, roc_auc_score, brier_score_loss
 from sklearn.model_selection import (
-    train_test_split, StratifiedKFold, cross_val_score, cross_val_predict,
+    StratifiedKFold, cross_val_score, cross_val_predict,
 )
 from sklearn.isotonic import IsotonicRegression
 from sklearn.calibration import calibration_curve
 from joblib import dump
 
-from train_models import build_models, CV_FOLDS, SEED
+from train_models import build_models, load_split_or_fallback, CV_FOLDS, SEED
 
+# El CSV canonico lo consume curate_and_synthesize.py, que produce el split de
+# data_curated; aqui solo queda como fallback de load_split_or_fallback (AUD-15).
 DATASET = os.path.join("data_processed", "diabetes_dataset.csv")
 MODELS_DIR = "models"
 CURATED = os.path.join("data_curated", "diabetes")
@@ -48,17 +56,25 @@ def _fit_calibrator_and_curve(pipe, X_tr, y_tr, y_te, proba_te, cv):
     return cal, curve
 
 
-def train_variant(key, df, features):
+def _xy(df, features):
+    """Filas con TODAS las features de la variante presentes (glucosa exige no-NaN).
+    Se filtra a cada lado del split por separado: imputar la glucosa a 0 le meteria
+    al modelo un pico artificial en cero, que es justo lo que se evita en el GAN."""
+    sub = df.dropna(subset=features + ["target"])
+    return (sub[features].values.astype(float), sub["target"].astype(int).values)
+
+
+def train_variant(key, train_df, test_df, features):
     """`key` es la clave de modelo final ('diabetes' = self-report servido por
     defecto, 'diabetes_glucosa' = variante con glucosa)."""
     print(f"\n=== modelo '{key}'  ({len(features)} features) ===")
-    # Filas con TODAS las features de la variante presentes (glucosa exige no-NaN).
-    sub = df.dropna(subset=features + ["target"]).copy()
-    X = sub[features].values.astype(float)
-    y = sub["target"].astype(int).values
-    print(f"   filas usables: {len(sub)}  positivos: {int(y.sum())} ({y.mean()*100:.1f}%)")
+    X_tr, y_tr = _xy(train_df, features)
+    X_te, y_te = _xy(test_df, features)
+    n = len(y_tr) + len(y_te)
+    print(f"   filas usables: {n}  (train {len(y_tr)} / test {len(y_te)})  "
+          f"positivos: {int(y_tr.sum() + y_te.sum())} "
+          f"({(y_tr.sum() + y_te.sum()) / n * 100:.1f}%)")
 
-    X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.2, random_state=SEED, stratify=y)
     cv = StratifiedKFold(n_splits=CV_FOLDS, shuffle=True, random_state=SEED)
 
     leaderboard, best_name, best_pipe, best_cv = [], None, None, -1.0
@@ -111,9 +127,11 @@ def smooth_check(pipe, cal, features):
 
 
 def main():
-    df = pd.read_csv(DATASET)
-    train_variant("diabetes", df, SELF_REPORT)               # self-report (por defecto)
-    pipe_g, cal_g, feats_g = train_variant("diabetes_glucosa", df, GLUCOSA)  # con glucosa
+    # Mismo split que sirve el laboratorio y que alimenta el fondo de SHAP (AUD-15).
+    train_df, test_df = load_split_or_fallback("diabetes")
+    train_variant("diabetes", train_df, test_df, SELF_REPORT)   # self-report (por defecto)
+    pipe_g, cal_g, feats_g = train_variant(                     # con glucosa
+        "diabetes_glucosa", train_df, test_df, GLUCOSA)
     smooth_check(pipe_g, cal_g, feats_g)
 
 

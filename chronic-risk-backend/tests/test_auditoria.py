@@ -1,4 +1,4 @@
-# Regresiones de la auditoria 2026-08-20 (AUD-1, 2, 3, 5, 6, 7, 8, 9, 14 y 18).
+# Regresiones de la auditoria 2026-08-20 (AUD-1, 2, 3, 5, 6, 7, 8, 9, 14, 15 y 18).
 # Cada test fija el comportamiento CORREGIDO para que no vuelva a colarse.
 import json
 import math
@@ -229,3 +229,58 @@ def test_el_fondo_de_shap_no_tiene_glucosas_imposibles(app_module):
     if "blood_glucose_level" in feats:
         col = fondo[:, feats.index("blood_glucose_level")]
         assert np.nanmax(col) <= 500
+
+
+# ---------- AUD-15: un solo split para diabetes ----------
+# `train_nhanes_diabetes.py` hacia su propio train_test_split del CSV completo
+# mientras `data_curated/diabetes/*` salia de `curate_and_synthesize.py`. Para la
+# variante con glucosa los dos repartos eran distintos (filtraba las filas sin
+# glucosa ANTES de partir, asi que n cambiaba): el test que reportaban las metricas
+# no era el curado, y el 79% de sus filas de test estaban en el fondo de SHAP.
+FEATURES_VARIANTE = {
+    "diabetes": ["age", "bmi", "hypertension", "heart_disease",
+                 "gender_Female", "gender_Male", "smoking_history_never",
+                 "smoking_history_current", "smoking_history_former"],
+    "diabetes_glucosa": ["age", "bmi", "hypertension", "heart_disease",
+                         "gender_Female", "gender_Male", "smoking_history_never",
+                         "smoking_history_current", "smoking_history_former",
+                         "blood_glucose_level"],
+}
+
+
+def _curado(cual):
+    import pandas as pd
+    return pd.read_csv(f"data_curated/diabetes/diabetes_{cual}.csv")
+
+
+def test_train_y_test_curados_son_disjuntos():
+    import pandas as pd
+    tr, te = _curado("train"), _curado("test")
+    cols = list(tr.columns)
+    comunes = pd.merge(tr[cols].round(6), te[cols].round(6), how="inner")
+    assert comunes.empty, f"{len(comunes)} filas compartidas entre train y test"
+
+
+@pytest.mark.parametrize("clave", ["diabetes", "diabetes_glucosa"])
+def test_las_metricas_se_reportan_sobre_el_test_curado(clave):
+    """El numero publicado en /metricas tiene que salir del MISMO test que sirve el
+    laboratorio. Antes, `diabetes_glucosa` reportaba sobre 1122 filas de otro reparto
+    mientras el test curado tenia 1131."""
+    feats = FEATURES_VARIANTE[clave]
+    esperado = len(_curado("test").dropna(subset=feats + ["target"]))
+    with open(f"models/{clave}_metrics.json", encoding="utf-8") as f:
+        reportado = json.load(f)["report_test"]["macro avg"]["support"]
+    assert int(reportado) == esperado
+
+
+def test_el_fondo_de_shap_no_contiene_filas_del_test(app_module):
+    """El fondo sale del train curado; si ese train no es el del modelo, las
+    explicaciones se calculan contra filas que el modelo uso para evaluarse."""
+    import numpy as np
+    import pandas as pd
+    feats = app_module.FEATURES["diabetes_glucosa"]
+    fondo = pd.DataFrame(app_module._load_background_for_shap("diabetes", feats),
+                         columns=feats)
+    test = _curado("test").dropna(subset=feats + ["target"])[feats]
+    comunes = pd.merge(fondo.round(6), test.round(6), how="inner")
+    assert comunes.empty, f"{len(comunes)} filas del test en el fondo de SHAP"
