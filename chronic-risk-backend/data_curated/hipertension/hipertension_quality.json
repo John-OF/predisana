@@ -1,56 +1,56 @@
 {
   "n_used": 2000,
-  "overall": 0.733,
-  "column_shapes": 0.8274,
-  "column_pair_trends": 0.6386,
+  "overall": 0.8495,
+  "column_shapes": 0.9235,
+  "column_pair_trends": 0.7754,
   "per_column": [
     {
-      "column": "heart_disease",
-      "score": 0.962
+      "column": "gender_Male",
+      "score": 0.998
+    },
+    {
+      "column": "gender_Female",
+      "score": 0.998
+    },
+    {
+      "column": "high_cholesterol",
+      "score": 0.995
     },
     {
       "column": "smoking_history_current",
-      "score": 0.953
+      "score": 0.967
+    },
+    {
+      "column": "smoking_history_former",
+      "score": 0.962
     },
     {
       "column": "diabetes",
-      "score": 0.94
+      "score": 0.943
     },
     {
-      "column": "gender_Male",
+      "column": "heart_disease",
       "score": 0.94
     },
     {
       "column": "age",
-      "score": 0.842
-    },
-    {
-      "column": "high_cholesterol",
-      "score": 0.824
-    },
-    {
-      "column": "smoking_history_former",
-      "score": 0.823
-    },
-    {
-      "column": "gender_Female",
-      "score": 0.8
+      "score": 0.934
     },
     {
       "column": "smoking_history_never",
-      "score": 0.763
+      "score": 0.931
     },
     {
       "column": "weight",
-      "score": 0.734
+      "score": 0.83
     },
     {
       "column": "bmi",
-      "score": 0.697
+      "score": 0.797
     },
     {
       "column": "waist_circumference",
-      "score": 0.652
+      "score": 0.789
     }
   ],
   "corr": {
@@ -89,26 +89,26 @@
     "synthetic": [
       [
         1.0,
-        -0.02,
-        -0.04,
-        0.01
-      ],
-      [
-        -0.02,
-        1.0,
-        -0.0,
+        -0.03,
+        0.07,
         0.05
       ],
       [
-        -0.04,
-        -0.0,
+        -0.03,
         1.0,
-        0.01
+        0.09,
+        0.04
       ],
       [
-        0.01,
+        0.07,
+        0.09,
+        1.0,
+        -0.08
+      ],
+      [
         0.05,
-        0.01,
+        0.04,
+        -0.08,
         1.0
       ]
     ]

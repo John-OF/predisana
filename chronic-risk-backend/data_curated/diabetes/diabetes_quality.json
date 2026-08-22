@@ -1,52 +1,52 @@
 {
   "n_used": 2000,
-  "overall": 0.7536,
-  "column_shapes": 0.868,
-  "column_pair_trends": 0.6392,
+  "overall": 0.823,
+  "column_shapes": 0.8487,
+  "column_pair_trends": 0.7974,
   "per_column": [
     {
-      "column": "hypertension",
-      "score": 0.968
-    },
-    {
-      "column": "heart_disease",
-      "score": 0.964
-    },
-    {
       "column": "smoking_history_former",
-      "score": 0.962
-    },
-    {
-      "column": "bmi",
-      "score": 0.937
+      "score": 0.98
     },
     {
       "column": "smoking_history_current",
-      "score": 0.931
-    },
-    {
-      "column": "gender_Male",
-      "score": 0.907
-    },
-    {
-      "column": "gender_Female",
-      "score": 0.897
+      "score": 0.957
     },
     {
       "column": "smoking_history_never",
-      "score": 0.813
+      "score": 0.938
+    },
+    {
+      "column": "gender_Male",
+      "score": 0.933
+    },
+    {
+      "column": "gender_Female",
+      "score": 0.933
+    },
+    {
+      "column": "heart_disease",
+      "score": 0.904
+    },
+    {
+      "column": "hypertension",
+      "score": 0.9
     },
     {
       "column": "age",
-      "score": 0.774
+      "score": 0.746
     },
     {
-      "column": "hba1c_level",
-      "score": 0.765
+      "column": "bmi",
+      "score": 0.703
     },
     {
       "column": "blood_glucose_level",
-      "score": 0.63
+      "score": 0.702
+    },
+    {
+      "column": "hba1c_level",
+      "score": 0.639
     }
   ],
   "corr": {
@@ -85,26 +85,26 @@
     "synthetic": [
       [
         1.0,
-        0.05,
-        0.02,
-        0.0
+        -0.03,
+        0.0,
+        -0.05
       ],
       [
-        0.05,
+        -0.03,
         1.0,
-        -0.01,
-        -0.02
-      ],
-      [
-        0.02,
-        -0.01,
-        1.0,
-        -0.02
+        0.0,
+        0.02
       ],
       [
         0.0,
-        -0.02,
-        -0.02,
+        0.0,
+        1.0,
+        -0.06
+      ],
+      [
+        -0.05,
+        0.02,
+        -0.06,
         1.0
       ]
     ]

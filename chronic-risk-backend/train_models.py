@@ -9,6 +9,7 @@
 # reusa build_models/CV_FOLDS/SEED de este modulo. Correr este script no debe
 # pisar models/diabetes_*.
 import os, json
+import argparse
 import numpy as np
 import pandas as pd
 
@@ -289,7 +290,19 @@ def train_one(name: str):
 
 
 def main():
-    for name in DATASETS:
+    # --only, igual que en curate_and_synthesize.py y build_quality_reports.py: si
+    # solo cambio el split de una enfermedad, no hay por que re-serializar la otra.
+    parser = argparse.ArgumentParser(description="Entrenamiento por enfermedad")
+    parser.add_argument("--only", type=str, default="",
+                        help="Lista separada por comas de datasets a entrenar")
+    args = parser.parse_args()
+
+    targets = DATASETS if not args.only else [s.strip() for s in args.only.split(",") if s.strip()]
+    desconocidos = [t for t in targets if t not in DATASETS]
+    if desconocidos:
+        raise SystemExit(f"Datasets no soportados por este script: {desconocidos}. "
+                         f"Disponibles: {DATASETS} (diabetes va en train_nhanes_diabetes.py)")
+    for name in targets:
         train_one(name)
 
 

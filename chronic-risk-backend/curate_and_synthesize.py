@@ -3,7 +3,7 @@ import os
 import argparse
 import numpy as np
 import pandas as pd
-from typing import Tuple, List
+from typing import Tuple, List, Dict
 
 # --------- RUTAS ---------
 PROCESSED_DIR = "data_processed"
@@ -59,6 +59,103 @@ def _detect_categorical_columns(df: pd.DataFrame) -> List[str]:
             cats.append(c)
     return cats
 
+# --------- ONE-HOT COMO UNA SOLA CATEGORICA (AUD-13) ---------
+# El GAN veia `gender_Male` y `gender_Female` como dos binarias independientes, asi
+# que sampleaba cada una por su cuenta: salian filas sin genero (0,0) y con los dos
+# a la vez (1,1) — 1563 y 729 en el sintetico de diabetes, y solo el 45% del
+# tabaquismo tenia exactamente una categoria. Se ve a simple vista en la ficha de
+# paciente del laboratorio y hace trivial el juego "real o sintetico".
+# La solucion no es limpiar despues (un argmax inventaria un genero donde el GAN no
+# eligio ninguno): es colapsar cada grupo a UNA columna categorica antes de entrenar,
+# para que el modelo aprenda que son mutuamente excluyentes, y expandirla al volver.
+ONEHOT_SIN_CATEGORIA = "__sin_categoria__"
+
+
+def _detect_onehot_groups(df: pd.DataFrame) -> Dict[str, List[str]]:
+    """Agrupa columnas que comparten prefijo (`gender_*`, `smoking_history_*`) y que
+    se comportan como un one-hot: todas binarias y como mucho UNA activa por fila.
+    Se detecta sobre los datos reales, asi que un dataset nuevo no necesita tocar
+    codigo. Si el grupo no cumple la exclusividad, se deja tal cual."""
+    candidatos: Dict[str, List[str]] = {}
+    for c in df.columns:
+        if c == "target" or "_" not in c:
+            continue
+        candidatos.setdefault(c.rsplit("_", 1)[0], []).append(c)
+
+    grupos: Dict[str, List[str]] = {}
+    for prefijo, cols in candidatos.items():
+        if len(cols) < 2 or prefijo in df.columns:
+            continue
+        if not all(_is_binary(df[c]) for c in cols):
+            continue
+        if (df[cols].fillna(0).sum(axis=1) > 1).any():
+            continue
+        grupos[prefijo] = sorted(cols)
+    return grupos
+
+
+def _colapsar_onehot(df: pd.DataFrame, grupos: Dict[str, List[str]]) -> pd.DataFrame:
+    """gender_Male=1, gender_Female=0  ->  gender="gender_Male"."""
+    out = df.copy()
+    for prefijo, cols in grupos.items():
+        valores = out[cols].astype(float)
+        # Las filas sin ninguna activa existen de verdad (p.ej. 7 filas de diabetes
+        # sin tabaquismo declarado): se les da su propia categoria en vez de
+        # inventarles una, para que el round-trip sea exacto.
+        etiqueta = valores.idxmax(axis=1).where(valores.sum(axis=1) > 0, ONEHOT_SIN_CATEGORIA)
+        out = out.drop(columns=cols)
+        out[prefijo] = etiqueta.astype(str)
+    return out
+
+
+def _expandir_onehot(df: pd.DataFrame, grupos: Dict[str, List[str]]) -> pd.DataFrame:
+    """Inversa de `_colapsar_onehot`: deja exactamente una columna a 1 (o ninguna)."""
+    out = df.copy()
+    for prefijo, cols in grupos.items():
+        if prefijo not in out.columns:
+            continue
+        etiqueta = out[prefijo].astype(str)
+        out = out.drop(columns=[prefijo])
+        for c in cols:
+            out[c] = (etiqueta == c).astype("int64")
+    return out
+
+
+def _descartar_sin_categoria(df: pd.DataFrame, grupos: Dict[str, List[str]],
+                            umbral: float = 0.02) -> pd.DataFrame:
+    """Quita del entrenamiento del GAN las filas sin ninguna categoria activa.
+    Son datos faltantes disfrazados (el "No Info" que se perdio al hacer el one-hot):
+    7 filas de 4987 en diabetes, 9 de 4798 en hipertension. Si se dejan, CTGAN las
+    trata como una categoria mas y su training-by-sampling la sobre-representa ~10x
+    (86 filas sinteticas sin tabaquismo, de 9 reales). Es la misma politica que ya
+    aplica `_sanitize_for_sdv` con los NaN: el GAN se entrena con casos completos.
+    Si el hueco fuera grande (>umbral) NO se descarta: ahi seria una categoria real
+    del dominio y borrarla mentiria sobre los datos."""
+    if not grupos:
+        return df
+    incompletas = pd.Series(False, index=df.index)
+    for cols in grupos.values():
+        incompletas |= (df[cols].fillna(0).sum(axis=1) == 0)
+    n = int(incompletas.sum())
+    if n == 0:
+        return df
+    if n / len(df) > umbral:
+        print(f"   AVISO: {n} filas ({n/len(df)*100:.1f}%) sin categoria en algun "
+              f"one-hot; se dejan (son demasiadas para tratarlas como dato faltante)")
+        return df
+    print(f"   {n} filas sin categoria en algun one-hot descartadas del GAN "
+          f"({n/len(df)*100:.2f}%, dato faltante)")
+    return df[~incompletas].reset_index(drop=True)
+
+
+def _informe_onehot(df: pd.DataFrame, grupos: Dict[str, List[str]], etiqueta: str) -> None:
+    for prefijo, cols in grupos.items():
+        suma = df[cols].sum(axis=1)
+        rotas = int((suma > 1).sum())
+        vacias = int((suma == 0).sum())
+        print(f"   {etiqueta} {prefijo}: {len(df) - rotas - vacias}/{len(df)} con una sola "
+              f"categoria, {rotas} con varias, {vacias} sin ninguna")
+
 # --------- SANITIZACIÓN ---------
 def _sanitize_for_sdv(train_df: pd.DataFrame) -> pd.DataFrame:
     df = train_df.copy()
@@ -94,12 +191,23 @@ def fit_and_sample_sdv(train_df, model, synth_multiplier, seed, epochs, max_trai
     np.random.seed(seed)
     df = _sanitize_for_sdv(train_df)
 
+    # AUD-13: los grupos one-hot se detectan sobre los datos REALES y se colapsan a
+    # una sola columna categorica ANTES de filtrar y entrenar. Asi el GAN modela
+    # "genero" como una eleccion entre categorias excluyentes, no como dos monedas
+    # independientes que pueden salir cara las dos.
+    grupos_onehot = _detect_onehot_groups(df)
+    if grupos_onehot:
+        print(f"   one-hot colapsados para el GAN: "
+              + ", ".join(f"{p} ({len(c)} cols)" for p, c in grupos_onehot.items()))
+    df = _descartar_sin_categoria(df, grupos_onehot)
+    df = _colapsar_onehot(df, grupos_onehot)
+
     cols_keep = []
     # Bloque NUEVO (Permite binarios como género y enfermedades)
     for c in df.columns:
-        if c == "target":
+        if c == "target" or c in grupos_onehot:
             cols_keep.append(c); continue
-        
+
         # Guardamos todo lo que tenga al menos 2 valores distintos (binarios o continuos)
         if df[c].nunique() >= 2:
             cols_keep.append(c)
@@ -111,7 +219,7 @@ def fit_and_sample_sdv(train_df, model, synth_multiplier, seed, epochs, max_trai
     if SDV_API_V1:
         metadata = SingleTableMetadata()
         metadata.detect_from_dataframe(df)
-        for c in set(_detect_categorical_columns(df) + ["target"]):
+        for c in set(_detect_categorical_columns(df) + ["target"] + list(grupos_onehot)):
             if c in metadata.columns:
                 metadata.update_column(c, sdtype="categorical")
 
@@ -119,13 +227,21 @@ def fit_and_sample_sdv(train_df, model, synth_multiplier, seed, epochs, max_trai
         synthesizer = SynthClass(metadata, epochs=epochs, verbose=False)
         synthesizer.fit(df)
         n_synth = max(1, int(len(df) * synth_multiplier))
-        return synthesizer.sample(num_rows=n_synth).reset_index(drop=True)
+        muestra = synthesizer.sample(num_rows=n_synth).reset_index(drop=True)
     else:
         SynthClass = TVAE if model.lower() == "tvae" else CTGAN
         synthesizer = SynthClass(epochs=epochs, verbose=False)
-        synthesizer.fit(df, discrete_columns=list(set(_detect_categorical_columns(df) + ["target"])))
+        discretas = list(set(_detect_categorical_columns(df) + ["target"] + list(grupos_onehot)))
+        synthesizer.fit(df, discrete_columns=discretas)
         n_synth = max(1, int(len(df) * synth_multiplier))
-        return synthesizer.sample(n_synth).reset_index(drop=True)
+        muestra = synthesizer.sample(n_synth).reset_index(drop=True)
+
+    # Vuelta al esquema real: la categorica se reparte en sus columnas one-hot.
+    muestra = _expandir_onehot(muestra, grupos_onehot)
+    # Mismo orden de columnas que el train, para que la ficha de paciente y las
+    # comparaciones de distribucion no dependan del orden en que salio del GAN.
+    orden = [c for c in train_df.columns if c in muestra.columns]
+    return muestra[orden + [c for c in muestra.columns if c not in orden]]
 
 # --------- PROCESO PRINCIPAL ---------
 def process_one_dataset(name, test_size, seed, model, synth_multiplier, balance, epochs, max_train_rows):
@@ -159,6 +275,17 @@ def process_one_dataset(name, test_size, seed, model, synth_multiplier, balance,
             n = min(len(ones), len(zeros))
             if n > 0:
                 synth_df = pd.concat([ones.sample(n, random_state=seed), zeros.sample(n, random_state=seed)], ignore_index=True)
+        # AUD-13: control de que el sintetico respeta los one-hot (antes salia ~46%
+        # de filas validas en diabetes; ahora tiene que ser el 100%).
+        grupos = _detect_onehot_groups(train_df)
+        if grupos:
+            _informe_onehot(synth_df, grupos, "sintetico")
+            for prefijo, cols in grupos.items():
+                rotas = int((synth_df[cols].sum(axis=1) > 1).sum())
+                if rotas:
+                    raise RuntimeError(
+                        f"{rotas} filas con varias categorias de {prefijo} en el sintetico")
+
         synth_path = os.path.join(out_dir, f"{name}_synthetic_{model.lower()}_x{synth_multiplier:g}_seed{seed}.csv")
         synth_df.to_csv(synth_path, index=False)
         print(f"{name}: split + sintético ({model}, x{synth_multiplier}) guardado en {out_dir}")

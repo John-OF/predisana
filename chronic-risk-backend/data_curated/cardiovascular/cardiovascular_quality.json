@@ -1,52 +1,52 @@
 {
   "n_used": 2000,
-  "overall": 0.8915,
-  "column_shapes": 0.9147,
-  "column_pair_trends": 0.8683,
+  "overall": 0.9238,
+  "column_shapes": 0.9355,
+  "column_pair_trends": 0.9121,
   "per_column": [
     {
-      "column": "ap_lo",
-      "score": 0.965
-    },
-    {
       "column": "active",
-      "score": 0.945
-    },
-    {
-      "column": "ap_hi",
-      "score": 0.944
-    },
-    {
-      "column": "gluc",
-      "score": 0.925
-    },
-    {
-      "column": "age",
-      "score": 0.909
-    },
-    {
-      "column": "gender_Male",
-      "score": 0.908
+      "score": 0.982
     },
     {
       "column": "gender_Female",
-      "score": 0.902
+      "score": 0.97
     },
     {
-      "column": "bmi",
-      "score": 0.896
-    },
-    {
-      "column": "smoke",
-      "score": 0.896
-    },
-    {
-      "column": "alco",
-      "score": 0.893
+      "column": "gender_Male",
+      "score": 0.97
     },
     {
       "column": "cholesterol",
-      "score": 0.878
+      "score": 0.966
+    },
+    {
+      "column": "gluc",
+      "score": 0.964
+    },
+    {
+      "column": "ap_hi",
+      "score": 0.935
+    },
+    {
+      "column": "alco",
+      "score": 0.929
+    },
+    {
+      "column": "ap_lo",
+      "score": 0.907
+    },
+    {
+      "column": "smoke",
+      "score": 0.907
+    },
+    {
+      "column": "bmi",
+      "score": 0.883
+    },
+    {
+      "column": "age",
+      "score": 0.876
     }
   ],
   "corr": {
@@ -60,51 +60,51 @@
       [
         1.0,
         0.12,
-        0.19,
-        0.14
+        0.21,
+        0.15
       ],
       [
         0.12,
         1.0,
-        0.28,
-        0.25
-      ],
-      [
-        0.19,
-        0.28,
-        1.0,
-        0.74
-      ],
-      [
-        0.14,
         0.25,
-        0.74,
+        0.22
+      ],
+      [
+        0.21,
+        0.25,
+        1.0,
+        0.73
+      ],
+      [
+        0.15,
+        0.22,
+        0.73,
         1.0
       ]
     ],
     "synthetic": [
       [
         1.0,
-        0.23,
-        0.16,
+        0.1,
+        0.14,
+        0.19
+      ],
+      [
+        0.1,
+        1.0,
+        0.25,
         0.2
       ],
       [
-        0.23,
+        0.14,
+        0.25,
         1.0,
-        0.33,
-        0.29
+        0.5
       ],
       [
-        0.16,
-        0.33,
-        1.0,
-        0.44
-      ],
-      [
+        0.19,
         0.2,
-        0.29,
-        0.44,
+        0.5,
         1.0
       ]
     ]

@@ -116,6 +116,7 @@ python curate_and_synthesize.py `
 
 # 3. Entrenamiento
 python train_models.py                # bake-off por CV: hipertensión y cardiovascular
+python train_models.py --only cardiovascular   # solo una (no re-serializa la otra)
 python train_nhanes_diabetes.py       # diabetes híbrida: variantes con/sin glucosa + calibradores
 ```
 
@@ -293,4 +294,5 @@ chronic-risk-backend/
 - `train_models.py` corre un bake-off por enfermedad (LogReg / RandomForest / LightGBM con restricciones de monotonía clínica), elige el mejor por AUC en cross-validation, ajusta la calibración isotónica out-of-fold y persiste ganador + calibrador; el score de cada candidato queda en `_metrics.json.leaderboard`.
 - `get_features_for_disease()` parte del esquema propio de cada dataset y solo descarta las features de laboratorio (no respondibles, `DROP_NON_RESPONDABLE`). Con los esquemas por-enfermedad (B1) ya no hay columnas de leakage que recortar.
 - `prepare_datasets.py` produce un dataset limpio por enfermedad desde su fuente cruda, con imputación por mediana *intra-dataset* y caps fisiológicos (sin esquema común ni imputación cruzada). Para diabetes, la fuente canónica es NHANES vía `prepare_nhanes_diabetes.py`.
+- **Los one-hot se colapsan antes de entrenar el GAN (AUD-13).** CTGAN veía `gender_Male` y `gender_Female` como dos binarias independientes y las sampleaba por separado: salían pacientes sintéticos **sin género** o **con los dos a la vez** (solo el 46% de las filas de diabetes eran válidas), algo que se ve a simple vista en la ficha del laboratorio y hace trivial el juego "¿real o sintético?". `curate_and_synthesize.py` detecta los grupos mutuamente excluyentes sobre los datos reales, los convierte en **una sola columna categórica** para el ajuste y los expande de vuelta al muestrear (round-trip exacto, con test). No se arregla con un argmax a posteriori: eso *inventa* una categoría donde el GAN no eligió ninguna. Efecto medido en el informe SDMetrics: diabetes **0.754 → 0.823**, hipertensión **0.733 → 0.850**, cardiovascular **0.892 → 0.924** (la ganancia está sobre todo en *column pair trends*, que es justo lo que rompía la correlación imposible entre las dummies).
 - El engine de BD se construye desde **`DATABASE_URL`** (default `sqlite:///medical_history.db`); para Postgres en producción basta cambiar la env var, mismo código.
