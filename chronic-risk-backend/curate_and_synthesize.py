@@ -69,13 +69,18 @@ def _detect_categorical_columns(df: pd.DataFrame) -> List[str]:
 # numero de pasos, y las epocas se derivan de el para cada dataset.
 BATCH_SIZE_CTGAN = 500  # el default de SDV; si se cambia alli, cambiarlo aqui
 
-# Mas entrenamiento no es gratis: el training-by-sampling de CTGAN aplana las
-# marginales categoricas segun avanza. Medido en cardiovascular al pasar de 5,4k a
-# 15k pasos: la proporcion de hombres se va del 0.350 real al 0.485 (hacia el 50/50),
-# y colesterol y glucosa se desplazan igual; su score SDMetrics baja de 0.924 a 0.893
-# aunque la correlacion ap_hi/ap_lo mejore (0.47 -> 0.65). Como ya venia bien
-# entrenado (55k filas dan 109 pasos por epoca), se queda donde estaba. Los datasets
-# pequenos SI mejoran en todo con 15k pasos, que es el default.
+# Por que 15000 y no mas: medido en hipertension, la correlacion peso-cintura del
+# sintetico va -0.08 (500 pasos) -> +0.55 (5k) -> +0.70 (15k) -> +0.72 (30k). Satura.
+# Y el RUIDO ENTRE EJECUCIONES con la misma configuracion es de ese orden: repitiendo
+# los 15k pasos salio +0.74, y la peor desviacion de marginal categorica paso de 0.178
+# a 0.135 sin cambiar nada. Regla practica: no afinar sobre diferencias <0.05, son
+# ruido del GAN. 30k pasos cuesta el doble de tiempo y no da nada por encima de eso.
+#
+# Cardiovascular se queda en 5500 (donde ya estaba, 55k filas dan 109 pasos por epoca):
+# su unica corrida a 15k pasos puntuo peor en SDMetrics (0.924 -> 0.893) desviando las
+# marginales categoricas (hombres 0.350 real -> 0.485). Es UNA observacion y el ruido
+# de arriba impide afirmar que mas entrenamiento le perjudique; simplemente no hay
+# motivo para cambiar el artefacto que mejor puntua. Solo mover esto con medicion.
 PASOS_POR_DATASET = {"cardiovascular": 5500}
 
 
