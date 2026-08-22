@@ -35,6 +35,16 @@ def main():
         with open(path, "w", encoding="utf-8") as f:
             json.dump(res, f, indent=2, ensure_ascii=False)
         print(f"   overall={res.get('overall')} n={res.get('n_used')} -> {path}")
+        t = res.get("tstr") or {}
+        for m in t.get("models", []):
+            print(f"   TSTR {m['model']:14s} real {m['trtr_auc']} vs sintetico {m['tstr_auc']} "
+                  f"(ratio {m['ratio']})")
+        pv = res.get("privacy") or {}
+        if pv:
+            print(f"   DCR mediana sintetico {pv['median_synthetic']} vs test real "
+                  f"{pv['median_real_test']} (ratio {pv['ratio']}) | copias exactas "
+                  f"{pv['exact_copies']}/{pv['n_synthetic']} (test real: "
+                  f"{pv['exact_copies_real_test']}/{pv['n_real_test']})")
 
 
 if __name__ == "__main__":

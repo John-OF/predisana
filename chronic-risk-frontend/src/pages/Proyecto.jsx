@@ -489,8 +489,9 @@ const Proyecto = () => {
         <>
             <div className="text-center mb-4">
                 <p className="text-muted">
-                    ¿Qué tan fiel es el sintético? <strong>SDMetrics</strong> lo compara con el real
-                    columna a columna (formas) y en sus relaciones (correlaciones). 1.0 = imitación perfecta.
+                    Tres preguntas distintas sobre el sintético: si <strong>se parece</strong> al real
+                    (fidelidad), si <strong>sirve</strong> para entrenar (utilidad) y si <strong>no copia</strong>
+                    a nadie (privacidad). La primera es la fácil; las otras dos son las que mira un revisor.
                 </p>
                 <div className="d-flex gap-2 justify-content-center flex-wrap">
                     {DISEASE_TABS.map(({ key, label, icon, variant }) => (
@@ -548,6 +549,98 @@ const Proyecto = () => {
                                         </Col>
                                     ))}
                                 </Row>
+                            </Card.Body>
+                        </Card>
+                    )}
+
+                    {qualData.tstr?.models?.length > 0 && (
+                        <Card className="border-0 shadow-sm mb-4">
+                            <Card.Body>
+                                <h5 className="mb-1">¿Sirve para entrenar? (TSTR)</h5>
+                                <p className="text-soft small mb-3">
+                                    Se entrena un modelo <strong>solo con datos sintéticos</strong> y se evalúa
+                                    contra <strong>pacientes reales que nunca vio nadie</strong>. Al lado, el mismo
+                                    modelo entrenado con datos reales sobre ese mismo test. Si el sintético fuera
+                                    ruido bonito, la barra de abajo se hundiría.
+                                </p>
+                                {qualData.tstr.models.map((m) => (
+                                    <div key={m.model} className="mb-3">
+                                        <div className="d-flex justify-content-between small">
+                                            <span className="text-soft">{prettyModel(m.model)}</span>
+                                            <span className="mono text-faint">
+                                                {m.ratio != null ? `${(m.ratio * 100).toFixed(0)}% del real` : '—'}
+                                            </span>
+                                        </div>
+                                        {[
+                                            { lbl: 'Entrenado con reales', auc: m.trtr_auc, color: 'var(--text-faint)' },
+                                            { lbl: 'Entrenado con sintéticos', auc: m.tstr_auc, color: 'var(--accent)' },
+                                        ].map(({ lbl, auc, color }) => (
+                                            <div className="d-flex align-items-center gap-2 mt-1" key={lbl}>
+                                                <span className="small text-soft" style={{ width: '170px', flex: 'none' }}>{lbl}</span>
+                                                <div className="ps-shap-track" style={{ height: '12px' }}>
+                                                    <div style={{ width: `${(auc || 0) * 100}%`, height: '100%', borderRadius: '6px', background: color }} />
+                                                </div>
+                                                <span className="mono small text-faint" style={{ width: '46px', flex: 'none', textAlign: 'right' }}>
+                                                    {auc != null ? auc.toFixed(3) : '—'}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ))}
+                                <p className="text-faint small mb-0">
+                                    AUC sobre {qualData.tstr.n_test_real} pacientes reales del test. Mismo algoritmo
+                                    en las dos ramas, para que la diferencia sea de los datos y no del modelo.
+                                </p>
+                            </Card.Body>
+                        </Card>
+                    )}
+
+                    {qualData.privacy && (
+                        <Card className="border-0 shadow-sm mb-4">
+                            <Card.Body>
+                                <h5 className="mb-1">¿Copia a alguien? (privacidad)</h5>
+                                <p className="text-soft small mb-3">
+                                    Un GAN que memoriza deja de anonimizar. Se mide cuánto dista cada ficha
+                                    sintética del paciente real más parecido. La referencia honesta no es cero:
+                                    <strong> dos muestras reales distintas también se parecen</strong>, así que se
+                                    compara con lo que dista el test real.
+                                </p>
+                                <Row className="g-3">
+                                    <Col sm={4}>
+                                        <div className="ps-kpi text-center">
+                                            <div className="k-lbl">Distancia del sintético</div>
+                                            <div className="k-val">{qualData.privacy.median_synthetic}</div>
+                                            <div className="k-sub">al paciente real más cercano</div>
+                                        </div>
+                                    </Col>
+                                    <Col sm={4}>
+                                        <div className="ps-kpi text-center">
+                                            <div className="k-lbl">Referencia: test real</div>
+                                            <div className="k-val">{qualData.privacy.median_real_test}</div>
+                                            <div className="k-sub">personas reales distintas</div>
+                                        </div>
+                                    </Col>
+                                    <Col sm={4}>
+                                        <div className="ps-kpi text-center">
+                                            <div className="k-lbl">Copias exactas</div>
+                                            <div className="k-val">{qualData.privacy.exact_copies}</div>
+                                            <div className="k-sub">de {qualData.privacy.n_synthetic} fichas</div>
+                                        </div>
+                                    </Col>
+                                </Row>
+                                <p className="text-faint small mt-3 mb-0">
+                                    El sintético queda <strong>{qualData.privacy.ratio}x más lejos</strong> de los
+                                    datos de entrenamiento que el propio test real: se parece a los reales
+                                    <em> menos</em> de lo que se parecen entre sí dos muestras reales.
+                                    {qualData.privacy.exact_copies_real_test > 0 && (
+                                        <>
+                                            {' '}Las coincidencias exactas tampoco son señal de copia aquí: entre los
+                                            propios datos reales hay {qualData.privacy.exact_copies_real_test} de{' '}
+                                            {qualData.privacy.n_real_test}, porque las variables son gruesas y dos
+                                            personas distintas comparten ficha a menudo.
+                                        </>
+                                    )}
+                                </p>
                             </Card.Body>
                         </Card>
                     )}
@@ -612,12 +705,12 @@ const Proyecto = () => {
                                 <Droplet className="me-2" />Diabetes
                             </div>
                             <p className="text-soft small mb-2">
-                                <strong>100 000</strong> registros de una sola fuente pública, sin
-                                valores faltantes. Señal clínica real: glucosa, HbA1c, IMC, edad.
+                                <strong>NHANES 2021-2023</strong> (CDC): <strong>6 234</strong> adultos con
+                                examen físico y laboratorio. Señal clínica real: glucosa sérica, HbA1c, IMC, edad.
                             </p>
                             <p className="text-faint small mb-0">
-                                Transparencia: usa glucosa/HbA1c como variables — uso predictivo
-                                legítimo, no fuga de datos.
+                                Transparencia: la glucosa es <em>opcional</em> — sin ella el resultado es un
+                                cribado tipo FINDRISC; con ella, una estimación mucho más precisa.
                             </p>
                         </Card.Body>
                     </Card>
@@ -629,12 +722,13 @@ const Proyecto = () => {
                                 <HeartPulse className="me-2" />Hipertensión
                             </div>
                             <p className="text-soft small mb-2">
-                                Encuesta de salud (ENSANUT México, <strong>~4 400</strong> personas)
-                                con señal real: IMC, cintura y peso correlacionan con el riesgo.
+                                <strong>NHANES 2021-2023</strong> (CDC): <strong>5 998</strong> adultos.
+                                El objetivo es un diagnóstico autorreportado, no una fórmula: 36% de prevalencia,
+                                en línea con la población.
                             </p>
                             <p className="text-faint small mb-0">
-                                Transparencia: muestra pequeña y el objetivo es un <em>score</em> de
-                                riesgo, no un diagnóstico medido.
+                                Transparencia: la presión medida <strong>no</strong> es una variable del
+                                modelo — sería un umbral disfrazado. Se interpreta aparte, con la referencia ACC/AHA.
                             </p>
                         </Card.Body>
                     </Card>
@@ -646,7 +740,7 @@ const Proyecto = () => {
                                 <Heart className="me-2" />Cardiovascular
                             </div>
                             <p className="text-soft small mb-2">
-                                <strong>~69 000</strong> registros balanceados al 50/50. Se derivan
+                                <strong>68 666</strong> registros balanceados al 50/50 (Kaggle). Se derivan
                                 medidas como el IMC a partir de talla y peso.
                             </p>
                             <p className="text-faint small mb-0">

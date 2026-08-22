@@ -16,7 +16,7 @@ API REST en Python/Flask que sirve modelos de Machine Learning para la estimaci�
 - **Generación de datos sintéticos** con SDV (CTGAN por defecto, TVAE opcional) + endpoints de comparación real vs sintético (muestras, distribuciones, calidad SDMetrics) que alimentan el laboratorio del frontend.
 - **Pipeline de datos por enfermedad** — desde fuentes públicas a un dataset limpio por enfermedad (sin frame maestro concatenado ni imputación cruzada).
 - **Registro anónimo de uso** sobre SQLAlchemy (`DATABASE_URL`: SQLite en dev, Postgres en prod con el mismo código) + **panel admin dev-only** con analítica agregada, protegido por `X-Admin-Token`.
-- **Suite de 148 tests (pytest)** sobre los invariantes delicados de la API.
+- **Suite de 161 tests (pytest)** sobre los invariantes delicados de la API.
 
 ---
 
@@ -247,7 +247,7 @@ Una ficha de paciente del origen pedido, en formato homogéneo. Alimenta el jueg
 Histograma comparado real vs sintético de una variable numérica, sobre bins comunes y normalizado a % (compara la *forma* aunque difiera el tamaño de muestra).
 
 ### `GET /synthetic_quality/<disease>`
-Score de fidelidad del sintético (SDMetrics `QualityReport`: overall, column shapes, pair trends, detalle por columna) + matrices de correlación real/sintético para el heatmap comparado. El informe se **precomputa** en el pipeline (`build_quality_reports.py` → `data_curated/<enfermedad>/<enfermedad>_quality.json`) y la API lo sirve tal cual, así que producción no necesita `sdmetrics` (que arrastra torch). Solo lo recalcula si el JSON falta y la librería está instalada.
+Tres preguntas sobre el sintético, no una. **Fidelidad**: SDMetrics `QualityReport` (overall, column shapes, pair trends, detalle por columna) + matrices de correlación real/sintético para el heatmap. **Utilidad** (`tstr`): se entrena un modelo **solo con sintético** y se evalúa contra el *test real*, junto al mismo modelo entrenado con datos reales sobre ese mismo test — los **mismos dos algoritmos en las dos ramas**, para que la diferencia sea de los datos y no del modelo. Ratios actuales: **0,965-0,984**. **Privacidad** (`privacy`): distancia al registro real más cercano (DCR). La referencia **no es cero** — el propio test real también está cerca del train, así que se reportan las dos; el sintético queda **1,1-1,8x más lejos**. Las copias exactas se cuentan en el sintético *y* entre los reales, porque con datos gruesos (cardiovascular son enteros) las colisiones son normales: 4 de 54 392 sintéticas frente a 119 de 13 599 reales. El informe se **precomputa** en el pipeline (`build_quality_reports.py` → `data_curated/<enfermedad>/<enfermedad>_quality.json`) y la API lo sirve tal cual, así que producción no necesita `sdmetrics` (que arrastra torch). Solo lo recalcula si el JSON falta y la librería está instalada.
 
 ### Admin (dev-only): `GET /admin/verify` · `/admin/stats` · `/admin/predictions` · `/admin/export.csv`
 Protegidos por el header `X-Admin-Token`, que debe coincidir con la env var `ADMIN_TOKEN` (sin ella responden **503**; token incorrecto, **401**). No es auth de usuario — los usuarios nunca se loguean. Además: `Origin` no permitido → **403**, y más de `RATE_LIMIT_ADMIN_VERIFY` intentos de token por minuto y por IP → **429**.
@@ -271,7 +271,7 @@ chronic-risk-backend/
 ├── synthetic_quality.py         # Cálculo SDMetrics + correlaciones (pipeline y fallback del API)
 ├── train_models.py              # Bake-off multi-modelo por CV (hipertensión, cardiovascular)
 ├── train_nhanes_diabetes.py     # Diabetes híbrida: variantes con/sin glucosa + calibradores
-├── tests/                       # Suite pytest (148 tests; BD temporal propia)
+├── tests/                       # Suite pytest (161 tests; BD temporal propia)
 ├── pytest.ini
 ├── .env.example                 # Plantilla de variables de entorno
 ├── requirements.txt             # Runtime del API (directas, UTF-8)

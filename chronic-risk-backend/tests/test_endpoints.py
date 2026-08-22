@@ -90,3 +90,44 @@ def test_synthetic_quality(client):
     q = r.get_json()
     assert q["overall"] is not None and 0.0 < q["overall"] <= 1.0
     assert q["corr"]["features"], "sin matriz de correlaciones"
+
+
+# ---------- TSTR y privacidad (DCR) en el informe de calidad ----------
+# El laboratorio solo enseñaba FIDELIDAD, que es la pregunta facil. Estas son las dos
+# que decide un revisor: si el sintetico SIRVE y si NO copia a nadie.
+import pytest as _pytest
+
+
+@_pytest.mark.parametrize("enf", ["diabetes", "hipertension", "cardiovascular"])
+def test_calidad_incluye_tstr(client, enf):
+    d = client.get(f"/synthetic_quality/{enf}").get_json()
+    tstr = d["tstr"]
+    assert tstr["n_test_real"] > 0 and tstr["n_train_synth"] > 0
+    for m in tstr["models"]:
+        # Un sintetico util tiene que quedarse cerca del real, no empatarlo: si el
+        # ratio se fuera por encima de ~1.05 seria sospechoso (el sintetico no puede
+        # saber mas que los datos de los que salio).
+        assert 0.5 < m["ratio"] <= 1.05, (enf, m)
+        assert 0.5 < m["tstr_auc"] < 1.0
+
+
+@_pytest.mark.parametrize("enf", ["diabetes", "hipertension", "cardiovascular"])
+def test_calidad_incluye_privacidad(client, enf):
+    p = client.get(f"/synthetic_quality/{enf}").get_json()["privacy"]
+    # La referencia no es cero: se compara con lo que dista el propio test real.
+    assert p["median_real_test"] > 0
+    assert p["ratio"] >= 1.0, f"{enf}: el sintetico esta MAS cerca del train que el test real"
+    # Copias exactas: se toleran si el dato es grueso, pero nunca mas que entre reales.
+    tasa_synth = p["exact_copies"] / p["n_synthetic"]
+    tasa_real = p["exact_copies_real_test"] / p["n_real_test"]
+    assert tasa_synth <= max(tasa_real, 0.001), (enf, tasa_synth, tasa_real)
+
+
+def test_el_tstr_usa_el_mismo_algoritmo_en_las_dos_ramas(client):
+    """Si cada rama usara un modelo distinto, la comparacion mediria el algoritmo y no
+    los datos, que es justo lo que TSTR quiere aislar."""
+    modelos = client.get("/synthetic_quality/diabetes").get_json()["tstr"]["models"]
+    nombres = [m["model"] for m in modelos]
+    assert len(nombres) == len(set(nombres))
+    for m in modelos:
+        assert m["trtr_auc"] is not None and m["tstr_auc"] is not None

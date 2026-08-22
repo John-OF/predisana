@@ -53,6 +53,50 @@
       "score": 0.935
     }
   ],
+  "tstr": {
+    "n_train_real": 4798,
+    "n_train_synth": 4798,
+    "n_test_real": 1200,
+    "features": [
+      "age",
+      "bmi",
+      "weight",
+      "waist_circumference",
+      "diabetes",
+      "heart_disease",
+      "high_cholesterol",
+      "gender_Male",
+      "gender_Female",
+      "smoking_history_never",
+      "smoking_history_current",
+      "smoking_history_former"
+    ],
+    "models": [
+      {
+        "model": "logreg",
+        "trtr_auc": 0.8037,
+        "tstr_auc": 0.7892,
+        "ratio": 0.982
+      },
+      {
+        "model": "random_forest",
+        "trtr_auc": 0.7948,
+        "tstr_auc": 0.782,
+        "ratio": 0.984
+      }
+    ]
+  },
+  "privacy": {
+    "median_synthetic": 0.4866,
+    "median_real_test": 0.2769,
+    "ratio": 1.758,
+    "share_near_zero_synthetic": 0.0,
+    "share_near_zero_real_test": 0.0,
+    "exact_copies": 0,
+    "exact_copies_real_test": 0,
+    "n_synthetic": 4798,
+    "n_real_test": 1200
+  },
   "corr": {
     "features": [
       "age",
