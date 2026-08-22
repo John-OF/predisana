@@ -186,6 +186,103 @@ def _informe_onehot(df: pd.DataFrame, grupos: Dict[str, List[str]], etiqueta: st
         print(f"   {etiqueta} {prefijo}: {len(df) - rotas - vacias}/{len(df)} con una sola "
               f"categoria, {rotas} con varias, {vacias} sin ninguna")
 
+# --------- MARGINALES CATEGORICAS (AUD-24) ---------
+# CTGAN no reproduce las proporciones categoricas reales: su training-by-sampling
+# reequilibra las categorias durante el ajuste y el resultado se desvia entre 0.05 y
+# 0.18 CON CUALQUIER numero de pasos (el colesterol alto de hipertension sale al
+# 46-58% frente al 39.7% real). Medido: no lo arregla entrenar mas ni menos.
+# La via es post-hoc: generar de mas y submuestrear el pool eligiendo filas de forma
+# que la distribucion CONJUNTA de lo categorico coincida con la real.
+# HONESTIDAD: con esto las marginales categoricas quedan IMPUESTAS, no aprendidas.
+# La parte continua sigue siendo del GAN; el score SDMetrics de esas columnas sube
+# por construccion y asi hay que contarlo.
+
+
+def _columnas_categoricas(df: pd.DataFrame, grupos: Dict[str, List[str]]) -> List[str]:
+    """Binarias sueltas (target incluido). Las que forman un one-hot van aparte,
+    representadas por su columna colapsada."""
+    miembros = {c for cols in grupos.values() for c in cols}
+    return [c for c in df.columns
+            if c not in miembros and df[c].dropna().isin([0, 1]).all()]
+
+
+def _clave_estrato(df: pd.DataFrame, grupos: Dict[str, List[str]], cats: List[str]) -> pd.Series:
+    """Identifica el estrato de cada fila: la combinacion de todo lo categorico."""
+    d = _colapsar_onehot(df, grupos)
+    partes = [d[p].astype(str) for p in grupos]
+    # A entero antes de comparar: el GAN puede devolver 1.0 donde el real trae 1.
+    partes += [d[c].astype(float).round().astype(int).astype(str) for c in cats]
+    if not partes:
+        return pd.Series([""] * len(df), index=df.index)
+    return partes[0].str.cat(partes[1:], sep="|") if len(partes) > 1 else partes[0]
+
+
+def _reparto_por_restos(props: pd.Series, total: int) -> pd.Series:
+    """Reparte `total` cupos entre estratos por el metodo del RESTO MAYOR. Con un
+    redondeo normal, los estratos pequenos caen a cero y su masa la absorben los
+    grandes ronda tras ronda: fue justo lo que sesgo el primer intento."""
+    exactos = props / props.sum() * total
+    base = np.floor(exactos).astype(int)
+    faltan = int(total - base.sum())
+    if faltan > 0:
+        orden = (exactos - base).sort_values(ascending=False).index[:faltan]
+        base.loc[orden] += 1
+    return base
+
+
+def _ajustar_marginales(real_df: pd.DataFrame, pool_df: pd.DataFrame,
+                        grupos: Dict[str, List[str]], n_objetivo: int, seed: int) -> pd.DataFrame:
+    """Elige n_objetivo filas del pool respetando la proporcion real de cada estrato.
+    Reparte por rondas: si un estrato se agota, su cupo se redistribuye entre los que
+    siguen teniendo filas, en vez de rellenar a lo bruto y volver a sesgar."""
+    pool_df = pool_df.reset_index(drop=True)
+    cats = _columnas_categoricas(real_df, grupos)
+    if not cats and not grupos:
+        return pool_df.sample(n=min(n_objetivo, len(pool_df)), random_state=seed)
+
+    props = _clave_estrato(real_df, grupos, cats).value_counts(normalize=True)
+    k_pool = _clave_estrato(pool_df, grupos, cats)
+
+    rng = np.random.default_rng(seed)
+    disponibles: Dict[str, List[int]] = {}
+    for clave, idx in pool_df.groupby(k_pool).groups.items():
+        filas = list(idx)
+        rng.shuffle(filas)
+        disponibles[clave] = filas
+
+    elegidos: List[int] = []
+    restantes = props[[k for k in props.index if disponibles.get(k)]]
+    while len(elegidos) < n_objetivo and len(restantes):
+        cupos = _reparto_por_restos(restantes, n_objetivo - len(elegidos))
+        tomado = 0
+        for clave, cupo in cupos.items():
+            hay = disponibles.get(clave, [])
+            toma = min(int(cupo), len(hay))
+            if toma > 0:
+                elegidos.extend(hay[:toma])
+                del hay[:toma]
+                tomado += toma
+        restantes = restantes[[k for k in restantes.index if disponibles.get(k)]]
+        if tomado == 0:   # nadie pudo aportar: el pool se quedo corto
+            break
+
+    return pool_df.loc[elegidos[:n_objetivo]].reset_index(drop=True)
+
+
+def _informe_marginales(real_df: pd.DataFrame, synth_df: pd.DataFrame,
+                        grupos: Dict[str, List[str]]) -> float:
+    """Peor desviacion de una marginal categorica, en puntos de proporcion."""
+    columnas = _columnas_categoricas(real_df, grupos) + [c for v in grupos.values() for c in v]
+    peor, culpable = 0.0, ""
+    for c in columnas:
+        if c not in synth_df.columns:
+            continue
+        d = abs(float(real_df[c].mean()) - float(synth_df[c].mean()))
+        if d > peor:
+            peor, culpable = d, c
+    print(f"   peor desviacion de marginal categorica: {peor:.3f} ({culpable})")
+    return peor
+
 # --------- SANITIZACIÓN ---------
 def _sanitize_for_sdv(train_df: pd.DataFrame) -> pd.DataFrame:
     df = train_df.copy()
@@ -214,7 +311,8 @@ def _sanitize_for_sdv(train_df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 # --------- SÍNTESIS ---------
-def fit_and_sample_sdv(train_df, model, synth_multiplier, seed, epochs, max_train_rows, pasos_objetivo):
+def fit_and_sample_sdv(train_df, model, synth_multiplier, seed, epochs, max_train_rows, pasos_objetivo,
+                       oversample=1.0):
     if not SDV_AVAILABLE:
         raise RuntimeError("SDV no disponible. Revisa instalación.")
 
@@ -262,14 +360,14 @@ def fit_and_sample_sdv(train_df, model, synth_multiplier, seed, epochs, max_trai
         SynthClass = TVAESynthesizer if model.lower() == "tvae" else CTGANSynthesizer
         synthesizer = SynthClass(metadata, epochs=epochs, verbose=False)
         synthesizer.fit(df)
-        n_synth = max(1, int(len(df) * synth_multiplier))
+        n_synth = max(1, int(len(df) * synth_multiplier * oversample))
         muestra = synthesizer.sample(num_rows=n_synth).reset_index(drop=True)
     else:
         SynthClass = TVAE if model.lower() == "tvae" else CTGAN
         synthesizer = SynthClass(epochs=epochs, verbose=False)
         discretas = list(set(_detect_categorical_columns(df) + ["target"] + list(grupos_onehot)))
         synthesizer.fit(df, discrete_columns=discretas)
-        n_synth = max(1, int(len(df) * synth_multiplier))
+        n_synth = max(1, int(len(df) * synth_multiplier * oversample))
         muestra = synthesizer.sample(n_synth).reset_index(drop=True)
 
     # Vuelta al esquema real: la categorica se reparte en sus columnas one-hot.
@@ -281,7 +379,7 @@ def fit_and_sample_sdv(train_df, model, synth_multiplier, seed, epochs, max_trai
 
 # --------- PROCESO PRINCIPAL ---------
 def process_one_dataset(name, test_size, seed, model, synth_multiplier, balance, epochs, max_train_rows,
-                        pasos_objetivo):
+                        pasos_objetivo, match_marginales=True, oversample=4.0):
     src = os.path.join(PROCESSED_DIR, FILENAME.format(name=name))
     if not os.path.exists(src):
         print(f"No existe {src}, se omite.")
@@ -305,7 +403,8 @@ def process_one_dataset(name, test_size, seed, model, synth_multiplier, balance,
 
     try:
         synth_df = fit_and_sample_sdv(train_df, model, synth_multiplier, seed, epochs, max_train_rows,
-                                      PASOS_POR_DATASET.get(name, pasos_objetivo))
+                                      PASOS_POR_DATASET.get(name, pasos_objetivo),
+                                      oversample=oversample if match_marginales else 1.0)
         synth_df["target"] = pd.to_numeric(synth_df["target"], errors="coerce").fillna(0).astype(int)
         if balance:
             ones = synth_df[synth_df["target"] == 1]
@@ -313,9 +412,21 @@ def process_one_dataset(name, test_size, seed, model, synth_multiplier, balance,
             n = min(len(ones), len(zeros))
             if n > 0:
                 synth_df = pd.concat([ones.sample(n, random_state=seed), zeros.sample(n, random_state=seed)], ignore_index=True)
+        grupos = _detect_onehot_groups(train_df)
+
+        # AUD-24: del pool grande se eligen las filas que reproducen la composicion
+        # categorica real. Se hace ANTES de balancear para no pelearse con ese flag.
+        if match_marginales:
+            n_objetivo = max(1, int(len(train_df) * synth_multiplier))
+            antes_peor = _informe_marginales(train_df, synth_df, grupos)
+            synth_df = _ajustar_marginales(train_df, synth_df, grupos, n_objetivo, seed)
+            print(f"   marginales ajustadas: pool de {n_objetivo * int(oversample)} -> "
+                  f"{len(synth_df)} filas (objetivo {n_objetivo})")
+            _informe_marginales(train_df, synth_df, grupos)
+            del antes_peor
+
         # AUD-13: control de que el sintetico respeta los one-hot (antes salia ~46%
         # de filas validas en diabetes; ahora tiene que ser el 100%).
-        grupos = _detect_onehot_groups(train_df)
         if grupos:
             _informe_onehot(synth_df, grupos, "sintetico")
             for prefijo, cols in grupos.items():
@@ -340,6 +451,10 @@ def main():
     parser.add_argument("--epochs", type=int, default=None,
                         help="Epocas fijas. Por defecto se derivan de --steps segun el "
                              "tamano del dataset (ver AUD-24).")
+    parser.add_argument("--no_match_marginals", action="store_true",
+                        help="No ajustar las marginales categoricas al real (AUD-24).")
+    parser.add_argument("--oversample", type=float, default=4.0,
+                        help="Cuantas veces mas filas generar antes de submuestrear.")
     parser.add_argument("--steps", type=int, default=15000,
                         help="Pasos de gradiente objetivo para el GAN (default 15000).")
     parser.add_argument("--max_train_rows", type=int, default=60000)
@@ -352,7 +467,9 @@ def main():
     targets = DATASETS if not args.only else [s.strip() for s in args.only.split(",") if s.strip()]
     for name in targets:
         process_one_dataset(name, args.test_size, args.seed, args.model, args.synth_multiplier,
-                            args.balance, args.epochs, args.max_train_rows, args.steps)
+                            args.balance, args.epochs, args.max_train_rows, args.steps,
+                            match_marginales=not args.no_match_marginals,
+                            oversample=args.oversample)
 
 if __name__ == "__main__":
     main()

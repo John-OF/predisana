@@ -165,3 +165,61 @@ def test_el_juego_real_vs_sintetico_no_se_delata(client):
         fumador = [k for k in fila if k.startswith("smoking_history_") and fila[k] == 1]
         genero = [k for k in fila if k.startswith("gender_") and fila[k] == 1]
         assert len(genero) == 1 and len(fumador) == 1, fila
+
+
+# ---------- AUD-24: marginales categoricas ajustadas al real ----------
+# CTGAN reequilibra las categorias durante el ajuste y el sintetico se desviaba entre
+# 0.05 y 0.18 CON CUALQUIER numero de pasos (el colesterol alto de hipertension salia
+# al 46-58% frente al 39.7% real). Se corrige generando de mas y submuestreando.
+def _peor_marginal(real, synth, grupos):
+    columnas = cs._columnas_categoricas(real, grupos) + [c for v in grupos.values() for c in v]
+    return max(abs(float(real[c].mean()) - float(synth[c].mean()))
+               for c in columnas if c in synth.columns)
+
+
+@pytest.mark.parametrize("enf", ENFERMEDADES)
+def test_las_marginales_categoricas_cuadran_con_el_real(enf):
+    """El invariante que importa: lo que se sirve como 'población sintética' tiene la
+    misma composición que la real."""
+    real = _train(enf)
+    grupos = cs._detect_onehot_groups(real)
+    for f in _sinteticos(enf):
+        peor = _peor_marginal(real, pd.read_csv(f), grupos)
+        assert peor < 0.02, f"{os.path.basename(f)}: desviación máxima {peor:.3f}"
+
+
+def test_el_reparto_de_cupos_suma_exacto_y_no_pierde_estratos():
+    """Con un redondeo normal los estratos pequeños caían a cero y su masa la
+    absorbían los grandes ronda tras ronda: eso sesgaba el resultado más que el
+    problema que venía a arreglar. El reparto es por resto mayor."""
+    props = pd.Series({"a": 0.90, "b": 0.06, "c": 0.03, "d": 0.01})
+    cupos = cs._reparto_por_restos(props, 100)
+    assert int(cupos.sum()) == 100
+    assert (cupos > 0).all(), cupos.to_dict()   # ningun estrato se queda sin cupo
+
+
+def test_el_ajuste_solo_elige_filas_del_pool():
+    """No inventa nada: submuestrea. Cada fila devuelta tiene que existir en el pool."""
+    real = _train("hipertension")
+    pool = pd.read_csv(_sinteticos("hipertension")[0])
+    grupos = cs._detect_onehot_groups(real)
+    elegidas = cs._ajustar_marginales(real, pool, grupos, len(pool) // 4, 42)
+    assert len(elegidas) == len(pool) // 4
+    comunes = pd.merge(elegidas.round(6), pool.round(6), how="inner")
+    assert len(comunes) >= len(elegidas)
+
+
+def test_el_ajuste_mejora_la_desviacion():
+    """La prueba de que el mecanismo hace lo que dice, sobre el artefacto real."""
+    real = _train("hipertension")
+    pool = pd.read_csv(_sinteticos("hipertension")[0])
+    grupos = cs._detect_onehot_groups(real)
+    # Se desequilibra el pool a proposito y se comprueba que el ajuste lo recompone.
+    # El objetivo deja holgura: si se pidieran tantas filas como tiene el pool, no
+    # habria de donde sacar las mujeres que faltan y el sesgo seria irreparable.
+    sesgado = pd.concat([pool, pool[pool["gender_Male"] == 1]], ignore_index=True)
+    antes = _peor_marginal(real, sesgado, grupos)
+    ajustado = cs._ajustar_marginales(real, sesgado, grupos, len(pool) // 3, 42)
+    despues = _peor_marginal(real, ajustado, grupos)
+    assert antes > 0.1, antes            # el sesgo introducido es grande
+    assert despues < 0.02, (antes, despues)
