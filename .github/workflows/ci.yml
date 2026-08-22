@@ -36,7 +36,7 @@ jobs:
         run: python -m pytest -q
 
   frontend:
-    name: Frontend (lint + build)
+    name: Frontend (lint + tests + build)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -55,6 +55,12 @@ jobs:
 
       - name: Lint
         run: npm run lint
+
+      # AUD-19. Ojo: `translations.test.js` lee los *_features.json del BACKEND para
+      # comprobar que ninguna feature servida llega a la UI sin etiqueta, asi que
+      # necesita el repo entero (el checkout ya lo trae) y no solo esta carpeta.
+      - name: Tests
+        run: npm test
 
       - name: Build
         run: npm run build

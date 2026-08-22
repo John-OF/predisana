@@ -131,6 +131,7 @@ python app.py                     # http://localhost:8000
 ```powershell
 npm install
 npm run dev              # Vite dev server (http://localhost:5173)
+npm test                 # 20 tests de Vitest (~2 s)
 ```
 
 El frontend lee `VITE_API_URL` (por defecto `http://localhost:8000`). El panel
@@ -143,7 +144,7 @@ python -m pytest         # 148 tests, ~3 s (BD temporal, no toca la de dev)
 ```
 
 **CI:** cada push y pull request a `main` corre en GitHub Actions la suite de pytest
-y el `lint` + `build` + `npm audit` del frontend (`.github/workflows/ci.yml`).
+y el `lint` + `test` + `build` + `npm audit` del frontend (`.github/workflows/ci.yml`).
 
 Consulta los README de cada subcarpeta para el detalle del pipeline de datos,
 endpoints y convenciones.

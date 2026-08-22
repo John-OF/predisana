@@ -50,9 +50,35 @@ npm run dev       # Vite dev server con HMR (http://localhost:5173)
 npm run build     # build de producción en dist/
 npm run preview   # sirve el build localmente para probarlo
 npm run lint      # ESLint sobre todo el proyecto
+npm test          # Vitest (20 tests, ~2 s)
+npm run test:watch  # los mismos, en modo watch
 ```
 
 ---
+
+
+## Tests
+
+**20 tests con Vitest + Testing Library** (`npm test`), sobre las tres cosas del front
+que tienen lógica de verdad:
+
+- **`ErrorBoundary`** — que un fallo de render muestre una salida en vez de dejar la
+  SPA en blanco, que registre el error en consola y que **«Reintentar» no deje la
+  pantalla pegada**. Detalle aprendido escribiéndolos: el hijo de prueba no puede
+  "fallar solo la primera vez", porque React reintenta el render al capturar un error
+  y el test se recuperaría solo sin probar nada; el fallo se controla con un flag.
+- **`getSessionId`** — que el UUID anónimo se persista y se reutilice (si se generase
+  uno por petición, la analítica del admin contaría una sesión por click), que
+  sobreviva al saneo del backend (`[A-Za-z0-9_-]`, 64 chars, AUD-8) y que haya
+  fallback sin `crypto.randomUUID`. Más que `predictRisk` mande la cabecera
+  `X-Session-Id`.
+- **Contrato de etiquetas** — lee los `*_features.json` del **backend** y exige que
+  ninguna feature servida llegue a la UI sin etiqueta en español. Es el fallo
+  silencioso que apareció al migrar hipertensión a NHANES: cambia el esquema y algo
+  se pinta como `waist_circumference` en la ficha o en la barra de SHAP.
+
+Configuración en `vite.config.js` (los tests reusan los mismos alias y plugins que el
+build) y arranque común en `src/test/setup.js`.
 
 ## Configuración
 
