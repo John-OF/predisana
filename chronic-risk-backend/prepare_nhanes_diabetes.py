@@ -11,6 +11,8 @@ import pandas as pd
 
 DOCS = os.path.join("data_raw", "nhanes")  # archivos .xpt de NHANES
 OUT = os.path.join("data_processed", "diabetes_dataset.csv")
+# Mismo tope que usa el sintetico y que acepta el formulario (AUD-14).
+GLUCOSA_MAX = 500
 
 
 def _read(name):
@@ -73,6 +75,18 @@ def build():
     # Glucemia de laboratorio: OPCIONAL (NaN cuando no hay medicion).
     out["blood_glucose_level"] = df["LBXSGL"]
     out["hba1c_level"] = df["LBXGH"]
+
+    # AUD-14: tope fisiologico de la glucosa. NHANES trae hasta 898 mg/dL (4 filas) y
+    # el tope ya se aplicaba al sintetico (`caps` en curate_and_synthesize.py) y a la
+    # entrada del formulario (CLINICAL_LIMITS, max 500), pero NO al CSV real: esas
+    # filas acababan en el fondo de SHAP y en el muestreo de "casos reales" del
+    # laboratorio, con valores que el simulador ni siquiera deja escribir. Se topan,
+    # no se descartan: la fila sigue siendo un diabetico real, solo se le recorta un
+    # valor extremo que ningun modelo puede usar bien.
+    n_topadas = int((out["blood_glucose_level"] > GLUCOSA_MAX).sum())
+    if n_topadas:
+        out["blood_glucose_level"] = out["blood_glucose_level"].clip(upper=GLUCOSA_MAX)
+        print(f"glucosa: {n_topadas} filas por encima de {GLUCOSA_MAX} mg/dL topadas")
 
     # Solo adultos con target y features nucleares (edad, IMC) presentes.
     out = out[(out["age"] >= 18) & out["target"].notna() & out["bmi"].notna()].copy()

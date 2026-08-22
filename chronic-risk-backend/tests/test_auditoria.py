@@ -1,4 +1,4 @@
-# Regresiones de la auditoria 2026-08-20 (AUD-1, 2, 3, 5, 6, 7, 8, 9 y 18).
+# Regresiones de la auditoria 2026-08-20 (AUD-1, 2, 3, 5, 6, 7, 8, 9, 14 y 18).
 # Cada test fija el comportamiento CORREGIDO para que no vuelva a colarse.
 import json
 import math
@@ -204,3 +204,28 @@ def test_presion_no_entra_al_modelo_pero_si_a_la_capa_clinica(client):
     assert not sin["clinical_flags"]
     assert any(f["indicator"] == "blood_pressure" for f in con["clinical_flags"])
     assert con["clinical_flags"][0]["source"] == "ACC/AHA"
+
+
+# ---------- AUD-14: tope fisiologico de la glucosa en los datos REALES ----------
+@pytest.mark.parametrize("ruta", [
+    "data_processed/diabetes_dataset.csv",
+    "data_curated/diabetes/diabetes_train.csv",
+    "data_curated/diabetes/diabetes_test.csv",
+])
+def test_glucosa_real_topada(ruta):
+    """NHANES trae hasta 898 mg/dL. El tope ya se aplicaba al sintetico y a la entrada
+    del formulario, pero no al CSV real, y esas filas acababan en el fondo de SHAP y en
+    las fichas de 'caso real' del laboratorio."""
+    import pandas as pd
+    g = pd.read_csv(ruta)["blood_glucose_level"]
+    assert g.max() <= 500, f"{ruta}: glucosa maxima {g.max()}"
+
+
+def test_el_fondo_de_shap_no_tiene_glucosas_imposibles(app_module):
+    """El fondo sale del train curado: si entra un 898, distorsiona las explicaciones."""
+    import numpy as np
+    feats = app_module.FEATURES["diabetes_glucosa"]
+    fondo = app_module._load_background_for_shap("diabetes", feats)
+    if "blood_glucose_level" in feats:
+        col = fondo[:, feats.index("blood_glucose_level")]
+        assert np.nanmax(col) <= 500

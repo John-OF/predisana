@@ -1,6 +1,6 @@
 {
   "dataset": "diabetes_nhanes",
-  "variant": "selfreport",
+  "variant": "diabetes",
   "features": [
     "age",
     "bmi",

@@ -1,8 +1,9 @@
 // src/App.jsx
 import { lazy, Suspense } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import { Container, Spinner } from 'react-bootstrap';
 import MyNavbar from './components/MyNavbar';
+import ErrorBoundary from './components/ErrorBoundary';
 import Logo from './components/Logo';
 
 import Home from './pages/Home';
@@ -33,6 +34,31 @@ const CargandoPagina = () => (
   </div>
 );
 
+// El limite va DENTRO del Router y por debajo del navbar, para que un fallo de una
+// pagina no se lleve por delante la navegacion. La `key` con la ruta lo resetea al
+// navegar: si no, la pantalla de error se quedaria pegada al cambiar de pagina.
+// (Remontar no reencadena los chunks: React.lazy cachea el modulo ya resuelto.)
+const RutasConLimite = () => {
+  const { pathname } = useLocation();
+  return (
+    <ErrorBoundary key={pathname}>
+      <Suspense fallback={<CargandoPagina />}>
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/educacion" element={<Educacion />} />
+          <Route path="/simulacion" element={<Simulacion />} />
+          <Route path="/metricas" element={<Metricas />} />
+          <Route path="/proyecto" element={<Proyecto />} />
+          <Route path="/aviso" element={<Aviso />} />
+          {/* Panel dev-only (A3): sin link en navbar, acceso por URL directa + token. */}
+          <Route path="/admin" element={<Admin />} />
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </Suspense>
+    </ErrorBoundary>
+  );
+};
+
 function App() {
   return (
     <Router>
@@ -40,19 +66,7 @@ function App() {
         <MyNavbar />
 
         <main className="cr-main flex-grow-1">
-          <Suspense fallback={<CargandoPagina />}>
-            <Routes>
-              <Route path="/" element={<Home />} />
-              <Route path="/educacion" element={<Educacion />} />
-              <Route path="/simulacion" element={<Simulacion />} />
-              <Route path="/metricas" element={<Metricas />} />
-              <Route path="/proyecto" element={<Proyecto />} />
-              <Route path="/aviso" element={<Aviso />} />
-              {/* Panel dev-only (A3): sin link en navbar, acceso por URL directa + token. */}
-              <Route path="/admin" element={<Admin />} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </Suspense>
+          <RutasConLimite />
         </main>
 
         <footer className="ps-footer mt-auto">
