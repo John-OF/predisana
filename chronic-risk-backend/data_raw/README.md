@@ -6,8 +6,8 @@ pesan lo suyo; el repo se mantiene liviano y reproducible con los CSV ya procesa
 (`data_processed/`) y curados (`data_curated/`), que sí están versionados.
 
 Para **re-correr la ingesta** desde cero, descarga los archivos a las rutas de abajo
-y ejecuta `python prepare_datasets.py` (Kaggle) / `python prepare_nhanes_diabetes.py`
-(NHANES).
+y ejecuta `python prepare_datasets.py` (Kaggle, cardiovascular),
+`python prepare_nhanes_diabetes.py` y `python prepare_nhanes_hipertension.py` (NHANES).
 
 ## Diabetes — NHANES 2021-2023 (ciclo "_L")  → `data_raw/nhanes/`
 

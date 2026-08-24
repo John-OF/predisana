@@ -8,7 +8,7 @@ API REST en Python/Flask que sirve modelos de Machine Learning para la estimaci�
 
 - **3 modelos servidos desde `models/`** (uno por enfermedad). Cada modelo es el **ganador de un bake-off por validación cruzada** (LogReg / RandomForest / LightGBM); no todas las enfermedades usan el mismo algoritmo.
 - **Modelo híbrido de diabetes (NHANES 2021-2023)** — dos variantes entrenadas sobre datos reales de los CDC: `diabetes` (solo autorreporte, LogReg, AUC 0.81) y `diabetes_glucosa` (+glucosa sérica, LightGBM con restricción de monotonía, AUC 0.90). `/predict` rutea automáticamente a la variante con glucosa si el usuario la aporta.
-- **Calibración isotónica por modelo** — la probabilidad servida es honesta (Brier de diabetes 0.111 → 0.042); la API devuelve la calibrada y la cruda, y la curva de fiabilidad queda en `_metrics.json`.
+- **Calibración isotónica por modelo** — la probabilidad servida es honesta (Brier de diabetes 0.187 → 0.099; la variante con glucosa, 0.111 → 0.071); la API devuelve la calibrada y la cruda, y la curva de fiabilidad queda en `_metrics.json`.
 - **Selección de features por respondibilidad** — el simulador es educativo / de autoevaluación, así que cada modelo usa solo features que una persona común puede responder (autorreporte y medición casera/farmacia); la glucosa de diabetes es la única semi-accesible y es **opcional**.
 - **Explicabilidad SHAP agnóstica al modelo** — `LinearExplainer` para modelos lineales y `TreeExplainer` para árboles. Cada predicción devuelve el top-5 de variables con mayor impacto.
 - **Capa de interpretación clínica desacoplada** — la probabilidad reportada es la salida del modelo (calibrada); los umbrales diagnósticos (ADA para glucosa/HbA1c, ACC/AHA para presión sistólica) se devuelven aparte como `clinical_flags`/`clinical_note` y **no** modifican la probabilidad.
@@ -151,7 +151,9 @@ python -m pytest
 
 ## Endpoints
 
-Todos los endpoints aceptan/devuelven JSON. CORS está habilitado globalmente.
+Todos los endpoints aceptan/devuelven JSON. El CORS de los endpoints públicos depende de
+`CORS_ORIGINS` (sin definir = abierto, cómodo en dev); `/admin/*` es un recurso aparte que
+**nunca** hereda ese `*` — ver la sección de CORS y rate limiting más arriba.
 
 ### `GET /health`
 Liveness + comprobación real de la BD (`SELECT 1`). Devuelve **503** si la base no responde.
@@ -177,9 +179,12 @@ Configuración para construir el formulario en el frontend:
   "features": ["age", "bmi", "hypertension", "..."],
   "optional_features": ["blood_glucose_level"],
   "ranges": { "age": [18, 100], "bmi": [15, 50], "glucose": [60, 260], "blood_pressure": [60, 130] },
-  "categoricals": { "gender": ["Female", "Male"], "smoking_history": ["current", "former", "never"] }
+  "categoricals": { "gender": ["Female", "Male"], "smoking_history": ["current", "former", "never"] },
+  "feature_support": { "age": [18.0, 80.0], "bmi": [13.4, 64.5] }
 }
 ```
+
+`ranges` y `feature_support` **no son lo mismo**: los primeros son los límites del formulario, el segundo es el tramo que cada variable continua realmente cubre en los datos de entrenamiento. La UI usa el segundo para sombrear el what-if donde el modelo extrapola.
 
 Las `features` son las propias del esquema de cada enfermedad (heterogéneo), ya recortadas por respondibilidad. Las `optional_features` son las que aporta una variante con más datos (hoy: la glucosa del híbrido de diabetes) y el usuario puede rellenar o no. Las `categoricals` se derivan de los nombres de las columnas one-hot (`gender_*`, `smoking_history_*`).
 
@@ -219,6 +224,11 @@ Recibe un payload con las features clínicas y devuelve la probabilidad de riesg
       "detail": "Glucosa en ayuno ≥126 mg/dL: criterio de diabetes." }
   ],
   "clinical_note": "Glucosa en ayuno ≥126 mg/dL: criterio de diabetes.",
+  "support_warnings": [
+    { "feature": "age", "value": 92, "nivel": "sin_datos", "observado": [18.0, 80.0],
+      "detail": "El modelo no vio ningún caso con esta edad durante el entrenamiento." }
+  ],
+  "support_note": "Hay entradas fuera del rango que el modelo vio al entrenar: la estimación es una extrapolación.",
   "explain_note": "La probabilidad mostrada es la salida del modelo calibrada (isotónica); `raw_model_probability` es la salida cruda. Los valores SHAP explican el modelo crudo. Los indicadores clínicos (ADA/ACC-AHA) se muestran aparte como referencia y NO modifican la probabilidad."
 }
 ```
@@ -230,12 +240,13 @@ Recibe un payload con las features clínicas y devuelve la probabilidad de riesg
 - **Calibración**: `probability` es la salida del modelo **calibrada** con la isotónica persistida; `raw_model_probability` es la cruda (la que SHAP explica). La isotónica es un reescalado monótono: no cambia el ranking (AUC intacto).
 - **Capa de interpretación clínica desacoplada (A4)**: `clinical_flags`/`clinical_note` exponen los umbrales diagnósticos de referencia (ADA: glucosa ≥100/≥126/≥200, HbA1c ≥5.7/≥6.5; ACC/AHA: sistólica ≥120/≥130/≥140/≥180). Esta capa **no** altera la probabilidad (sustituye al antiguo `max()` con números mágicos).
 - **Filtro de género en SHAP**: las features `gender_*` se omiten del top-5 explicativo.
+- **Aviso de cobertura de datos (AUD-16)**: `support_warnings`/`support_note` señalan las entradas que caen donde el modelo tiene pocos datos (`pocos_datos`, fuera del p1-p99) o ninguno (`sin_datos`, fuera del min-max observado). Igual que la capa clínica, **no** altera la probabilidad. Las features ya reportadas en `missing_filled_as_zero` se omiten para no avisar dos veces del mismo hueco.
 - **Features faltantes**: cualquier feature ausente se rellena con 0; los nombres no-dummy aparecen en `missing_filled_as_zero`.
 
 Cada predicción se persiste (anónima) en la tabla `predictions`: disease, input_data JSON, prediction, probability, modelo servido, nota clínica, top SHAP y el `session_id` que el frontend manda en el header `X-Session-Id` (UUID aleatorio: agrupa sin identificar).
 
 ### `POST /whatif/<disease>`
-Análisis contrafactual: recibe `{ base, feature, min, max, steps }`, fija el caso `base` y barre `feature` sobre el rango, devolviendo la curva `[{value, probability, raw_probability}]` (calibrada y cruda). Usa el mismo ruteo híbrido que `/predict`. **No** registra nada en la BD ni calcula SHAP.
+Análisis contrafactual: recibe `{ base, feature, min, max, steps }`, fija el caso `base` y barre `feature` sobre el rango, devolviendo la curva `[{value, probability, raw_probability}]` (calibrada y cruda), más el `supported_range` de la variable barrida (el tramo con datos de entrenamiento detrás, que el frontend sombrea: ahí la curva se aplana por falta de datos, no porque el riesgo deje de subir). Usa el mismo ruteo híbrido que `/predict`. **No** registra nada en la BD ni calcula SHAP.
 
 ### `GET /synthetic/<disease>`
 Devuelve una fila aleatoria de los datos sintéticos curados (`data_curated/<disease>/<disease>_synthetic_ctgan*.csv`). Se usa en el frontend para autocompletar el simulador con un "caso clínico aleatorio". Si no hay sintéticos disponibles, hace fallback a `data_processed/`. El response incluye `_source_type: "synthetic"` o `"real"`.
@@ -263,7 +274,7 @@ Protegidos por el header `X-Admin-Token`, que debe coincidir con la env var `ADM
 ```
 chronic-risk-backend/
 ├── app.py                       # API Flask: modelos + SHAP + calibración + capa clínica + admin
-├── prepare_datasets.py          # CSVs crudos → dataset limpio (hipertensión, cardiovascular)
+├── prepare_datasets.py          # CSV crudo de Kaggle → dataset limpio de cardiovascular
 ├── prepare_nhanes_diabetes.py   # NHANES 2021-2023 (.xpt) → dataset de diabetes
 ├── prepare_nhanes_hipertension.py # NHANES 2021-2023 (.xpt) → dataset de hipertensión
 ├── curate_and_synthesize.py     # Split estratificado + síntesis CTGAN/TVAE

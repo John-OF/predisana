@@ -30,7 +30,7 @@ claro/oscuro.
 
 ## Requisitos
 
-- Node.js 18+ (recomendado 20+)
+- Node.js **20.19+** (lo exige Vite 7; el CI usa 22)
 - npm
 
 ---
@@ -158,6 +158,7 @@ chronic-risk-frontend/
     ├── App.jsx                  # router + layout (navbar + footer)
     ├── index.css                # sistema de diseño "Pulso Sereno" (tokens, tema claro/oscuro)
     ├── components/
+    │   ├── ErrorBoundary.jsx    # captura fallos de render (dentro del Router, bajo la navbar)
     │   ├── Logo.jsx
     │   └── MyNavbar.jsx         # navegación + toggle de tema
     ├── context/
@@ -165,6 +166,8 @@ chronic-risk-frontend/
     ├── pages/                   # una página por ruta (7)
     ├── services/
     │   └── api.js               # cliente axios + sesión anónima + llamadas admin
+    ├── test/
+    │   └── setup.js             # arranque común de Vitest
     └── utils/
         └── translations.js      # etiquetas en español (LABELS_ES, getLabel)
 ```
@@ -175,6 +178,14 @@ chronic-risk-frontend/
 
 - **App en español.** Toda la UI, etiquetas e identificadores siguen español
   (`hipertension`, `cardiovascular`). Mantener consistencia al editar.
+- **Code-splitting por ruta (AUD-20).** Todas las páginas se cargan con
+  `React.lazy()` salvo `Home`, que va en el bundle inicial a propósito por ser la
+  primera pintura. Así recharts, sweetalert2 y el panel admin no se descargan hasta
+  que se entra a la ruta que los usa.
+- **`ErrorBoundary`** se monta **dentro** del Router y **debajo** de la navbar, para
+  que un fallo de una página no se lleve por delante la navegación. Su
+  `key={pathname}` lo resetea al navegar; remontarlo no vuelve a pedir los chunks
+  (`React.lazy` cachea el módulo ya resuelto), así que no deshace el code-splitting.
 - **Las 3 enfermedades** (`diabetes`, `hipertension`, `cardiovascular`) son un set
   cerrado declarado en `DISEASES` dentro de `Simulacion.jsx` (y `Metricas.jsx` /
   `Proyecto.jsx`). Si se añade una nueva al backend, hay que añadirla aquí también.

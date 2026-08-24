@@ -39,7 +39,10 @@ las probabilidades (calibración isotónica con curva de fiabilidad).
 
 - **Laboratorio de datos sintéticos** (case study en `/proyecto`): generación de
   pacientes ficticios con CTGAN, juego "¿real o sintético?", distribuciones
-  comparadas y score de calidad SDMetrics con heatmaps de correlación.
+  comparadas y **tres preguntas distintas** sobre el sintético — *fidelidad*
+  (SDMetrics + heatmaps de correlación), *utilidad* (TSTR: entrenar solo con
+  sintético y evaluar contra el test real, ratio 0.965-0.984) y *privacidad*
+  (distancia al registro real más cercano, 1.1-1.8x la del propio test real).
 
 > 📸 **Captura de pantalla de:** el laboratorio sintético — pestaña de
 > distribuciones real vs sintético (o el juego "¿real o sintético?").
@@ -69,10 +72,15 @@ las probabilidades (calibración isotónica con curva de fiabilidad).
 - **Selección de modelos por CV**: por enfermedad compiten LogReg / RandomForest /
   LightGBM; se sirve el ganador y se publica el leaderboard completo.
 - **Probabilidades calibradas**: isotónica out-of-fold por modelo (Brier de
-  diabetes 0.111 → 0.042). La API devuelve la probabilidad calibrada y la cruda,
-  y SHAP explica la cruda — todo etiquetado.
+  diabetes 0.187 → 0.099; la variante con glucosa 0.111 → 0.071). La API devuelve
+  la probabilidad calibrada y la cruda, y SHAP explica la cruda — todo etiquetado.
 - **Capa clínica desacoplada**: los umbrales diagnósticos (ADA / ACC-AHA) se
   devuelven como `clinical_flags` junto al número del modelo, nunca encima de él.
+- **Aviso de cobertura de datos**: un modelo da un número igual de firme para una
+  edad que vio 5000 veces que para una que no vio nunca (cardiovascular se entrenó
+  con 29.7-64.9 años y el formulario acepta 18-100). `/predict` marca esas entradas
+  en `support_warnings` —sin tocar la probabilidad— y el what-if sombrea en la curva
+  el tramo sin respaldo.
 - **Capa de datos agnóstica al motor** (SQLAlchemy): SQLite en dev, Postgres en
   producción cambiando solo `DATABASE_URL`.
 - **161 tests de pytest** sobre los invariantes delicados: ruteo híbrido, alias de
