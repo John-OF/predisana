@@ -58,11 +58,20 @@ def test_peso_e_imc_implican_altura_absurda(client):
     assert any(a["feature"] == "weight" for a in incoherentes)
 
 
-def test_el_aviso_no_toca_la_probabilidad(client):
-    """Mismo invariante que la capa clinica y AUD-16: informar sin alterar el numero."""
-    r = _predict(client, bmi=19, waist_circumference=115, weight=55)
-    assert _avisos(r, "incoherente")
-    assert 0.0 <= r["probability"] <= 1.0
+def test_el_aviso_no_toca_la_probabilidad(client, app_module, monkeypatch):
+    """Mismo invariante que la capa clinica y AUD-16: informar sin alterar el numero.
+    El MISMO payload incoherente, con el chequeo activo y con el chequeo apagado,
+    tiene que dar exactamente la misma probabilidad (calibrada y cruda)."""
+    incoherente = dict(bmi=19, waist_circumference=115, weight=55)
+    con_aviso = _predict(client, **incoherente)
+    assert _avisos(con_aviso, "incoherente")
+
+    monkeypatch.setattr(app_module, "_check_coherencia_corporal", lambda *a: [])
+    sin_aviso = _predict(client, **incoherente)
+    assert _avisos(sin_aviso, "incoherente") == []
+
+    assert con_aviso["probability"] == sin_aviso["probability"]
+    assert con_aviso["raw_model_probability"] == sin_aviso["raw_model_probability"]
 
 
 def test_campo_ausente_no_dispara_el_check(client, perfil_diabetes):

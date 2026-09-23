@@ -7,8 +7,6 @@ era una extrapolación presentada como una estimación normal.
 
 Igual que la capa clínica (A4), esto se calcula APARTE: no puede tocar la probabilidad.
 """
-import pytest
-
 CARDIO = {
     "age": 50, "bmi": 26, "ap_hi": 120, "ap_lo": 80, "cholesterol": 1, "gluc": 1,
     "smoke": 0, "alco": 0, "active": 1, "gender_Female": 1, "gender_Male": 0,
@@ -63,13 +61,19 @@ def test_la_cola_avisa_mas_suave(client):
     assert "extrapolación" not in r["support_note"]
 
 
-def test_el_aviso_no_toca_la_probabilidad(client):
-    """Lo mismo que se exige a la capa clínica: informar sin alterar el número."""
+def test_el_aviso_no_toca_la_probabilidad(client, app_module, monkeypatch):
+    """Lo mismo que se exige a la capa clínica: informar sin alterar el número.
+    El MISMO caso a los 90 años, con el aviso activo y con el aviso apagado, tiene
+    que dar exactamente la misma probabilidad (calibrada y cruda)."""
     r90 = _predict(client, age=90)
     assert r90["support_warnings"]
-    # La probabilidad tiene que ser la que da el calibrador sobre la salida cruda,
-    # sin ninguna correccion por el aviso.
-    assert r90["probability"] == pytest.approx(r90["probability"])
+
+    monkeypatch.setattr(app_module, "compute_support_warnings", lambda *a: [])
+    sin_aviso = _predict(client, age=90)
+    assert sin_aviso["support_warnings"] == []
+    assert r90["probability"] == sin_aviso["probability"]
+    assert r90["raw_model_probability"] == sin_aviso["raw_model_probability"]
+
     r50 = _predict(client)
     assert r90["probability"] > r50["probability"]   # sigue siendo monotona en edad
 
