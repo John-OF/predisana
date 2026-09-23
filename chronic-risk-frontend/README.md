@@ -50,7 +50,7 @@ npm run dev       # Vite dev server con HMR (http://localhost:5173)
 npm run build     # build de producción en dist/
 npm run preview   # sirve el build localmente para probarlo
 npm run lint      # ESLint sobre todo el proyecto
-npm test          # Vitest (20 tests, ~2 s)
+npm test          # Vitest (24 tests, ~2 s)
 npm run test:watch  # los mismos, en modo watch
 ```
 
@@ -59,8 +59,8 @@ npm run test:watch  # los mismos, en modo watch
 
 ## Tests
 
-**20 tests con Vitest + Testing Library** (`npm test`), sobre las tres cosas del front
-que tienen lógica de verdad:
+**24 tests con Vitest + Testing Library** (`npm test`), sobre las cosas del front que
+tienen lógica de verdad:
 
 - **`ErrorBoundary`** — que un fallo de render muestre una salida en vez de dejar la
   SPA en blanco, que registre el error en consola y que **«Reintentar» no deje la
@@ -76,6 +76,10 @@ que tienen lógica de verdad:
   ninguna feature servida llegue a la UI sin etiqueta en español. Es el fallo
   silencioso que apareció al migrar hipertensión a NHANES: cambia el esquema y algo
   se pinta como `waist_circumference` en la ficha o en la barra de SHAP.
+- **`AvisoSoporte`** — los avisos de cuánto fiarse del resultado, con la forma exacta
+  que devuelve `/predict`. No todos traen `trained_range`: el nivel `incoherente`
+  (peso, IMC y cintura que no cuadran entre sí) solo trae `detail`, y la primera
+  versión, que lo desestructuraba siempre, tumbaba la página del simulador entera.
 
 Configuración en `vite.config.js` (los tests reusan los mismos alias y plugins que el
 build) y arranque común en `src/test/setup.js`.
@@ -158,6 +162,7 @@ chronic-risk-frontend/
     ├── App.jsx                  # router + layout (navbar + footer)
     ├── index.css                # sistema de diseño "Pulso Sereno" (tokens, tema claro/oscuro)
     ├── components/
+    │   ├── AvisoSoporte.jsx     # avisos de cobertura de datos / coherencia del resultado
     │   ├── ErrorBoundary.jsx    # captura fallos de render (dentro del Router, bajo la navbar)
     │   ├── Logo.jsx
     │   └── MyNavbar.jsx         # navegación + toggle de tema

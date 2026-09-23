@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Container, Row, Col, Form, Button, Alert, Nav, Spinner, OverlayTrigger, Tooltip } from 'react-bootstrap';
 import { getConfig, predictRisk, getSyntheticCase, getSampleCase, getWhatIf } from '../services/api';
 import { getLabel } from '../utils/translations';
+import AvisoSoporte from '../components/AvisoSoporte';
 import Swal from 'sweetalert2';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend,
@@ -638,30 +639,6 @@ const Simulacion = () => {
     );
   };
 
-  // AUD-16: cobertura de datos. Un modelo no avisa de que está extrapolando —
-  // devuelve un número igual de firme para una edad que vio 5000 veces que para una
-  // que no vio nunca (cardiovascular se entrenó con 29-65 años y aquí se puede pedir
-  // 90). El backend lo calcula aparte, sin tocar la probabilidad.
-  const renderSoporte = () => {
-    const avisos = currentResult?.support_warnings || [];
-    if (!avisos.length) return null;
-    const extrapola = avisos.some(a => a.level === 'sin_datos');
-    return (
-      <Alert variant={extrapola ? 'warning' : 'secondary'} className="py-2 mt-3 text-start">
-        <small>
-          <strong>{extrapola ? 'Fuera del rango con datos:' : 'Zona con pocos datos:'}</strong>{' '}
-          {avisos.map(a => {
-            const [lo, hi] = a.trained_range;
-            return `${getLabel(a.feature)} (${a.value}; el modelo aprendió con ${lo}–${hi})`;
-          }).join(', ')}.{' '}
-          {extrapola
-            ? 'Ahí el resultado es una extrapolación: el modelo nunca vio casos así.'
-            : 'La estimación es menos fiable de lo habitual en esa zona.'}
-        </small>
-      </Alert>
-    );
-  };
-
   // Capa clínica de referencia (ADA / ACC-AHA)
   const renderClinic = () => {
     if (!currentResult) return null;
@@ -814,7 +791,10 @@ const Simulacion = () => {
                     <p className="small text-faint mt-2 mb-0">{resultNote}</p>
                   ))}
                   {renderMissing()}
-                  {renderSoporte()}
+                  {/* AUD-16: un modelo no avisa de que está extrapolando; el backend lo
+                      calcula aparte (cardiovascular se entrenó con 29-65 años y aquí se
+                      puede pedir 90). */}
+                  <AvisoSoporte avisos={currentResult.support_warnings} />
                   {renderShap()}
                   {renderClinic()}
                   {renderWhatIf()}

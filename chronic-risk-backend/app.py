@@ -923,6 +923,18 @@ def _build_row(key: str, payload: Dict[str, Any]):
     return np.array([row], dtype=float), missing, clin
 
 
+def _optional_clinical_value(payload: Dict[str, Any], key: str) -> float:
+    """Dato clinico opcional que NO entra al modelo (la sistolica en hipertension, la
+    glucosa en un modelo que no la usa) o 0.0 si no viene. Pasa por _to_float igual
+    que las features: antes iba con float() a secas, asi que un `1e999` o un "inf"
+    salian como `Infinity` en clinical_flags (JSON invalido que rompe el JSON.parse
+    del navegador, el mismo fallo que AUD-2) y un texto se ignoraba en silencio."""
+    crudo = _safe_get(payload, key)
+    if crudo is None or (isinstance(crudo, str) and not crudo.strip()):
+        return 0.0
+    return _to_float(key, crudo)
+
+
 def _predict_proba(key: str, X: np.ndarray):
     """Probabilidad de clase positiva para el modelo `key`. Devuelve (raw, calibrada).
     La calibrada aplica la isotónica persistida (si existe); es un mapeo monótono, así
@@ -982,25 +994,18 @@ def predict(disease: str):
     feats = FEATURES[model_key]
     try:
         X, missing, clin = _build_row(model_key, payload)
+        clinical_glucose, clinical_hba1c, clinical_bp = clin["glucose"], clin["hba1c"], clin["bp"]
+        # La glucosa puede venir en el payload aunque el modelo base no la use: para la
+        # capa clínica ADA se toma directamente del payload si el modelo no la capturó.
+        if not clinical_glucose:
+            clinical_glucose = _optional_clinical_value(payload, "blood_glucose_level")
+        # Idem con la sistolica: en hipertension es un dato OPCIONAL fuera del modelo
+        # (AUD-1), asi que _build_row no la capturo.
+        if not clinical_bp:
+            clinical_bp = (_optional_clinical_value(payload, "blood_pressure")
+                           or _optional_clinical_value(payload, "ap_hi"))
     except InvalidPayload as e:
         return jsonify({"error": str(e)}), 400
-    clinical_glucose, clinical_hba1c, clinical_bp = clin["glucose"], clin["hba1c"], clin["bp"]
-    # La glucosa puede venir en el payload aunque el modelo base no la use: para la
-    # capa clínica ADA se toma directamente del payload si el modelo no la capturó.
-    if not clinical_glucose:
-        _g = _safe_get(payload, "blood_glucose_level")
-        try:
-            clinical_glucose = float(_g) if _g is not None else 0.0
-        except (TypeError, ValueError):
-            clinical_glucose = 0.0
-    # Idem con la sistolica: en hipertension es un dato OPCIONAL fuera del modelo
-    # (AUD-1), asi que _build_row no la capturo.
-    if not clinical_bp:
-        _bp = _safe_get(payload, "blood_pressure") or _safe_get(payload, "ap_hi")
-        try:
-            clinical_bp = float(_bp) if _bp is not None else 0.0
-        except (TypeError, ValueError):
-            clinical_bp = 0.0
 
     model = MODELS[model_key]
     scaler = model.named_steps["scaler"]

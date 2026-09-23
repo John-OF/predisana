@@ -31,6 +31,51 @@ def test_fichas_de_paciente_son_json_valido(client, ruta):
             assert not (isinstance(v, float) and not math.isfinite(v)), k
 
 
+# Mismo fallo por otra via (auditoria 2026-09): los datos clinicos que NO entran al
+# modelo (la sistolica en hipertension, la glucosa en un modelo que no la usa) se
+# leian con float() a secas, y un inf acababa como `Infinity` en clinical_flags.
+_HTA = {
+    "age": 45, "bmi": 25, "weight": 75, "waist_circumference": 85,
+    "diabetes": 0, "heart_disease": 0, "high_cholesterol": 0,
+    "gender_Male": 1, "gender_Female": 0,
+    "smoking_history_never": 1, "smoking_history_current": 0, "smoking_history_former": 0,
+}
+_CARDIO = {
+    "age": 50, "bmi": 26, "ap_hi": 120, "ap_lo": 80, "cholesterol": 1, "gluc": 1,
+    "smoke": 0, "alco": 0, "active": 1, "gender_Female": 1, "gender_Male": 0,
+}
+
+
+@pytest.mark.parametrize("enfermedad,base,campo", [
+    ("hipertension", _HTA, "blood_pressure"),
+    ("hipertension", _HTA, "blood_glucose_level"),
+    ("cardiovascular", _CARDIO, "blood_glucose_level"),
+])
+@pytest.mark.parametrize("valor", [float("inf"), "inf", "NaN", "ciento cuarenta"])
+def test_dato_clinico_opcional_invalido_da_400(client, enfermedad, base, campo, valor):
+    r = client.post(f"/predict/{enfermedad}", json={**base, campo: valor})
+    assert r.status_code == 400
+    assert campo in r.get_json()["error"]
+
+
+def test_dato_clinico_opcional_valido_sigue_funcionando(client):
+    """El arreglo no puede romper el caso normal: una sistolica de 150 sigue dando su
+    indicador ACC/AHA, y la respuesta es JSON estricto."""
+    r = client.post("/predict/hipertension", json={**_HTA, "blood_pressure": 150})
+    assert r.status_code == 200
+    crudo = r.get_data(as_text=True)
+    assert "Infinity" not in crudo and "NaN" not in crudo
+    flags = json.loads(crudo)["clinical_flags"]
+    assert [f["category"] for f in flags] == ["hipertension_grado_2"]
+
+
+def test_dato_clinico_opcional_vacio_es_ausente(client):
+    """Un input opcional borrado en el form manda "": es ausente, no un 400."""
+    r = client.post("/predict/hipertension", json={**_HTA, "blood_pressure": ""})
+    assert r.status_code == 200
+    assert r.get_json()["clinical_flags"] == []
+
+
 # ---------- AUD-3: entrada invalida -> 400, enfermedad inexistente -> 404 ----------
 
 @pytest.mark.parametrize("valor", ["cuarenta", [1, 2, 3], {"a": 1}, "NaN", float("inf")])
