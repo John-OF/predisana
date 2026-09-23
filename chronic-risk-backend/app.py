@@ -653,6 +653,82 @@ def compute_support_warnings(key: str, payload: Dict[str, Any]) -> List[Dict[str
     return avisos
 
 
+# ==========================================
+# COHERENCIA CORPORAL — weight / bmi / waist_circumference (auditoria 2026-08)
+# ==========================================
+# Hipertension pide weight, bmi y waist_circumference como 3 campos SUELTOS (el
+# formulario no pide altura ni valida que cuadren entre si). En los datos reales
+# los tres estan fuertemente correlacionados (r~0.89-0.90); el LogReg ganador del
+# bake-off aprendio, por colinealidad, un coeficiente NEGATIVO para 'weight'
+# (-0.37, el unico signo invertido de las features con direccion clinica
+# inequivoca). Con datos que covarian de forma realista el modelo predice bien
+# (a mas tamano corporal, mas riesgo); el problema aparece solo cuando alguien
+# entra una combinacion incoherente (p.ej. cintura enorme con IMC bajo, o mucho
+# peso a igual IMC/cintura que uno mas liviano) — ahi el riesgo puede BAJAR al
+# subir el peso. compute_support_warnings() no lo detecta porque cada campo,
+# por separado, cae dentro de su rango individual: hace falta mirar los tres
+# juntos. Igual que el resto de esta capa (AUD-16 / A4), esto NO toca la
+# probabilidad: solo agrega un aviso mas a support_warnings.
+_ALTURA_IMPLICITA_RANGO_M = (1.30, 2.20)  # weight/bmi implican una altura fuera de esto -> incoherente
+_CINTURA_IMC_BAJO_MAX = 22.0
+_CINTURA_IMC_BAJO_MIN_CINTURA = 100.0
+_CINTURA_IMC_ALTO_MIN = 35.0
+_CINTURA_IMC_ALTO_MAX_CINTURA = 80.0
+
+
+def _check_coherencia_corporal(key: str, payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Detecta combinaciones de weight/bmi/waist_circumference fisiologicamente
+    incoherentes. Solo aplica a hipertension (la unica enfermedad con los tres
+    campos sueltos); en el resto devuelve lista vacia."""
+    if _data_disease(key) != "hipertension":
+        return []
+
+    def _num(feat):
+        crudo = _safe_get(payload, feat)
+        if crudo is None or crudo == "":
+            return None
+        try:
+            v = _to_float(feat, crudo)
+        except InvalidPayload:
+            return None
+        return v if v > 0 else None
+
+    weight, bmi, waist = _num("weight"), _num("bmi"), _num("waist_circumference")
+    avisos: List[Dict[str, Any]] = []
+
+    if weight is not None and bmi is not None:
+        altura_implicita = math.sqrt(weight / bmi)
+        lo, hi = _ALTURA_IMPLICITA_RANGO_M
+        if not (lo <= altura_implicita <= hi):
+            avisos.append({
+                "feature": "weight", "value": weight, "level": "incoherente",
+                "detail": (f"El peso ({weight:g} kg) y el IMC ({bmi:g}) juntos implican una "
+                           f"altura de ~{altura_implicita:.2f} m, fuera de un rango humano "
+                           f"plausible: como el modelo trata weight, bmi y "
+                           f"waist_circumference como campos independientes, esta "
+                           f"combinación no se detecta por rango individual pero es "
+                           f"una entrada incoherente."),
+            })
+
+    if bmi is not None and waist is not None:
+        if bmi <= _CINTURA_IMC_BAJO_MAX and waist >= _CINTURA_IMC_BAJO_MIN_CINTURA:
+            avisos.append({
+                "feature": "waist_circumference", "value": waist, "level": "incoherente",
+                "detail": (f"Cintura de {waist:g} cm con un IMC de {bmi:g} es una combinación "
+                           f"casi imposible fisiológicamente: un IMC tan bajo no deja margen "
+                           f"para tanta grasa abdominal."),
+            })
+        elif bmi >= _CINTURA_IMC_ALTO_MIN and waist <= _CINTURA_IMC_ALTO_MAX_CINTURA:
+            avisos.append({
+                "feature": "waist_circumference", "value": waist, "level": "incoherente",
+                "detail": (f"Cintura de {waist:g} cm con un IMC de {bmi:g} es una combinación "
+                           f"casi imposible fisiológicamente: un IMC tan alto casi siempre "
+                           f"viene con más cintura."),
+            })
+
+    return avisos
+
+
 def _supported_range(key: str, feature: str) -> Optional[List[float]]:
     """[min, max] observado en el train para esa feature, o None si no aplica
     (categorica, o enfermedad sin datos curados)."""
@@ -666,6 +742,10 @@ def support_note(avisos: List[Dict[str, Any]]) -> str:
     if any(a["level"] == "sin_datos" for a in avisos):
         return ("Alguno de los datos queda fuera del rango que el modelo llegó a ver, "
                 "así que este resultado es una extrapolación: tómalo con reservas.")
+    if any(a["level"] == "incoherente" for a in avisos):
+        return ("Alguno de los datos ingresados no es coherente con el resto (p.ej. peso, "
+                "IMC y cintura no cuadran entre sí): tómalo con las mismas reservas que una "
+                "extrapolación.")
     return ("Alguno de los datos cae en una zona con pocos ejemplos de entrenamiento, "
             "así que la estimación es menos fiable de lo habitual.")
 
@@ -979,6 +1059,7 @@ def predict(disease: str):
 
     # AUD-16: igual que la capa clínica, se calcula APARTE y no toca la probabilidad.
     support_warnings = compute_support_warnings(model_key, payload)
+    support_warnings += _check_coherencia_corporal(model_key, payload)
 
     used_glucose = model_key == DIABETES_GLUCOSE_KEY
     log_prediction_to_db(
