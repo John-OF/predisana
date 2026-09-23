@@ -156,7 +156,7 @@ Todos los endpoints aceptan/devuelven JSON. El CORS de los endpoints públicos d
 **nunca** hereda ese `*` — ver la sección de CORS y rate limiting más arriba.
 
 ### `GET /health`
-Liveness + comprobación real de la BD (`SELECT 1`). Devuelve **503** si la base no responde.
+Liveness + comprobación real de la BD (`SELECT 1`). Devuelve **503** si la base no responde. Está exento del rate limiting (un 429 marcaría el deploy como caído ante un monitor de uptime), así que el resultado de la BD se reutiliza **5 s**: un bucle contra `/health` no se traduce en una consulta por petición.
 
 ```json
 {
@@ -177,16 +177,18 @@ Configuración para construir el formulario en el frontend:
 {
   "disease": "diabetes",
   "features": ["age", "bmi", "hypertension", "..."],
-  "optional_features": ["blood_glucose_level"],
-  "ranges": { "age": [18, 100], "bmi": [15, 50], "glucose": [60, 260], "blood_pressure": [60, 130] },
+  "optional_features": ["blood_glucose_level", "hba1c_level"],
+  "clinical_inputs": ["hba1c_level"],
+  "ranges": { "age": [18, 100], "bmi": [10, 90], "blood_glucose_level": [40, 500], "hba1c_level": [3, 20], "hypertension": [0, 1], "...": "..." },
   "categoricals": { "gender": ["Female", "Male"], "smoking_history": ["current", "former", "never"] },
-  "feature_support": { "age": [18.0, 80.0], "bmi": [13.4, 64.5] }
+  "feature_support": { "age": { "min": 18.0, "max": 80.0, "p1": 18.0, "p99": 80.0, "n": 4987 }, "...": "..." },
+  "topcoded": { "age": 80 }
 }
 ```
 
-`ranges` y `feature_support` **no son lo mismo**: los primeros son los límites del formulario, el segundo es el tramo que cada variable continua realmente cubre en los datos de entrenamiento. La UI usa el segundo para sombrear el what-if donde el modelo extrapola.
+`ranges` y `feature_support` **no son lo mismo**. `ranges` son los límites **físicos** que acepta el API (`INPUT_LIMITS`): fuera de ellos `/predict` y `/whatif` responden 400, y el formulario los usa como min/max de sus inputs, así que front y back validan con los mismos números. `feature_support` es el tramo que cada variable continua realmente cubre en los datos de entrenamiento: dentro de `ranges` pero fuera de ahí, el valor se acepta con un aviso (AUD-16), y la UI lo usa para sombrear el what-if donde el modelo extrapola. `topcoded` marca las variables con tope en los datos (NHANES registra a todo mayor de 80 como 80).
 
-Las `features` son las propias del esquema de cada enfermedad (heterogéneo), ya recortadas por respondibilidad. Las `optional_features` son las que aporta una variante con más datos (hoy: la glucosa del híbrido de diabetes) y el usuario puede rellenar o no. Las `categoricals` se derivan de los nombres de las columnas one-hot (`gender_*`, `smoking_history_*`).
+Las `features` son las propias del esquema de cada enfermedad (heterogéneo), ya recortadas por respondibilidad. Las `optional_features` son las que el usuario puede rellenar o no: las que aporta una variante con más datos (la glucosa del híbrido de diabetes, que **sí** cambia la estimación) y las `clinical_inputs`, que solo lee la capa clínica y **no** la cambian (la HbA1c en diabetes, la presión en hipertensión). Solo se sirven enfermedades de verdad: `/config/diabetes_glucosa` es 404. Las `categoricals` se derivan de los nombres de las columnas one-hot (`gender_*`, `smoking_history_*`).
 
 ### `POST /predict/<disease>`
 Recibe un payload con las features clínicas y devuelve la probabilidad de riesgo + explicación SHAP + capa de interpretación clínica.
@@ -225,28 +227,29 @@ Recibe un payload con las features clínicas y devuelve la probabilidad de riesg
   ],
   "clinical_note": "Glucosa en ayuno ≥126 mg/dL: criterio de diabetes.",
   "support_warnings": [
-    { "feature": "age", "value": 92, "nivel": "sin_datos", "observado": [18.0, 80.0],
-      "detail": "El modelo no vio ningún caso con esta edad durante el entrenamiento." }
+    { "feature": "age", "value": 92, "level": "sin_datos", "trained_range": [18.0, 80.0], "topcoded": 80,
+      "detail": "En estos datos todo el que pasa de 80 figura como 80: el modelo sí vio casos así, pero no puede distinguirlos de 80. Por encima, la estimación prolonga la tendencia que aprendió (extrapolación)." }
   ],
-  "support_note": "Hay entradas fuera del rango que el modelo vio al entrenar: la estimación es una extrapolación.",
+  "support_note": "Alguno de los datos queda fuera del rango que el modelo llegó a ver, así que este resultado es una extrapolación: tómalo con reservas.",
   "explain_note": "La probabilidad mostrada es la salida del modelo calibrada (isotónica); `raw_model_probability` es la salida cruda. Los valores SHAP explican el modelo crudo. Los indicadores clínicos (ADA/ACC-AHA) se muestran aparte como referencia y NO modifican la probabilidad."
 }
 ```
 
 **Comportamientos importantes (no triviales):**
 
+- **Límites físicos (`INPUT_LIMITS`)**: todo valor que se aporta, feature o dato clínico, tiene que caer dentro de su rango (edad 18-100, IMC 10-90, glucosa 40-500…) o la respuesta es **400** con el rango aceptado. Son topes de lo físicamente posible, no el rango entrenado: cubren todas las filas reales y sintéticas (hay un test que lo exige). Antes una edad de −30 con un IMC de 900 daba 200, probabilidad 1,0 y una fila en la BD.
 - **Ruteo híbrido de diabetes**: si el payload trae una glucosa válida (>0) y existe la variante `diabetes_glucosa`, se sirve esa (`variant: "glucosa"`, `used_glucose: true`); si no, el modelo self-report (`variant: "base"`).
 - **Aliasing glucosa**: `glucose` y `blood_glucose_level` se espejan automáticamente, así que enviar uno cubre al otro.
 - **Calibración**: `probability` es la salida del modelo **calibrada** con la isotónica persistida; `raw_model_probability` es la cruda (la que SHAP explica). La isotónica es un reescalado monótono: no cambia el ranking (AUC intacto).
-- **Capa de interpretación clínica desacoplada (A4)**: `clinical_flags`/`clinical_note` exponen los umbrales diagnósticos de referencia (ADA: glucosa ≥100/≥126/≥200, HbA1c ≥5.7/≥6.5; ACC/AHA: sistólica ≥120/≥130/≥140/≥180). Esta capa **no** altera la probabilidad (sustituye al antiguo `max()` con números mágicos). Los datos que solo alimentan esta capa (la presión en hipertensión, la glucosa en un modelo que no la usa) se validan igual que las features: no numérico o no finito → 400.
+- **Capa de interpretación clínica desacoplada (A4)**: `clinical_flags`/`clinical_note` exponen los umbrales diagnósticos de referencia (ADA: glucosa ≥100/≥126/≥200, HbA1c ≥5.7/≥6.5; ACC/AHA: sistólica ≥120/≥130/≥140/≥180). Esta capa **no** altera la probabilidad (sustituye al antiguo `max()` con números mágicos). Los datos que solo alimentan esta capa (la presión en hipertensión, la HbA1c en diabetes, la glucosa en un modelo que no la usa) se validan igual que las features: no numérico, no finito o fuera de rango → 400. La HbA1c no era un dato que se pudiera aportar, así que sus umbrales ADA no se disparaban nunca.
 - **Filtro de género en SHAP**: las features `gender_*` se omiten del top-5 explicativo.
-- **Aviso de cobertura de datos (AUD-16)**: `support_warnings`/`support_note` señalan las entradas que caen donde el modelo tiene pocos datos (`pocos_datos`, fuera del p1-p99) o ninguno (`sin_datos`, fuera del min-max observado); en hipertensión, además, `incoherente` cuando peso, IMC y cintura no cuadran entre sí (ese nivel no trae `trained_range`, solo `detail`). Igual que la capa clínica, **no** altera la probabilidad. Las features ya reportadas en `missing_filled_as_zero` se omiten para no avisar dos veces del mismo hueco.
+- **Aviso de cobertura de datos (AUD-16)**: `support_warnings`/`support_note` señalan las entradas que caen donde el modelo tiene pocos datos (`pocos_datos`, fuera del p1-p99) o ninguno (`sin_datos`, fuera del min-max observado); en hipertensión, además, `incoherente` cuando peso, IMC y cintura no cuadran entre sí (ese nivel no trae `trained_range`, solo `detail`). Por encima de un tope de NHANES (edad > 80 en diabetes e hipertensión) el aviso lleva `topcoded` y no dice que el modelo "no vio ningún caso": sí los vio, pero registrados como 80. Igual que la capa clínica, **no** altera la probabilidad. Las features ya reportadas en `missing_filled_as_zero` se omiten para no avisar dos veces del mismo hueco.
 - **Features faltantes**: cualquier feature ausente se rellena con 0; los nombres no-dummy aparecen en `missing_filled_as_zero`.
 
 Cada predicción se persiste (anónima) en la tabla `predictions`: disease, input_data JSON, prediction, probability, modelo servido, nota clínica, top SHAP y el `session_id` que el frontend manda en el header `X-Session-Id` (UUID aleatorio: agrupa sin identificar).
 
 ### `POST /whatif/<disease>`
-Análisis contrafactual: recibe `{ base, feature, min, max, steps }`, fija el caso `base` y barre `feature` sobre el rango, devolviendo la curva `[{value, probability, raw_probability}]` (calibrada y cruda), más el `supported_range` de la variable barrida (el tramo con datos de entrenamiento detrás, que el frontend sombrea: ahí la curva se aplana por falta de datos, no porque el riesgo deje de subir). Usa el mismo ruteo híbrido que `/predict`. **No** registra nada en la BD ni calcula SHAP.
+Análisis contrafactual: recibe `{ base, feature, min, max, steps }`, fija el caso `base` y barre `feature` sobre el rango, devolviendo la curva `[{value, probability, raw_probability}]` (calibrada y cruda), más el `supported_range` de la variable barrida (el tramo con datos de entrenamiento detrás, que el frontend sombrea: ahí la curva se aplana por falta de datos, no porque el riesgo deje de subir) y `topcoded_at` si la variable tiene tope en los datos. Usa el mismo ruteo híbrido y los mismos límites que `/predict` (un barrido fuera de `ranges` es 400), y solo sirve enfermedades de verdad (`/whatif/diabetes_glucosa` es 404). **No** registra nada en la BD ni calcula SHAP.
 
 ### `GET /synthetic/<disease>`
 Devuelve una fila aleatoria de los datos sintéticos curados (`data_curated/<disease>/<disease>_synthetic_ctgan*.csv`). Se usa en el frontend para autocompletar el simulador con un "caso clínico aleatorio". Si no hay sintéticos disponibles, hace fallback a `data_processed/`. El response incluye `_source_type: "synthetic"` o `"real"`.
@@ -257,6 +260,8 @@ Una ficha de paciente del origen pedido, en formato homogéneo. Alimenta el jueg
 ### `GET /distribution/<disease>?feature=<col>&bins=<n>`
 Histograma comparado real vs sintético de una variable numérica, sobre bins comunes y normalizado a % (compara la *forma* aunque difiera el tamaño de muestra).
 
+`/synthetic`, `/sample` y `/distribution` leen los CSV **una sola vez** y los mantienen en memoria (`_read_csv_cached`): antes releían el CSV entero en cada petición (~55k filas en cardiovascular, dos archivos en `/distribution`). Los CSV no cambian con el servidor en marcha; el pipeline los regenera offline y un reinicio los recarga.
+
 ### `GET /synthetic_quality/<disease>`
 Tres preguntas sobre el sintético, no una. **Fidelidad**: SDMetrics `QualityReport` (overall, column shapes, pair trends, detalle por columna) + matrices de correlación real/sintético para el heatmap. **Utilidad** (`tstr`): se entrena un modelo **solo con sintético** y se evalúa contra el *test real*, junto al mismo modelo entrenado con datos reales sobre ese mismo test — los **mismos dos algoritmos en las dos ramas**, para que la diferencia sea de los datos y no del modelo. Ratios actuales: **0,965-0,984**. **Privacidad** (`privacy`): distancia al registro real más cercano (DCR). La referencia **no es cero** — el propio test real también está cerca del train, así que se reportan las dos; el sintético queda **1,1-1,8x más lejos**. Las copias exactas se cuentan en el sintético *y* entre los reales, porque con datos gruesos (cardiovascular son enteros) las colisiones son normales: 4 de 54 392 sintéticas frente a 119 de 13 599 reales. El informe se **precomputa** en el pipeline (`build_quality_reports.py` → `data_curated/<enfermedad>/<enfermedad>_quality.json`) y la API lo sirve tal cual, así que producción no necesita `sdmetrics` (que arrastra torch). Solo lo recalcula si el JSON falta y la librería está instalada.
 
@@ -264,7 +269,7 @@ Tres preguntas sobre el sintético, no una. **Fidelidad**: SDMetrics `QualityRep
 Protegidos por el header `X-Admin-Token`, que debe coincidir con la env var `ADMIN_TOKEN` (sin ella responden **503**; token incorrecto, **401**). No es auth de usuario — los usuarios nunca se loguean. Además: `Origin` no permitido → **403**, y más de `RATE_LIMIT_ADMIN_VERIFY` intentos de token por minuto y por IP → **429**.
 
 - `/admin/stats` — analítica **agregada y anónima**: totales, sesiones únicas, conteo/tasa de positivos/probabilidad media por enfermedad, histograma de probabilidades, timeline diario, uso por hora y features SHAP más frecuentes. Acepta `?from=YYYY-MM-DD&to=YYYY-MM-DD`.
-- `/admin/predictions?limit=&disease=&from=&to=` — simulaciones recientes.
+- `/admin/predictions?limit=&disease=&from=&to=` — simulaciones recientes. `limit` va de 1 a 500 (50 por defecto, también si llega ≤ 0: SQLite lee `LIMIT -1` como "sin límite").
 - `/admin/export.csv` — export CSV server-side con los mismos filtros.
 
 ---

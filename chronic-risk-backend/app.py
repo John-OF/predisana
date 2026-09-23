@@ -6,8 +6,9 @@ import io
 import re
 import math
 import hmac
+import time
 from datetime import datetime, timedelta
-from functools import wraps
+from functools import lru_cache, wraps
 from typing import Dict, Any, List, Optional
 
 import glob
@@ -167,7 +168,49 @@ DIABETES_GLUCOSE_KEY = "diabetes_glucosa"
 # —quien se mide 160 no necesita un modelo— asi que el riesgo se estima con
 # factores respondibles y la tension, si se conoce, se interpreta aparte.
 OPTIONAL_CLINICAL_INPUTS = {
+    # La HbA1c tampoco entra a ningun modelo de diabetes: sin esto los umbrales ADA
+    # de HbA1c de la capa clinica no se podian disparar nunca.
+    "diabetes": ["hba1c_level"],
     "hipertension": ["blood_pressure"],
+}
+
+# Limites FISICOS de cada dato de entrada: lo que se acepta, no lo que el modelo vio
+# (eso es SUPPORT, AUD-16, y solo avisa). Fuera de aqui no hay paciente posible
+# (edad -30, IMC 900) y antes se aceptaba con un 200, probabilidad 1.0 y fila en la
+# BD. Cubren todo el rango de los datos reales y sinteticos, y /config los sirve
+# como `ranges` para que el formulario valide con los MISMOS numeros.
+_BINARIAS = [0, 1]
+INPUT_LIMITS: Dict[str, List[float]] = {
+    "age": [18, 100],
+    "bmi": [10, 90],
+    "weight": [25, 250],
+    "waist_circumference": [40, 200],
+    "ap_hi": [70, 250],
+    "ap_lo": [40, 150],
+    "blood_pressure": [50, 300],
+    "blood_glucose_level": [40, 500],
+    "glucose": [40, 500],
+    "hba1c_level": [3, 20],
+    "cholesterol": [1, 3],
+    "gluc": [1, 3],
+    **{b: _BINARIAS for b in ("hypertension", "heart_disease", "diabetes",
+                              "high_cholesterol", "smoke", "alco", "active")},
+}
+_PREFIJOS_ONE_HOT = ("gender_", "smoking_history_")
+
+
+def _input_limits(feature: str) -> Optional[List[float]]:
+    if feature.startswith(_PREFIJOS_ONE_HOT):
+        return _BINARIAS
+    return INPUT_LIMITS.get(feature)
+
+
+# NHANES registra la edad con TOPE: todo el que pasa de 80 figura como 80 (RIDAGEYR).
+# El modelo si vio gente de 85, pero codificada como 80, asi que por encima del tope
+# el aviso no puede decir que "nunca vio un caso asi".
+TOPCODED: Dict[str, Dict[str, float]] = {
+    "diabetes": {"age": 80},
+    "hipertension": {"age": 80},
 }
 
 
@@ -288,6 +331,18 @@ def _to_float(feature: str, val):
         raise InvalidPayload(f"'{feature}' debe ser numerico (recibido: {val!r})")
     if not math.isfinite(f):
         raise InvalidPayload(f"'{feature}' debe ser un numero finito")
+    return f
+
+
+def _to_valid_input(feature: str, val) -> float:
+    """_to_float + limites fisicos (INPUT_LIMITS). Solo para lo que ENTRA al modelo o
+    a la capa clinica; el log y los avisos reutilizan valores ya validados."""
+    f = _to_float(feature, val)
+    limites = _input_limits(feature)
+    if limites is not None and not (limites[0] <= f <= limites[1]):
+        raise InvalidPayload(
+            f"'{feature}' fuera de rango: se acepta de {limites[0]:g} a {limites[1]:g} "
+            f"(recibido: {f:g})")
     return f
 
 
@@ -619,6 +674,7 @@ def compute_support_warnings(key: str, payload: Dict[str, Any]) -> List[Dict[str
     if not stats:
         return []
 
+    topes = TOPCODED.get(_data_disease(key), {})
     avisos: List[Dict[str, Any]] = []
     for feat in FEATURES.get(key, []):
         rango = stats.get(feat)
@@ -635,7 +691,19 @@ def compute_support_warnings(key: str, payload: Dict[str, Any]) -> List[Dict[str
             continue
 
         lo, hi, p1, p99 = rango["min"], rango["max"], rango["p1"], rango["p99"]
-        if valor < lo or valor > hi:
+        tope = topes.get(feat)
+        if tope is not None and valor > tope:
+            # Por encima del tope de NHANES SI hubo casos, pero codificados en el tope:
+            # el modelo no los distingue de el y prolonga la tendencia aprendida.
+            avisos.append({
+                "feature": feat, "value": valor, "level": "sin_datos",
+                "trained_range": [lo, hi], "topcoded": tope,
+                "detail": (f"En estos datos todo el que pasa de {tope:g} figura como "
+                           f"{tope:g}: el modelo sí vio casos así, pero no puede "
+                           f"distinguirlos de {tope:g}. Por encima, la estimación prolonga "
+                           f"la tendencia que aprendió (extrapolación)."),
+            })
+        elif valor < lo or valor > hi:
             avisos.append({
                 "feature": feat, "value": valor, "level": "sin_datos",
                 "trained_range": [lo, hi],
@@ -753,6 +821,24 @@ def support_note(avisos: List[Dict[str, Any]]) -> str:
 # ==========================================
 # FUNCIONES AUXILIARES PARA DATOS SINTÉTICOS / REALES
 # ==========================================
+@lru_cache(maxsize=16)
+def _read_csv_cached(csv_path: str) -> pd.DataFrame:
+    """Los CSV del laboratorio no cambian con el servidor en marcha (el pipeline los
+    regenera offline y un reinicio los recarga). Antes /sample, /synthetic y
+    /distribution releian el CSV entero en CADA peticion (~55k filas en
+    cardiovascular, dos veces en /distribution): una forma barata de cargar el
+    servidor. OJO: el DataFrame es compartido, quien lo use no debe mutarlo."""
+    return pd.read_csv(csv_path)
+
+
+def _synthetic_files(disease: str) -> List[str]:
+    """Sinteticos de una enfermedad, CTGAN primero. Ordenados: glob no garantiza
+    orden y con varios archivos se servia uno u otro segun el sistema de archivos."""
+    base_dir = os.path.join("data_curated", disease)
+    return (sorted(glob.glob(os.path.join(base_dir, f"{disease}_synthetic_ctgan*.csv")))
+            or sorted(glob.glob(os.path.join(base_dir, f"{disease}_synthetic*.csv"))))
+
+
 def _sample_row_from_csv(csv_path, source_type):
     """Lee un CSV, descarta 'target', muestrea 1 fila y normaliza tipos numpy.
     Marca _source_type. Mismo formato para datos reales y sintéticos (clave para
@@ -760,7 +846,7 @@ def _sample_row_from_csv(csv_path, source_type):
     if not os.path.exists(csv_path):
         return None
     try:
-        df = pd.read_csv(csv_path)
+        df = _read_csv_cached(csv_path)
         if "target" in df.columns:
             df = df.drop(columns=["target"])
         sample = df.sample(1).iloc[0].to_dict()
@@ -787,47 +873,51 @@ def get_random_sample(disease):
     Busca datos SINTÉTICOS priorizando CTGAN (que son los médicamente correctos).
     """
     disease = disease.lower()
-    base_dir = os.path.join("data_curated", disease)
-    
-    # 1. Intentar buscar específicamente CTGAN primero (Recomendado)
-    ctgan_pattern = os.path.join(base_dir, f"{disease}_synthetic_ctgan*.csv")
-    found_files = glob.glob(ctgan_pattern)
-    
-    # 2. Si no hay CTGAN, buscar cualquier otro sintético (Fallback, por si acaso)
-    if not found_files:
-        print(f"⚠️ No se encontró CTGAN para {disease}, buscando otros...")
-        any_pattern = os.path.join(base_dir, f"{disease}_synthetic*.csv")
-        found_files = glob.glob(any_pattern)
+    # CTGAN primero; si no hay, cualquier otro sintético.
+    found_files = _synthetic_files(disease)
 
     csv_path = None
     source_type = "real"
 
     if found_files:
-        # Tomamos el primero (ahora seguro será CTGAN si existe)
         csv_path = found_files[0]
         source_type = "synthetic"
-        # Opcional: imprimir cuál estamos usando para estar seguros
-        print(f"🎲 Usando datos sintéticos: {os.path.basename(csv_path)}")
     else:
-        # 3. Fallback final: Datos reales procesados
+        # Fallback final: Datos reales procesados
         csv_path = os.path.join("data_processed", f"{disease}_dataset.csv")
         print(f"⚠️ No se hallaron sintéticos para {disease}. Usando datos reales procesados.")
 
     # Misma normalizacion que la ficha real (incluido NaN -> None).
     return _sample_row_from_csv(csv_path, source_type)
 
+# /health esta exento del rate limiting (AUD-4: un 429 marcaria el deploy como caido
+# ante un monitor de uptime), asi que no puede costar una consulta a la BD por
+# peticion: el resultado se reutiliza unos segundos. Un monitor pincha cada 30-60 s y
+# sigue viendo el estado real; un bucle contra /health ya no llega a la BD.
+_HEALTH_DB_TTL_S = 5.0
+_health_db = {"checked_at": None, "ok": False}
+
+
+def _db_ok_cached() -> bool:
+    ahora = time.monotonic()
+    if _health_db["checked_at"] is None or ahora - _health_db["checked_at"] > _HEALTH_DB_TTL_S:
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            _health_db["ok"] = True
+        except Exception as e:
+            _health_db["ok"] = False
+            print(f"[WARN] /health: la BD no responde: {e}")
+        _health_db["checked_at"] = ahora
+    return _health_db["ok"]
+
+
 @app.get("/health")
 @limiter.exempt
 def health():
     """Liveness + comprobacion REAL de la BD (antes devolvia el string fijo
     'sqlite_connected', que ademas mentiria al pasar a Postgres en el deploy)."""
-    try:
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-        db_ok = True
-    except Exception as e:
-        db_ok = False
-        print(f"[WARN] /health: la BD no responde: {e}")
+    db_ok = _db_ok_cached()
     payload = {
         "status": "ok" if db_ok else "degraded",
         "database": engine.url.get_backend_name(),   # sqlite | postgresql | ...
@@ -854,10 +944,13 @@ def get_metrics(disease: str):
 @app.get("/config/<disease>")
 def get_config(disease: str):
     disease = disease.lower()
+    # Solo enfermedades servidas: la variante `diabetes_glucosa` no es un formulario
+    # propio (se activa desde diabetes al aportar la glucosa).
+    if disease not in FILES:
+        return jsonify({"error": "unknown disease"}), 404
     if disease not in FEATURES:
         return jsonify({"error": "features not found"}), 404
     feats = FEATURES[disease]
-    ranges = { "age": [18, 100], "bmi": [15, 50], "glucose": [60, 260], "blood_pressure": [60, 130] }
     gender_opts = sorted([f.split("gender_")[1] for f in feats if f.startswith("gender_")])
     smoke_opts  = sorted([f.split("smoking_history_")[1] for f in feats if f.startswith("smoking_history_")])
 
@@ -868,18 +961,27 @@ def get_config(disease: str):
         optional = [f for f in FEATURES[DIABETES_GLUCOSE_KEY] if f not in feats]
     # Opcionales que no son del modelo pero si de la capa clinica (p.ej. la
     # presion en hipertension). El front los pinta igual, marcados como opcionales.
-    optional += [f for f in OPTIONAL_CLINICAL_INPUTS.get(disease, [])
-                 if f not in feats and f not in optional]
+    clinical_inputs = [f for f in OPTIONAL_CLINICAL_INPUTS.get(disease, []) if f not in feats]
+    optional += [f for f in clinical_inputs if f not in optional]
+
+    # Limites que acepta el API (INPUT_LIMITS) para cada campo del formulario: el front
+    # los usa como min/max de los inputs. Antes esto era un dict fijo que el front no
+    # leia y que contradecia sus propios limites (presion 60-130 frente a 50-300).
+    ranges = {f: _input_limits(f) for f in feats + optional if _input_limits(f)}
 
     return jsonify({
         "disease": disease,
         "features": feats,
         "optional_features": optional,
+        # Opcionales que NO cambian la estimacion: solo los lee la capa clinica.
+        "clinical_inputs": clinical_inputs,
         "ranges": ranges,
         # AUD-16: rango REAL de los datos de entrenamiento, para que el front pueda
         # avisar de que fuera de ahi el modelo extrapola. `ranges` de arriba son los
-        # limites del formulario, que es otra cosa.
+        # limites que se aceptan, que es otra cosa.
         "feature_support": SUPPORT.get(disease, {}),
+        # Features con tope en los datos (NHANES: edad 80 = 80 o mas).
+        "topcoded": TOPCODED.get(disease, {}),
         "categoricals": { "gender": gender_opts, "smoking_history": smoke_opts }
     })
 
@@ -914,7 +1016,7 @@ def _build_row(key: str, payload: Dict[str, Any]):
                 missing.append(f)
             num = 0.0
         else:
-            num = _to_float(f, val)  # no numerico -> InvalidPayload -> 400
+            num = _to_valid_input(f, val)  # no numerico o fuera de rango -> 400
         if f in ("glucose", "blood_glucose_level"): clin["glucose"] = num
         if f == "hba1c_level": clin["hba1c"] = num
         # Sistólica: hipertensión usa 'blood_pressure'; cardiovascular usa 'ap_hi'.
@@ -932,7 +1034,7 @@ def _optional_clinical_value(payload: Dict[str, Any], key: str) -> float:
     crudo = _safe_get(payload, key)
     if crudo is None or (isinstance(crudo, str) and not crudo.strip()):
         return 0.0
-    return _to_float(key, crudo)
+    return _to_valid_input(key, crudo)
 
 
 def _predict_proba(key: str, X: np.ndarray):
@@ -999,6 +1101,9 @@ def predict(disease: str):
         # capa clínica ADA se toma directamente del payload si el modelo no la capturó.
         if not clinical_glucose:
             clinical_glucose = _optional_clinical_value(payload, "blood_glucose_level")
+        # La HbA1c no es feature de ningun modelo: solo se interpreta (ADA).
+        if not clinical_hba1c:
+            clinical_hba1c = _optional_clinical_value(payload, "hba1c_level")
         # Idem con la sistolica: en hipertension es un dato OPCIONAL fuera del modelo
         # (AUD-1), asi que _build_row no la capturo.
         if not clinical_bp:
@@ -1102,8 +1207,12 @@ def whatif(disease: str):
     variable. NO se registra en la BD (no ensucia la analítica del admin) y no
     calcula SHAP. Alimenta el panel 'what-if' del simulador."""
     disease = disease.lower()
+    # Igual que /predict: solo enfermedades servidas. Antes bastaba con estar en
+    # MODELS, asi que /whatif/diabetes_glucosa daba 200 y /predict/... 404.
+    if disease not in FILES:
+        return jsonify({"error": "unknown disease"}), 404
     if disease not in MODELS or disease not in FEATURES:
-        return jsonify({"error": "model or features not loaded"}), 404
+        return jsonify({"error": "model or features not loaded"}), 500
 
     try:
         body = request.get_json(force=True) or {}
@@ -1167,6 +1276,8 @@ def whatif(disease: str):
         # delata por si sola: fuera de aqui se aplana porque no hay datos, no porque el
         # riesgo deje de subir.
         "supported_range": _supported_range(model_key, feature),
+        # NHANES: por encima de este tope si hubo casos, pero codificados en el tope.
+        "topcoded_at": TOPCODED.get(_data_disease(model_key), {}).get(feature),
     })
 
 @app.get("/synthetic/<disease>")
@@ -1222,14 +1333,13 @@ def get_distribution(disease):
         nbins = 18
 
     real_path = os.path.join("data_curated", disease, f"{disease}_train.csv")
-    synth_files = glob.glob(os.path.join("data_curated", disease, f"{disease}_synthetic_ctgan*.csv")) \
-        or glob.glob(os.path.join("data_curated", disease, f"{disease}_synthetic*.csv"))
+    synth_files = _synthetic_files(disease)
     if not os.path.exists(real_path) or not synth_files:
         return jsonify({"error": "data not available"}), 500
 
     try:
-        real = pd.read_csv(real_path)
-        synth = pd.read_csv(synth_files[0])
+        real = _read_csv_cached(real_path)
+        synth = _read_csv_cached(synth_files[0])
         if feature not in real.columns or feature not in synth.columns:
             return jsonify({"error": "feature not found"}), 400
 
@@ -1419,9 +1529,14 @@ def admin_stats():
 def admin_predictions():
     """Lista las simulaciones más recientes (server-side, anónimas)."""
     try:
-        limit = min(int(request.args.get("limit", 50)), 500)
+        limit = int(request.args.get("limit", 50))
     except (ValueError, TypeError):
         limit = 50
+    # Un limit <= 0 caia tal cual en la query, y SQLite lee LIMIT -1 como "sin
+    # limite": ?limit=-1 devolvia la tabla entera saltandose el tope de 500.
+    if limit < 1:
+        limit = 50
+    limit = min(limit, 500)
     disease = request.args.get("disease")
 
     with SessionLocal() as s:

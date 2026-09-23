@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Container, Row, Col, Form, Button, Alert, Nav, Spinner, OverlayTrigger, Tooltip } from 'react-bootstrap';
-import { getConfig, predictRisk, getSyntheticCase, getSampleCase, getWhatIf } from '../services/api';
+import { getConfig, predictRisk, getSyntheticCase, getWhatIf } from '../services/api';
 import { getLabel } from '../utils/translations';
 import AvisoSoporte from '../components/AvisoSoporte';
 import Swal from 'sweetalert2';
@@ -47,31 +47,31 @@ const WHATIF_FEATURES = {
   ],
 };
 
-// --- CONFIGURACIÓN DE LÍMITES CLÍNICOS REALISTAS ---
-// Rango aceptado por el input (min/max) y rango recomendado que se muestra como
-// ayuda. La edad arranca en 18: el simulador es de cribado en adultos y ningun
-// modelo vio menores en entrenamiento.
-const CLINICAL_LIMITS = {
-  age: { min: 18, max: 100, label: "18 - 100 años", step: 1 },
-  glucose: { min: 40, max: 500, label: "70 - 200 mg/dL", step: 1 },
-  blood_pressure: { min: 50, max: 300, label: "90 - 180 mmHg", step: 1 },
-  bmi: { min: 10, max: 90, label: "18.5 - 40", step: 0.1 },
-  hba1c_level: { min: 3, max: 15, label: "4 - 9 %", step: 0.1 },
-  heart_disease: { min: 0, max: 1, label: "0 (No) - 1 (Sí)", step: 1 },
-  hypertension: { min: 0, max: 1, label: "0 (No) - 1 (Sí)", step: 1 },
-  diabetes: { min: 0, max: 1, label: "0 (No) - 1 (Sí)", step: 1 },
-  high_cholesterol: { min: 0, max: 1, label: "0 (No) - 1 (Sí)", step: 1 },
-  blood_glucose_level: { min: 40, max: 500, label: "70 - 200 mg/dL", step: 1 },
-  weight: { min: 30, max: 250, label: "40 - 150 kg", step: 0.1 },
-  waist_circumference: { min: 40, max: 200, label: "60 - 120 cm", step: 0.1 },
-  ap_hi: { min: 70, max: 250, label: "90 - 180 mmHg", step: 1 },
-  ap_lo: { min: 40, max: 150, label: "60 - 120 mmHg", step: 1 },
-  cholesterol: { min: 1, max: 3, label: "1 (Normal) - 3 (Muy alto)", step: 1 },
-  gluc: { min: 1, max: 3, label: "1 (Normal) - 3 (Muy alta)", step: 1 },
-  smoke: { min: 0, max: 1, label: "0 (No) - 1 (Sí)", step: 1 },
-  alco: { min: 0, max: 1, label: "0 (No) - 1 (Sí)", step: 1 },
-  active: { min: 0, max: 1, label: "0 (No) - 1 (Sí)", step: 1 },
-  default: { min: 0, max: 1000, label: "Valor positivo", step: 1 }
+// --- AYUDA DE CADA CAMPO ---
+// Rango recomendado que se muestra como ayuda y paso del input. El rango ACEPTADO
+// (min/max) no vive aquí: lo sirve el backend en /config.ranges, que es el mismo que
+// valida /predict. Antes había una copia a mano aquí que podía divergir del API.
+const FIELD_HINTS = {
+  age: { label: "18 - 100 años", step: 1 },
+  glucose: { label: "70 - 200 mg/dL", step: 1 },
+  blood_pressure: { label: "90 - 180 mmHg", step: 1 },
+  bmi: { label: "18.5 - 40", step: 0.1 },
+  hba1c_level: { label: "4 - 9 %", step: 0.1 },
+  heart_disease: { label: "0 (No) - 1 (Sí)", step: 1 },
+  hypertension: { label: "0 (No) - 1 (Sí)", step: 1 },
+  diabetes: { label: "0 (No) - 1 (Sí)", step: 1 },
+  high_cholesterol: { label: "0 (No) - 1 (Sí)", step: 1 },
+  blood_glucose_level: { label: "70 - 200 mg/dL", step: 1 },
+  weight: { label: "40 - 150 kg", step: 0.1 },
+  waist_circumference: { label: "60 - 120 cm", step: 0.1 },
+  ap_hi: { label: "90 - 180 mmHg", step: 1 },
+  ap_lo: { label: "60 - 120 mmHg", step: 1 },
+  cholesterol: { label: "1 (Normal) - 3 (Muy alto)", step: 1 },
+  gluc: { label: "1 (Normal) - 3 (Muy alta)", step: 1 },
+  smoke: { label: "0 (No) - 1 (Sí)", step: 1 },
+  alco: { label: "0 (No) - 1 (Sí)", step: 1 },
+  active: { label: "0 (No) - 1 (Sí)", step: 1 },
+  default: { label: "Valor positivo", step: 1 }
 };
 
 // Copy del bloque de datos opcionales. Diabetes ofrece la glucosa (mejora el
@@ -79,7 +79,7 @@ const CLINICAL_LIMITS = {
 // entra al modelo y solo se interpreta con la referencia ACC/AHA (AUD-1).
 const OPTIONAL_COPY = {
   diabetes: {
-    form: 'Sin glucosa, estimamos tu riesgo a partir de factores generales (edad, IMC, antecedentes), a modo de cribado. Si te la has medido, la estimación se vuelve mucho más precisa.',
+    form: 'Sin glucosa, estimamos tu riesgo a partir de factores generales (edad, IMC, antecedentes), a modo de cribado. Si te la has medido, la estimación se vuelve mucho más precisa. La HbA1c, si la conoces, no cambia la estimación: se interpreta aparte con la referencia ADA.',
     result: 'Riesgo estimado a partir de factores generales, sin medir tu glucosa. Añádela arriba para una lectura mucho más precisa.',
   },
   hipertension: {
@@ -264,11 +264,10 @@ const Simulacion = () => {
   const handleGenerateSynthetic = async () => {
     setLoading(true);
     try {
-      // Diabetes usa NHANES: muestrea un caso REAL (su sintético CTGAN aún es del
-      // esquema viejo). Las demás enfermedades siguen con su sintético.
-      const { data } = selectedDisease === 'diabetes'
-        ? await getSampleCase(selectedDisease, 'real')
-        : await getSyntheticCase(selectedDisease);
+      // Sintético CTGAN en todas las enfermedades. Diabetes servía una ficha REAL de
+      // NHANES (su sintético era del esquema viejo), presentada como "caso ficticio";
+      // el sintético ya se regeneró al esquema NHANES y esa excepción sobraba.
+      const { data } = await getSyntheticCase(selectedDisease);
       const cleanData = {};
       const integers = ['age', 'pregnancies', 'glucose', 'blood_glucose_level', 'blood_pressure', 'skin_thickness', 'insulin', 'hypertension', 'heart_disease'];
       const floats_1 = ['bmi', 'hba1c_level'];
@@ -276,6 +275,9 @@ const Simulacion = () => {
 
       Object.keys(data).forEach(key => {
         let val = data[key];
+        // Un dato ausente (null en la ficha) se deja vacío: Math.round(null) es 0 y el
+        // formulario mostraba una glucosa de 0.
+        if (val === null || val === undefined) return;
         if (integers.includes(key)) {
           cleanData[key] = Math.round(val);
         } else if (floats_1.includes(key)) {
@@ -396,7 +398,11 @@ const Simulacion = () => {
   const renderNumberInput = (feat, optional = false) => {
     const isCategoricalPart = config.categoricals && Object.keys(config.categoricals).some(cat => feat.startsWith(cat + "_"));
     if (isCategoricalPart) return null;
-    const limits = CLINICAL_LIMITS[feat] || CLINICAL_LIMITS.default;
+    const hint = FIELD_HINTS[feat] || FIELD_HINTS.default;
+    const [min, max] = config.ranges?.[feat] || [];
+    // Opcional de la capa clínica (presión, HbA1c): se interpreta aparte y NO mueve el
+    // número del modelo. La glucosa de diabetes, en cambio, sí lo afina.
+    const soloClinico = optional && config.clinical_inputs?.includes(feat);
     return (
       <Form.Group className="ps-field" key={feat}>
         <Form.Label className="d-flex align-items-center justify-content-between">
@@ -410,14 +416,16 @@ const Simulacion = () => {
           name={feat}
           value={formData[feat] !== undefined ? formData[feat] : ''}
           onChange={handleChange}
-          min={limits.min}
-          max={limits.max}
-          step={limits.step || "any"}
-          placeholder={optional ? 'Déjalo vacío si no la conoces' : `Rango: ${limits.min} - ${limits.max}`}
+          min={min}
+          max={max}
+          step={hint.step || "any"}
+          placeholder={optional ? 'Déjalo vacío si no la conoces' : (min != null ? `Rango: ${min} - ${max}` : '')}
           required={!optional}
         />
         <Form.Text className="text-faint d-block text-end small">
-          {optional ? 'Si te la has medido, afina la estimación' : `Recomendado: ${limits.label}`}
+          {optional
+            ? (soloClinico ? 'No cambia la estimación: se interpreta aparte' : 'Si te la has medido, afina la estimación')
+            : `Recomendado: ${hint.label}`}
         </Form.Text>
       </Form.Group>
     );
@@ -519,6 +527,7 @@ const Simulacion = () => {
         feature: feat, curve, current: Number.isFinite(currentVal) ? currentVal : null, currentPct,
         // AUD-16: hasta donde llegan los datos reales de entrenamiento.
         supported: data.supported_range || null,
+        topcoded: data.topcoded_at ?? null,
       });
     } catch (err) {
       console.error(err);
@@ -610,7 +619,9 @@ const Simulacion = () => {
             <p className="text-secondary small mt-2 mb-0">
               Zona sombreada: fuera de los datos de entrenamiento
               ({labelES(whatIf.feature).toLowerCase()} de {whatIf.supported[0]} a {whatIf.supported[1]}).
-              Ahí la curva es una extrapolación.
+              {whatIf.topcoded != null
+                ? ` En estos datos todo el que pasa de ${whatIf.topcoded} figura como ${whatIf.topcoded}: el modelo sí vio casos así, pero agrupados, y por encima la curva prolonga la tendencia.`
+                : ' Ahí la curva es una extrapolación.'}
             </p>
           )}
           </>

@@ -50,7 +50,7 @@ npm run dev       # Vite dev server con HMR (http://localhost:5173)
 npm run build     # build de producción en dist/
 npm run preview   # sirve el build localmente para probarlo
 npm run lint      # ESLint sobre todo el proyecto
-npm test          # Vitest (24 tests, ~2 s)
+npm test          # Vitest (25 tests, ~2 s)
 npm run test:watch  # los mismos, en modo watch
 ```
 
@@ -59,7 +59,7 @@ npm run test:watch  # los mismos, en modo watch
 
 ## Tests
 
-**24 tests con Vitest + Testing Library** (`npm test`), sobre las cosas del front que
+**25 tests con Vitest + Testing Library** (`npm test`), sobre las cosas del front que
 tienen lógica de verdad:
 
 - **`ErrorBoundary`** — que un fallo de render muestre una salida en vez de dejar la
@@ -80,6 +80,8 @@ tienen lógica de verdad:
   que devuelve `/predict`. No todos traen `trained_range`: el nivel `incoherente`
   (peso, IMC y cintura que no cuadran entre sí) solo trae `detail`, y la primera
   versión, que lo desestructuraba siempre, tumbaba la página del simulador entera.
+  Por encima del tope de edad de NHANES (80 = "80 o más") no dice que el modelo
+  "nunca vio casos así": los vio, registrados como 80.
 
 Configuración en `vite.config.js` (los tests reusan los mismos alias y plugins que el
 build) y arranque común en `src/test/setup.js`.
@@ -123,7 +125,7 @@ Cliente axios con base URL = `VITE_API_URL`. Expone:
 
 **Núcleo del simulador**
 - `checkHealth()` → `GET /health`
-- `getConfig(disease)` → `GET /config/<disease>` (features + opcionales + rangos)
+- `getConfig(disease)` → `GET /config/<disease>` (features + opcionales + límites aceptados + `clinical_inputs` + `topcoded`)
 - `getMetrics(disease)` → `GET /metrics/<disease>` (acepta también la variante `diabetes_glucosa`)
 - `predictRisk(disease, payload)` → `POST /predict/<disease>` — envía el header
   `X-Session-Id` con un **UUID anónimo** persistido en `localStorage`
@@ -186,7 +188,11 @@ chronic-risk-frontend/
 - **Code-splitting por ruta (AUD-20).** Todas las páginas se cargan con
   `React.lazy()` salvo `Home`, que va en el bundle inicial a propósito por ser la
   primera pintura. Así recharts, sweetalert2 y el panel admin no se descargan hasta
-  que se entra a la ruta que los usa.
+  que se entra a la ruta que los usa. `vite.config.js` fija dos chunks a mano:
+  `recharts` entero (partido entre las 4 páginas que lo usan, Rollup avisaba de un
+  ciclo entre chunks) y `react` aparte, porque un chunk manual se queda con las
+  dependencias que nadie reclama y sin eso recharts se llevaba React, con lo que la
+  entrada descargaba los ~400 kB de gráficos en la primera pintura.
 - **`ErrorBoundary`** se monta **dentro** del Router y **debajo** de la navbar, para
   que un fallo de una página no se lleve por delante la navegación. Su
   `key={pathname}` lo resetea al navegar; remontarlo no vuelve a pedir los chunks
@@ -195,7 +201,9 @@ chronic-risk-frontend/
   cerrado declarado en `DISEASES` dentro de `Simulacion.jsx` (y `Metricas.jsx` /
   `Proyecto.jsx`). Si se añade una nueva al backend, hay que añadirla aquí también.
 - **`Simulacion.jsx`** es la página más compleja: consume `/config`, `/predict`,
-  `/synthetic` y `/whatif`, aplica los rangos `CLINICAL_LIMITS` a los inputs,
+  `/synthetic` y `/whatif`, usa como min/max de los inputs los límites que sirve
+  `/config.ranges` (los mismos con los que valida el API; `FIELD_HINTS` solo guarda
+  la ayuda y el paso de cada campo),
   renderiza el top-5 SHAP como barras de recharts y pinta la capa clínica
   (`clinical_flags`) aparte. En diabetes, la **glucosa es un campo opcional**: si
   el usuario la aporta, el backend sirve la variante híbrida más precisa y la UI

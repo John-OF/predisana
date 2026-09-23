@@ -40,6 +40,17 @@ describe('AvisoSoporte', () => {
     expect(screen.queryByText(/zona con pocos datos/i)).not.toBeInTheDocument();
   });
 
+  it('edad sobre el tope de NHANES: no dice que el modelo nunca vio casos así', () => {
+    const TOPE = {
+      feature: 'age', value: 85, level: 'sin_datos', trained_range: [18, 80], topcoded: 80,
+      detail: 'En estos datos todo el que pasa de 80 figura como 80.',
+    };
+    render(<AvisoSoporte avisos={[TOPE]} />);
+    expect(screen.getByText(/todo el que pasa de 80 figura como 80/i)).toBeInTheDocument();
+    expect(screen.getByText(/sí vio casos así, pero agrupados/i)).toBeInTheDocument();
+    expect(screen.queryByText(/nunca vio casos así/i)).not.toBeInTheDocument();
+  });
+
   it('mezcla de niveles: pinta los dos bloques', () => {
     render(<AvisoSoporte avisos={[POCOS_DATOS, INCOHERENTE]} />);
     expect(screen.getByText(/zona con pocos datos/i)).toBeInTheDocument();

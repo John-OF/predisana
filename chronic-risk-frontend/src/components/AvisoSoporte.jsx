@@ -13,6 +13,9 @@ const AvisoSoporte = ({ avisos }) => {
   const deRango = avisos.filter(a => Array.isArray(a.trained_range));
   const sinRango = avisos.filter(a => !Array.isArray(a.trained_range));
   const extrapola = deRango.some(a => a.level === 'sin_datos');
+  // NHANES registra la edad con tope (80 = "80 o más"): por encima SÍ hubo casos,
+  // agrupados en el tope, así que no se puede decir que el modelo "nunca los vio".
+  const soloTope = extrapola && deRango.filter(a => a.level === 'sin_datos').every(a => a.topcoded != null);
 
   return (
     <Alert variant={extrapola || sinRango.length ? 'warning' : 'secondary'} className="py-2 mt-3 text-start">
@@ -20,12 +23,17 @@ const AvisoSoporte = ({ avisos }) => {
         <small className="d-block">
           <strong>{extrapola ? 'Fuera del rango con datos:' : 'Zona con pocos datos:'}</strong>{' '}
           {deRango.map(a => {
+            if (a.topcoded != null) {
+              return `${getLabel(a.feature)} (${a.value}; en los datos, todo el que pasa de ${a.topcoded} figura como ${a.topcoded})`;
+            }
             const [lo, hi] = a.trained_range;
             return `${getLabel(a.feature)} (${a.value}; el modelo aprendió con ${lo}–${hi})`;
           }).join(', ')}.{' '}
-          {extrapola
-            ? 'Ahí el resultado es una extrapolación: el modelo nunca vio casos así.'
-            : 'La estimación es menos fiable de lo habitual en esa zona.'}
+          {soloTope
+            ? 'El modelo sí vio casos así, pero agrupados en ese tope: por encima, el resultado prolonga la tendencia que aprendió.'
+            : extrapola
+              ? 'Ahí el resultado es una extrapolación: el modelo nunca vio casos así.'
+              : 'La estimación es menos fiable de lo habitual en esa zona.'}
         </small>
       )}
       {sinRango.length > 0 && (
