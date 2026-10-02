@@ -20,11 +20,10 @@ from sklearn.metrics import classification_report, roc_auc_score, brier_score_lo
 from sklearn.model_selection import (
     StratifiedKFold, cross_val_score, cross_val_predict,
 )
-from sklearn.isotonic import IsotonicRegression
 from sklearn.calibration import calibration_curve
 from joblib import dump
 
-from train_models import build_models, load_split_or_fallback, CV_FOLDS, SEED
+from train_models import build_models, fit_calibrator, load_split_or_fallback, CV_FOLDS, SEED
 
 # El CSV canonico lo consume curate_and_synthesize.py, que produce el split de
 # data_curated; aqui solo queda como fallback de load_split_or_fallback (AUD-15).
@@ -42,7 +41,7 @@ GLUCOSA = SELF_REPORT + ["blood_glucose_level"]
 
 def _fit_calibrator_and_curve(pipe, X_tr, y_tr, y_te, proba_te, cv):
     oof = cross_val_predict(pipe, X_tr, y_tr, cv=cv, method="predict_proba", n_jobs=-1)[:, 1]
-    cal = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0).fit(oof, y_tr)
+    cal = fit_calibrator(oof, y_tr)  # isotonica sin escalones extremos de 0% / 100%
     cal_te = cal.predict(proba_te)
     fr, mr = calibration_curve(y_te, proba_te, n_bins=10, strategy="quantile")
     fc, mc = calibration_curve(y_te, cal_te, n_bins=10, strategy="quantile")

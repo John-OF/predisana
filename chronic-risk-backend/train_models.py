@@ -138,6 +138,45 @@ def build_models(disease: str = None, features=None) -> dict:
     }
 
 
+def _isotonica(x, y) -> IsotonicRegression:
+    return IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0).fit(x, y)
+
+
+def fit_calibrator(oof_proba, y) -> IsotonicRegression:
+    """Isotonica sobre las predicciones out-of-fold, SIN escalones extremos puros.
+
+    La isotonica a secas termina siempre en 0.0 y en 1.0: su primer escalon son los
+    scores mas bajos hasta el primer enfermo (todos sanos -> 0%) y el ultimo, los mas
+    altos desde el ultimo sano (todos enfermos -> 100%), tengan los puntos que tengan.
+    En diabetes el 100% lo sostenia UNA persona: un hombre de 68 con IMC 36 daba 45%
+    y uno de 80 con IMC 50, 100%. Y el 6% del test de diabetes con glucosa salia con
+    un 0,0% exacto. Ningun grupo de 1, 3 o 50 personas permite afirmar certeza.
+
+    Cada escalon extremo puro se funde con su vecino y el conjunto toma la tasa real
+    de los dos juntos (en diabetes, 1 de 1 + 5 de 10 -> 6 de 11 = 54,5%). Sin
+    parametros que elegir, el resto de la curva no se toca y sigue siendo monotona;
+    el Brier en test no se mueve (cambia en el cuarto decimal)."""
+    oof_proba = np.asarray(oof_proba, dtype=float)
+    y = np.asarray(y, dtype=float)
+    ajustado = _isotonica(oof_proba, y).predict(oof_proba)
+    for lado in (0, -1):
+        niveles = np.unique(ajustado)
+        if len(niveles) < 2 or niveles[lado] not in (0.0, 1.0):
+            continue
+        vecino = niveles[1] if lado == 0 else niveles[-2]
+        fundidos = (ajustado == niveles[lado]) | (ajustado == vecino)
+        ajustado[fundidos] = y[fundidos].mean()
+    # El calibrador final se ajusta sobre los dos bordes de cada escalon, que ya son
+    # monotonos: reproduce esa curva exacta. Reajustar sobre todos los puntos no vale,
+    # porque al promediar miles de valores iguales el redondeo parte cada escalon en
+    # varios casi identicos.
+    orden = np.argsort(oof_proba, kind="stable")
+    x, nivel = oof_proba[orden], ajustado[orden]
+    cambia = nivel[1:] != nivel[:-1]
+    borde = np.r_[True, cambia] | np.r_[cambia, True]
+    return _isotonica(x[borde], nivel[borde])
+
+
 def load_split_or_fallback(name: str):
     """Usa train/test de data_curated si existen; si no, hace split desde data_processed."""
     curated_train = os.path.join(CURATED_DIR, name, f"{name}_train.csv")
@@ -237,8 +276,7 @@ def train_one(name: str):
         oof_proba = cross_val_predict(
             best_pipe, X_train, y_train, cv=cv, method="predict_proba", n_jobs=-1
         )[:, 1]
-        calibrator = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0)
-        calibrator.fit(oof_proba, y_train)
+        calibrator = fit_calibrator(oof_proba, y_train)
 
         cal_test = calibrator.predict(y_proba_test)
         n_bins = 10
