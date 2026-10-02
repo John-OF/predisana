@@ -131,7 +131,8 @@ Cliente axios con base URL = `VITE_API_URL`. Expone:
   `X-Session-Id` con un **UUID anónimo** persistido en `localStorage`
   (`getSessionId()`), que agrupa simulaciones sin identificar a nadie.
 - `getWhatIf(disease, {base, feature, min, max, steps})` → `POST /whatif/<disease>`
-  (curva contrafactual; el backend NO la registra en BD)
+  (curva contrafactual; el backend NO la registra en BD). En hipertensión, peso e IMC
+  se barren a talla fija: la respuesta trae `coupled` y el panel lo explica bajo la curva.
 
 **Laboratorio sintético (página Proyecto)**
 - `getSyntheticCase(disease)` → `GET /synthetic/<disease>`

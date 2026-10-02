@@ -528,6 +528,8 @@ const Simulacion = () => {
         // AUD-16: hasta donde llegan los datos reales de entrenamiento.
         supported: data.supported_range || null,
         topcoded: data.topcoded_at ?? null,
+        // Peso e IMC de hipertension se barren juntos, a la talla del caso base.
+        coupled: data.coupled || null,
       });
     } catch (err) {
       console.error(err);
@@ -622,6 +624,15 @@ const Simulacion = () => {
               {whatIf.topcoded != null
                 ? ` En estos datos todo el que pasa de ${whatIf.topcoded} figura como ${whatIf.topcoded}: el modelo sí vio casos así, pero agrupados, y por encima la curva prolonga la tendencia.`
                 : ' Ahí la curva es una extrapolación.'}
+            </p>
+          )}
+          {/* Sin esto la curva de peso bajaba: con el IMC quieto, mas peso es mas
+              estatura. El backend mueve los dos a la vez y lo declara en `coupled`. */}
+          {whatIf.coupled && (
+            <p className="text-secondary small mt-2 mb-0">
+              Peso e IMC se mueven juntos: la curva mantiene tu talla
+              (≈ {whatIf.coupled.height_m.toFixed(2).replace('.', ',')} m), porque cambiar
+              uno sin el otro sería cambiar de estatura. La cintura se deja igual.
             </p>
           )}
           </>

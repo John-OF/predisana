@@ -797,6 +797,44 @@ def _check_coherencia_corporal(key: str, payload: Dict[str, Any]) -> List[Dict[s
     return avisos
 
 
+# WHAT-IF A TALLA FIJA (revision 2026-10). Barrer el peso "con el resto igual" deja
+# quieto el IMC, y con otro peso y el mismo IMC lo que cambia es la ESTATURA: la curva
+# contestaba "y si fuera mas alto", no "y si pesara mas", y por el coeficiente negativo
+# de weight BAJABA (hombre de 55: 59% a 45 kg, 27% a 140 kg). Barrer el IMC con el peso
+# quieto es lo mismo al reves: una persona cada vez mas baja. El modelo no esta mal
+# —a igual IMC y cintura, mas peso es mas talla—, lo incoherente era la pregunta.
+# La talla no se pide, pero sale de lo que el usuario ya dio (peso / IMC = talla^2):
+# se deja fija y, al barrer uno de los dos, el otro lo sigue. La cintura NO se mueve:
+# no hay una relacion exacta de la que derivarla, asi que la curva se queda corta.
+_ACOPLE_TALLA_FIJA = {"hipertension": {"weight": "bmi", "bmi": "weight"}}
+
+
+def _acople_talla_fija(key: str, feature: str, base: Dict[str, Any]):
+    """Si barrer `feature` debe arrastrar a otra para conservar la talla del caso
+    base, devuelve (feature acoplada, funcion valor barrido -> valor acoplado, talla
+    en m). None si no aplica o si el caso base no trae peso e IMC con que deducirla."""
+    otra = _ACOPLE_TALLA_FIJA.get(_data_disease(key), {}).get(feature)
+    if otra is None:
+        return None
+    try:
+        peso = _to_float("weight", _safe_get(base, "weight"))
+        imc = _to_float("bmi", _safe_get(base, "bmi"))
+    except InvalidPayload:
+        return None  # ausente o no numerico: /whatif ya lo reporta al armar la fila
+    if peso <= 0 or imc <= 0:
+        return None
+    talla2 = peso / imc
+    lo, hi = _input_limits(otra)
+
+    def acoplado(v: float) -> float:
+        derivado = v / talla2 if feature == "weight" else v * talla2
+        # Topado a los limites fisicos: un barrido ancho sobre una talla extrema se
+        # saldria de ellos y un valor DERIVADO no debe tumbar la curva con un 400.
+        return min(max(derivado, lo), hi)
+
+    return otra, acoplado, math.sqrt(talla2)
+
+
 def _supported_range(key: str, feature: str) -> Optional[List[float]]:
     """[min, max] observado en el train para esa feature, o None si no aplica
     (categorica, o enfermedad sin datos curados)."""
@@ -1205,7 +1243,8 @@ def whatif(disease: str):
     """Análisis contrafactual: fija un caso base y barre UNA feature sobre un rango,
     devolviendo la curva de riesgo (probabilidad calibrada) a lo largo de esa
     variable. NO se registra en la BD (no ensucia la analítica del admin) y no
-    calcula SHAP. Alimenta el panel 'what-if' del simulador."""
+    calcula SHAP. Alimenta el panel 'what-if' del simulador. Única excepción al
+    "una sola feature": peso e IMC de hipertensión se mueven juntos, a talla fija."""
     disease = disease.lower()
     # Igual que /predict: solo enfermedades servidas. Antes bastaba con estar en
     # MODELS, asi que /whatif/diabetes_glucosa daba 200 y /predict/... 404.
@@ -1251,16 +1290,23 @@ def whatif(disease: str):
     if feature not in FEATURES[model_key] + ["glucose", "blood_glucose_level"]:
         return jsonify({"error": f"'{feature}' no es una feature de {disease}"}), 400
 
+    # Peso e IMC de hipertension se barren a talla fija (ver _acople_talla_fija).
+    acople = _acople_talla_fija(model_key, feature, base)
+
     curve = []
     try:
         for i in range(steps):
             v = vmin + (vmax - vmin) * i / (steps - 1)
             payload = dict(base)
             payload[feature] = v
+            punto = {"value": round(v, 2)}
+            if acople is not None:
+                payload[acople[0]] = acople[1](v)
+                punto["coupled_value"] = round(payload[acople[0]], 2)
             payload = _normalize_glucose_alias(payload)
             X, _, _ = _build_row(model_key, payload)
             raw, cal = _predict_proba(model_key, X)
-            curve.append({"value": round(v, 2), "probability": cal, "raw_probability": raw})
+            curve.append({**punto, "probability": cal, "raw_probability": raw})
     except InvalidPayload as e:
         return jsonify({"error": str(e)}), 400
 
@@ -1278,6 +1324,10 @@ def whatif(disease: str):
         "supported_range": _supported_range(model_key, feature),
         # NHANES: por encima de este tope si hubo casos, pero codificados en el tope.
         "topcoded_at": TOPCODED.get(_data_disease(model_key), {}).get(feature),
+        # Feature que se movio junto a la barrida para no cambiar la talla del caso
+        # base (cada punto trae su `coupled_value`); null si el barrido fue de una sola.
+        "coupled": ({"feature": acople[0], "height_m": round(acople[2], 2)}
+                    if acople is not None else None),
     })
 
 @app.get("/synthetic/<disease>")
