@@ -76,6 +76,10 @@ las probabilidades (calibración isotónica con curva de fiabilidad).
   extremos: ningún resultado vale 0% ni 100%, porque ningún grupo de personas del
   entrenamiento permite afirmar certeza. La API devuelve
   la probabilidad calibrada y la cruda, y SHAP explica la cruda — todo etiquetado.
+- **Bandas de riesgo por enfermedad**: "bajo" es quedar por debajo de la media de
+  los datos y "alto", al menos el doble, con los tercios (33% / 66%) como tope. En
+  diabetes, con un 13,6% de prevalencia, los tercios daban "Riesgo bajo" a una
+  glucosa de 250 y dejaban en "bajo" al 80% de los diabéticos reales del test.
 - **Capa clínica desacoplada**: los umbrales diagnósticos (ADA / ACC-AHA) se
   devuelven como `clinical_flags` junto al número del modelo, nunca encima de él.
 - **Aviso de cobertura de datos**: un modelo da un número igual de firme para una
@@ -85,7 +89,7 @@ las probabilidades (calibración isotónica con curva de fiabilidad).
   el tramo sin respaldo.
 - **Capa de datos agnóstica al motor** (SQLAlchemy): SQLite en dev, Postgres en
   producción cambiando solo `DATABASE_URL`.
-- **230 tests de pytest** sobre los invariantes delicados: ruteo híbrido, alias de
+- **243 tests de pytest** sobre los invariantes delicados: ruteo híbrido, alias de
   features, monotonía riesgo↔glucosa, calibración, capa clínica y auth del admin.
 
 ## Arquitectura
@@ -141,7 +145,7 @@ python app.py                     # http://localhost:8000
 ```powershell
 npm install
 npm run dev              # Vite dev server (http://localhost:5173)
-npm test                 # 25 tests de Vitest (~2 s)
+npm test                 # 31 tests de Vitest (~2 s)
 ```
 
 El frontend lee `VITE_API_URL` (por defecto `http://localhost:8000`). El panel
@@ -150,7 +154,7 @@ admin requiere definir la variable de entorno `ADMIN_TOKEN` en el backend.
 **Tests del backend:**
 ```powershell
 pip install -r requirements-dev.txt
-python -m pytest         # 230 tests, ~4 s (BD temporal, no toca la de dev)
+python -m pytest         # 243 tests, ~4 s (BD temporal, no toca la de dev)
 ```
 
 **CI:** cada push y pull request a `main` corre en GitHub Actions la suite de pytest

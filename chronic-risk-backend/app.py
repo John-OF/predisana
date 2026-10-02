@@ -560,6 +560,14 @@ def _load_all():
             SUPPORT[dis] = _build_support_stats(dis)
         except Exception as e:
             print(f"⚠️ Cobertura de datos no disponible para {dis}: {e}")
+        # Prevalencia real, de la que salen las bandas de riesgo. Sin ella quedan
+        # los tercios fijos.
+        try:
+            prevalencia = _build_prevalence(dis)
+            if prevalencia is not None:
+                PREVALENCE[dis] = prevalencia
+        except Exception as e:
+            print(f"⚠️ Prevalencia no disponible para {dis}: {e}")
 
 
 def _safe_get(payload: Dict[str, Any], key: str):
@@ -639,13 +647,19 @@ SUPPORT: Dict[str, Dict[str, Dict[str, float]]] = {}
 _MIN_VALORES_CONTINUA = 6
 
 
-def _build_support_stats(disease: str) -> Dict[str, Dict[str, float]]:
-    """Rango observado en el TRAIN real de cada feature continua. Se calcula una vez
-    al arrancar, sobre el mismo CSV que alimenta el fondo de SHAP."""
+def _train_csv_path(disease: str) -> Optional[str]:
+    """CSV real de la enfermedad: el train curado o, si falta, el dataset completo."""
     curated = os.path.join("data_curated", disease, f"{disease}_train.csv")
     processed = os.path.join("data_processed", f"{disease}_dataset.csv")
     path = curated if os.path.exists(curated) else processed
-    if not os.path.exists(path):
+    return path if os.path.exists(path) else None
+
+
+def _build_support_stats(disease: str) -> Dict[str, Dict[str, float]]:
+    """Rango observado en el TRAIN real de cada feature continua. Se calcula una vez
+    al arrancar, sobre el mismo CSV que alimenta el fondo de SHAP."""
+    path = _train_csv_path(disease)
+    if path is None:
         return {}
 
     df = pd.read_csv(path, low_memory=False)
@@ -795,6 +809,53 @@ def _check_coherencia_corporal(key: str, payload: Dict[str, Any]) -> List[Dict[s
             })
 
     return avisos
+
+
+# ==========================================
+# BANDAS DE RIESGO (revision 2026-10)
+# ==========================================
+# El simulador pintaba bajo / moderado / alto por tercios fijos (33% y 66%) en las
+# tres enfermedades. Con hipertension (36% de prevalencia) y cardiovascular (50%)
+# tiene sentido; con diabetes (13,6%) no: una mujer sana de 25 anos con glucosa de
+# 250 daba 31,8% —mas del doble que la media— y salia "Riesgo bajo", el 80% de los
+# diabeticos reales del test caia en "bajo", y la variante sin glucosa, que no pasa
+# de 54,5%, no podia llegar nunca a "alto".
+# Regla: "bajo" es quedar por debajo de la media de los datos de entrenamiento y
+# "alto", al menos el doble. Los tercios se quedan como tope, asi que solo cambian
+# las enfermedades poco frecuentes. Igual que la capa clinica, la banda es una
+# LECTURA de la probabilidad: no la modifica.
+_BANDA_BAJO_TOPE = 0.33
+_BANDA_ALTO_TOPE = 0.66
+PREVALENCE: Dict[str, float] = {}  # enfermedad -> fraccion de positivos en el train real
+
+
+def _build_prevalence(disease: str) -> Optional[float]:
+    path = _train_csv_path(disease)
+    if path is None:
+        return None
+    target = pd.to_numeric(pd.read_csv(path, usecols=["target"])["target"], errors="coerce").dropna()
+    return float(target.mean()) if len(target) else None
+
+
+def risk_bands(key: str) -> Dict[str, Any]:
+    """Cortes de las bandas de la enfermedad de `key` (las variantes comparten los de
+    su enfermedad): por debajo de `low_below` es bajo; desde `high_from`, alto."""
+    prev = PREVALENCE.get(_data_disease(key))
+    low, high = _BANDA_BAJO_TOPE, _BANDA_ALTO_TOPE
+    if prev is not None:
+        low, high = min(low, prev), min(high, 2 * prev)
+    return {
+        "low_below": low, "high_from": high, "prevalence": prev,
+        # False = se quedaron los tercios; True = los cortes salen de la prevalencia.
+        "relative_to_prevalence": low < _BANDA_BAJO_TOPE or high < _BANDA_ALTO_TOPE,
+    }
+
+
+def risk_band(key: str, prob: float) -> str:
+    cortes = risk_bands(key)
+    if prob < cortes["low_below"]:
+        return "low"
+    return "mid" if prob < cortes["high_from"] else "high"
 
 
 # WHAT-IF A TALLA FIJA (revision 2026-10). Barrer el peso "con el resto igual" deja
@@ -1020,6 +1081,8 @@ def get_config(disease: str):
         "feature_support": SUPPORT.get(disease, {}),
         # Features con tope en los datos (NHANES: edad 80 = 80 o mas).
         "topcoded": TOPCODED.get(disease, {}),
+        # Cortes de las bandas bajo / moderado / alto de esta enfermedad.
+        "risk_bands": risk_bands(disease),
         "categoricals": { "gender": gender_opts, "smoking_history": smoke_opts }
     })
 
@@ -1226,6 +1289,9 @@ def predict(disease: str):
         "probability": prob,
         "raw_model_probability": raw_prob,
         "calibrated": model_key in CALIBRATORS,
+        # Lectura de `probability` frente a la media de la enfermedad: low / mid / high.
+        "risk_band": risk_band(model_key, prob),
+        "risk_bands": risk_bands(model_key),
         "prediction": pred_class,
         "missing_filled_as_zero": missing,
         "top_features": top_features,

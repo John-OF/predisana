@@ -50,7 +50,7 @@ npm run dev       # Vite dev server con HMR (http://localhost:5173)
 npm run build     # build de producción en dist/
 npm run preview   # sirve el build localmente para probarlo
 npm run lint      # ESLint sobre todo el proyecto
-npm test          # Vitest (25 tests, ~2 s)
+npm test          # Vitest (31 tests, ~2 s)
 npm run test:watch  # los mismos, en modo watch
 ```
 
@@ -59,7 +59,7 @@ npm run test:watch  # los mismos, en modo watch
 
 ## Tests
 
-**25 tests con Vitest + Testing Library** (`npm test`), sobre las cosas del front que
+**31 tests con Vitest + Testing Library** (`npm test`), sobre las cosas del front que
 tienen lógica de verdad:
 
 - **`ErrorBoundary`** — que un fallo de render muestre una salida en vez de dejar la
@@ -82,6 +82,11 @@ tienen lógica de verdad:
   versión, que lo desestructuraba siempre, tumbaba la página del simulador entera.
   Por encima del tope de edad de NHANES (80 = "80 o más") no dice que el modelo
   "nunca vio casos así": los vio, registrados como 80.
+- **`riskBand`** — que el front pinte la banda bajo / moderado / alto que decide el
+  backend (`risk_band` en `/predict`) y no la recalcule por tercios: los cortes van
+  por enfermedad, porque en diabetes (13,6% de media) un 31,8% salía como "Riesgo
+  bajo". Sin ese campo cae a los tercios de siempre. Más la frase que explica de
+  dónde salen los cortes (`bandNote`).
 
 Configuración en `vite.config.js` (los tests reusan los mismos alias y plugins que el
 build) y arranque común en `src/test/setup.js`.

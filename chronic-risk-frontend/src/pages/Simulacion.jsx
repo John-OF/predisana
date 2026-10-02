@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Container, Row, Col, Form, Button, Alert, Nav, Spinner, OverlayTrigger, Tooltip } from 'react-bootstrap';
 import { getConfig, predictRisk, getSyntheticCase, getWhatIf } from '../services/api';
 import { getLabel } from '../utils/translations';
+import { riskBand, bandNote } from '../utils/riskBand';
 import AvisoSoporte from '../components/AvisoSoporte';
 import Swal from 'sweetalert2';
 import {
@@ -180,19 +181,11 @@ const labelES = (feat) => {
   return SHAP_LABELS_ES[key] || SHAP_LABELS_ES[String(feat || "").trim()] || getLabel(feat) || feat;
 };
 
-// Banda de riesgo serena (no alarmista): bajo / moderado / alto
-const riskBand = (pct) => {
-  if (pct < 33) return { key: 'low', label: 'Riesgo bajo', color: 'var(--risk-low)', bg: 'var(--risk-low-bg)' };
-  if (pct < 66) return { key: 'mid', label: 'Riesgo moderado', color: 'var(--risk-mid)', bg: 'var(--risk-mid-bg)' };
-  return { key: 'high', label: 'Riesgo alto', color: 'var(--risk-high)', bg: 'var(--risk-high-bg)' };
-};
-
-// Medidor circular
-const Gauge = ({ pct }) => {
+// Medidor circular. `band` viene de riskBand(resultado): la decide el backend.
+const Gauge = ({ pct, band }) => {
   const R = 84;
   const C = 2 * Math.PI * R; // ≈ 528
   const offset = C - (C * pct) / 100;
-  const band = riskBand(pct);
   return (
     <div className="ps-gauge-wrap">
       <div className="ps-gauge">
@@ -804,7 +797,10 @@ const Simulacion = () => {
                     </span>
                   </div>
 
-                  <Gauge pct={(currentResult.probability || 0) * 100} />
+                  <Gauge pct={(currentResult.probability || 0) * 100} band={riskBand(currentResult)} />
+                  {bandNote(currentResult.risk_bands) && (
+                    <p className="small text-faint mt-2 mb-0">{bandNote(currentResult.risk_bands)}</p>
+                  )}
                   {currentResult.used_glucose ? (
                     <div className="ps-tag mt-2 d-inline-flex align-items-center" style={{ background: 'var(--halo)', color: 'var(--accent)' }}>
                       <Search className="me-1" size={13} />Estimación mejorada con tu glucosa

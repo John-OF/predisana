@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Container, Row, Col, Card, Button, Table, Badge, Accordion, Spinner, Tabs, Tab } from 'react-bootstrap';
 import { getSyntheticCase, getMetrics, predictRisk, getSampleCase, getDistribution, getSyntheticQuality } from '../services/api';
 import { getLabel } from '../utils/translations';
+import { riskBand } from '../utils/riskBand';
 import { Droplet, HeartPulse, Heart, Eyedropper, Robot, Lightbulb, Magic, Stars, BarChartLineFill, ArrowRight, TrophyFill, CpuFill, ArrowUpShort, ArrowDownShort, ArrowRepeat, PatchQuestion, ClipboardCheck, ClipboardPulse, CodeSlash, Window, Github, PersonBadge } from 'react-bootstrap-icons';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
@@ -33,13 +34,6 @@ const MODEL_LABELS = {
     xgboost: 'XGBoost',
 };
 const prettyModel = (m) => MODEL_LABELS[m] || (m ? String(m) : '—');
-
-// Banda de riesgo serena (misma escala que el Simulador).
-const riskBand = (pct) => {
-    if (pct < 33) return { label: 'Riesgo bajo', color: 'var(--risk-low)', bg: 'var(--risk-low-bg)' };
-    if (pct < 66) return { label: 'Riesgo moderado', color: 'var(--risk-mid)', bg: 'var(--risk-mid-bg)' };
-    return { label: 'Riesgo alto', color: 'var(--risk-high)', bg: 'var(--risk-high-bg)' };
-};
 
 // Quita los campos meta (_source_type, _disease) y el target antes de predecir.
 const stripMeta = (obj) => {
@@ -217,7 +211,7 @@ const Proyecto = () => {
     const renderPrediction = () => {
         if (!prediction) return null;
         const pct = (prediction.probability || 0) * 100;
-        const band = riskBand(pct);
+        const band = riskBand(prediction);  // la misma banda que pinta el Simulador
         const feats = prediction.top_features || [];
         const maxAbs = Math.max(...feats.map((f) => Math.abs(Number(f.shap))), 1e-6);
         return (

@@ -16,7 +16,7 @@ API REST en Python/Flask que sirve modelos de Machine Learning para la estimaci�
 - **Generación de datos sintéticos** con SDV (CTGAN por defecto, TVAE opcional) + endpoints de comparación real vs sintético (muestras, distribuciones, calidad SDMetrics) que alimentan el laboratorio del frontend.
 - **Pipeline de datos por enfermedad** — desde fuentes públicas a un dataset limpio por enfermedad (sin frame maestro concatenado ni imputación cruzada).
 - **Registro anónimo de uso** sobre SQLAlchemy (`DATABASE_URL`: SQLite en dev, Postgres en prod con el mismo código) + **panel admin dev-only** con analítica agregada, protegido por `X-Admin-Token`.
-- **Suite de 230 tests (pytest)** sobre los invariantes delicados de la API.
+- **Suite de 243 tests (pytest)** sobre los invariantes delicados de la API.
 
 ---
 
@@ -182,11 +182,12 @@ Configuración para construir el formulario en el frontend:
   "ranges": { "age": [18, 100], "bmi": [10, 90], "blood_glucose_level": [40, 500], "hba1c_level": [3, 20], "hypertension": [0, 1], "...": "..." },
   "categoricals": { "gender": ["Female", "Male"], "smoking_history": ["current", "former", "never"] },
   "feature_support": { "age": { "min": 18.0, "max": 80.0, "p1": 18.0, "p99": 80.0, "n": 4987 }, "...": "..." },
-  "topcoded": { "age": 80 }
+  "topcoded": { "age": 80 },
+  "risk_bands": { "low_below": 0.1356, "high_from": 0.2712, "prevalence": 0.1356, "relative_to_prevalence": true }
 }
 ```
 
-`ranges` y `feature_support` **no son lo mismo**. `ranges` son los límites **físicos** que acepta el API (`INPUT_LIMITS`): fuera de ellos `/predict` y `/whatif` responden 400, y el formulario los usa como min/max de sus inputs, así que front y back validan con los mismos números. `feature_support` es el tramo que cada variable continua realmente cubre en los datos de entrenamiento: dentro de `ranges` pero fuera de ahí, el valor se acepta con un aviso (AUD-16), y la UI lo usa para sombrear el what-if donde el modelo extrapola. `topcoded` marca las variables con tope en los datos (NHANES registra a todo mayor de 80 como 80).
+`ranges` y `feature_support` **no son lo mismo**. `ranges` son los límites **físicos** que acepta el API (`INPUT_LIMITS`): fuera de ellos `/predict` y `/whatif` responden 400, y el formulario los usa como min/max de sus inputs, así que front y back validan con los mismos números. `feature_support` es el tramo que cada variable continua realmente cubre en los datos de entrenamiento: dentro de `ranges` pero fuera de ahí, el valor se acepta con un aviso (AUD-16), y la UI lo usa para sombrear el what-if donde el modelo extrapola. `topcoded` marca las variables con tope en los datos (NHANES registra a todo mayor de 80 como 80). `risk_bands` son los cortes de las bandas bajo / moderado / alto de la enfermedad (ver *Bandas de riesgo* en `/predict`).
 
 Las `features` son las propias del esquema de cada enfermedad (heterogéneo), ya recortadas por respondibilidad. Las `optional_features` son las que el usuario puede rellenar o no: las que aporta una variante con más datos (la glucosa del híbrido de diabetes, que **sí** cambia la estimación) y las `clinical_inputs`, que solo lee la capa clínica y **no** la cambian (la HbA1c en diabetes, la presión en hipertensión). Solo se sirven enfermedades de verdad: `/config/diabetes_glucosa` es 404. Las `categoricals` se derivan de los nombres de las columnas one-hot (`gender_*`, `smoking_history_*`).
 
@@ -215,6 +216,8 @@ Recibe un payload con las features clínicas y devuelve la probabilidad de riesg
   "probability": 0.72,
   "raw_model_probability": 0.81,
   "calibrated": true,
+  "risk_band": "high",
+  "risk_bands": { "low_below": 0.1356, "high_from": 0.2712, "prevalence": 0.1356, "relative_to_prevalence": true },
   "prediction": 1,
   "missing_filled_as_zero": ["heart_disease"],
   "top_features": [
@@ -241,6 +244,7 @@ Recibe un payload con las features clínicas y devuelve la probabilidad de riesg
 - **Ruteo híbrido de diabetes**: si el payload trae una glucosa válida (>0) y existe la variante `diabetes_glucosa`, se sirve esa (`variant: "glucosa"`, `used_glucose: true`); si no, el modelo self-report (`variant: "base"`).
 - **Aliasing glucosa**: `glucose` y `blood_glucose_level` se espejan automáticamente, así que enviar uno cubre al otro.
 - **Calibración**: `probability` es la salida del modelo **calibrada** con la isotónica persistida; `raw_model_probability` es la cruda (la que SHAP explica). La isotónica es un reescalado monótono: no cambia el ranking (AUC intacto). **Ningún calibrador devuelve 0% ni 100% (revisión 2026-10).** La isotónica a secas termina siempre en 0,0 y en 1,0 — su primer escalón son los scores más bajos hasta el primer enfermo y el último, los más altos desde el último sano, tengan los puntos que tengan — y en diabetes el 100% lo sostenía **una sola persona** del train: un hombre de 68 años con IMC 36, hipertenso y cardiópata daba 45%, y uno de 80 con IMC 50, 100%; el 6% del test de diabetes con glucosa recibía un 0,0% exacto. `fit_calibrator()` (`train_models.py`) funde cada escalón extremo puro con su vecino y le da la tasa real de los dos juntos, sin parámetros que elegir y sin tocar el resto de la curva. Rangos servidos y la gente que sostiene cada extremo: diabetes **0,3%–54,5%** (1 enfermo de 372; 6 de 11), diabetes con glucosa **0,3%–93,9%** (3 de 1009; 31 de 33), hipertensión **0,9%–91,7%** (2 de 218; 33 de 36), cardiovascular **2,8%–95,6%** (6 de 213; 43 de 45). El Brier en test no se mueve (cambia, como mucho, en el cuarto decimal). Que diabetes sin glucosa no pase de 54,5% no es un tope artificial: es lo que sus datos permiten afirmar con solo autorreporte.
+- **Bandas de riesgo por enfermedad (revisión 2026-10)**: `risk_band` (`low` / `mid` / `high`) es la lectura de `probability` frente a la media de la enfermedad, y `risk_bands` trae los cortes. El simulador pintaba las tres enfermedades por tercios fijos (33% y 66%); con hipertensión (36% de prevalencia) y cardiovascular (50%) tiene sentido, con diabetes (13,6%) no: una mujer sana de 25 años con glucosa de 250 daba 31,8% —más del doble que la media— y salía **"Riesgo bajo"**, el 80% de los diabéticos reales del test caía en "bajo", y la variante sin glucosa, que no pasa de 54,5%, no podía llegar nunca a "alto". Regla: **"bajo" es quedar por debajo de la media de los datos de entrenamiento y "alto", al menos el doble**, con los tercios como tope — así que hipertensión y cardiovascular no cambian, y diabetes queda en 13,6% / 27,1% (las dos variantes comparten cortes). Medido en el test real, las bandas de diabetes separan ahora de verdad: sin glucosa, bajo = 62,5% de la gente con un 4,1% de diabéticos, moderado = 24,1% con un 23,9%, alto = 13,4% con un 38,9%; con glucosa, el "alto" concentra un 64,5% de diabéticos y recoge al 65,4% de todos ellos (antes, al 34,6%). Igual que la capa clínica, la banda **no** altera la probabilidad ni el campo `prediction`; sin CSV de entrenamiento del que sacar la prevalencia quedan los tercios (`relative_to_prevalence: false`).
 - **Capa de interpretación clínica desacoplada (A4)**: `clinical_flags`/`clinical_note` exponen los umbrales diagnósticos de referencia (ADA: glucosa ≥100/≥126/≥200, HbA1c ≥5.7/≥6.5; ACC/AHA: sistólica ≥120/≥130/≥140/≥180). Esta capa **no** altera la probabilidad (sustituye al antiguo `max()` con números mágicos). Los datos que solo alimentan esta capa (la presión en hipertensión, la HbA1c en diabetes, la glucosa en un modelo que no la usa) se validan igual que las features: no numérico, no finito o fuera de rango → 400. La HbA1c no era un dato que se pudiera aportar, así que sus umbrales ADA no se disparaban nunca.
 - **Filtro de género en SHAP**: las features `gender_*` se omiten del top-5 explicativo.
 - **Aviso de cobertura de datos (AUD-16)**: `support_warnings`/`support_note` señalan las entradas que caen donde el modelo tiene pocos datos (`pocos_datos`, fuera del p1-p99) o ninguno (`sin_datos`, fuera del min-max observado); en hipertensión, además, `incoherente` cuando peso, IMC y cintura no cuadran entre sí (ese nivel no trae `trained_range`, solo `detail`). Por encima de un tope de NHANES (edad > 80 en diabetes e hipertensión) el aviso lleva `topcoded` y no dice que el modelo "no vio ningún caso": sí los vio, pero registrados como 80. Igual que la capa clínica, **no** altera la probabilidad. Las features ya reportadas en `missing_filled_as_zero` se omiten para no avisar dos veces del mismo hueco.
@@ -287,7 +291,7 @@ chronic-risk-backend/
 ├── synthetic_quality.py         # Cálculo SDMetrics + correlaciones (pipeline y fallback del API)
 ├── train_models.py              # Bake-off multi-modelo por CV (hipertensión, cardiovascular)
 ├── train_nhanes_diabetes.py     # Diabetes híbrida: variantes con/sin glucosa + calibradores
-├── tests/                       # Suite pytest (230 tests; BD temporal propia)
+├── tests/                       # Suite pytest (243 tests; BD temporal propia)
 ├── pytest.ini
 ├── .env.example                 # Plantilla de variables de entorno
 ├── requirements.txt             # Runtime del API (directas, UTF-8)
