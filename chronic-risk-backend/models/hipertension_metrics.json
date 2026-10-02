@@ -207,5 +207,34 @@
         "frac_pos": 0.8823529411764706
       }
     ]
+  },
+  "bands": {
+    "low_below": 0.33,
+    "high_from": 0.66,
+    "prevalence": 0.3618174239266361,
+    "relative_to_prevalence": false,
+    "test": [
+      {
+        "band": "low",
+        "n": 541,
+        "share": 0.4508333333333333,
+        "positive_rate": 0.14048059149722736,
+        "share_of_positives": 0.17511520737327188
+      },
+      {
+        "band": "mid",
+        "n": 440,
+        "share": 0.36666666666666664,
+        "positive_rate": 0.44772727272727275,
+        "share_of_positives": 0.4539170506912442
+      },
+      {
+        "band": "high",
+        "n": 219,
+        "share": 0.1825,
+        "positive_rate": 0.7351598173515982,
+        "share_of_positives": 0.3709677419354839
+      }
+    ]
   }
 }

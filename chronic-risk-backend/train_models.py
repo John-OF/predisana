@@ -27,6 +27,8 @@ from joblib import dump
 
 from lightgbm import LGBMClassifier
 
+from risk_banding import band_report
+
 PROCESSED_DIR = "data_processed"
 CURATED_DIR = "data_curated"
 MODELS_DIR = "models"
@@ -272,6 +274,10 @@ def train_one(name: str):
     # leakage) y la persistimos aparte; app.py la aplica tras predict_proba. Es un
     # mapeo MONOTONO -> preserva el AUC y la monotonia clinica del fix de glucosa.
     calibration = None
+    # Que hace cada banda del simulador (bajo / moderado / alto) sobre el test. Se lee
+    # sobre la probabilidad que se SIRVE: la calibrada, o la cruda si no hay calibrador.
+    prevalencia = float(train_df["target"].mean())
+    bands = band_report(y_test, y_proba_test, prevalencia)
     try:
         oof_proba = cross_val_predict(
             best_pipe, X_train, y_train, cv=cv, method="predict_proba", n_jobs=-1
@@ -279,6 +285,7 @@ def train_one(name: str):
         calibrator = fit_calibrator(oof_proba, y_train)
 
         cal_test = calibrator.predict(y_proba_test)
+        bands = band_report(y_test, cal_test, prevalencia)
         n_bins = 10
         frac_raw, mean_raw = calibration_curve(y_test, y_proba_test, n_bins=n_bins, strategy="quantile")
         frac_cal, mean_cal = calibration_curve(y_test, cal_test,     n_bins=n_bins, strategy="quantile")
@@ -318,6 +325,8 @@ def train_one(name: str):
         "report_train": report_train,
         # Calibracion (curva de fiabilidad raw vs calibrado + Brier) para /metricas
         "calibration": calibration,
+        # Cortes de las bandas del simulador y como reparten a la gente del test
+        "bands": bands,
     }
     with open(os.path.join(MODELS_DIR, f"{name}_metrics.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2, ensure_ascii=False)

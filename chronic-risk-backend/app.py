@@ -41,6 +41,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 import synthetic_quality as sq
+from risk_banding import band_cutoffs, band_of
 
 EXPLAINERS: Dict[str, Any] = {}
 
@@ -814,18 +815,11 @@ def _check_coherencia_corporal(key: str, payload: Dict[str, Any]) -> List[Dict[s
 # ==========================================
 # BANDAS DE RIESGO (revision 2026-10)
 # ==========================================
-# El simulador pintaba bajo / moderado / alto por tercios fijos (33% y 66%) en las
-# tres enfermedades. Con hipertension (36% de prevalencia) y cardiovascular (50%)
-# tiene sentido; con diabetes (13,6%) no: una mujer sana de 25 anos con glucosa de
-# 250 daba 31,8% —mas del doble que la media— y salia "Riesgo bajo", el 80% de los
-# diabeticos reales del test caia en "bajo", y la variante sin glucosa, que no pasa
-# de 54,5%, no podia llegar nunca a "alto".
-# Regla: "bajo" es quedar por debajo de la media de los datos de entrenamiento y
-# "alto", al menos el doble. Los tercios se quedan como tope, asi que solo cambian
-# las enfermedades poco frecuentes. Igual que la capa clinica, la banda es una
+# "Bajo" es quedar por debajo de la media de los datos de entrenamiento y "alto", al
+# menos el doble, con los tercios (33% / 66%) como tope. La regla y su porque estan
+# en risk_banding.py, que comparten los scripts de entrenamiento; aqui solo se le da
+# la prevalencia de cada enfermedad. Igual que la capa clinica, la banda es una
 # LECTURA de la probabilidad: no la modifica.
-_BANDA_BAJO_TOPE = 0.33
-_BANDA_ALTO_TOPE = 0.66
 PREVALENCE: Dict[str, float] = {}  # enfermedad -> fraccion de positivos en el train real
 
 
@@ -840,22 +834,11 @@ def _build_prevalence(disease: str) -> Optional[float]:
 def risk_bands(key: str) -> Dict[str, Any]:
     """Cortes de las bandas de la enfermedad de `key` (las variantes comparten los de
     su enfermedad): por debajo de `low_below` es bajo; desde `high_from`, alto."""
-    prev = PREVALENCE.get(_data_disease(key))
-    low, high = _BANDA_BAJO_TOPE, _BANDA_ALTO_TOPE
-    if prev is not None:
-        low, high = min(low, prev), min(high, 2 * prev)
-    return {
-        "low_below": low, "high_from": high, "prevalence": prev,
-        # False = se quedaron los tercios; True = los cortes salen de la prevalencia.
-        "relative_to_prevalence": low < _BANDA_BAJO_TOPE or high < _BANDA_ALTO_TOPE,
-    }
+    return band_cutoffs(PREVALENCE.get(_data_disease(key)))
 
 
 def risk_band(key: str, prob: float) -> str:
-    cortes = risk_bands(key)
-    if prob < cortes["low_below"]:
-        return "low"
-    return "mid" if prob < cortes["high_from"] else "high"
+    return band_of(prob, risk_bands(key))
 
 
 # WHAT-IF A TALLA FIJA (revision 2026-10). Barrer el peso "con el resto igual" deja
@@ -1262,7 +1245,13 @@ def predict(disease: str):
     # `clinical_flags` para mostrarse junto al número del modelo, sin alterarlo.
     # =========================================================================
     prob = min(max(prob, 0.0), 1.0)
-    pred_class = 1 if prob >= 0.5 else 0
+    # La clase es la del MODELO (su salida cruda >= 0,5, lo mismo que pipeline.predict):
+    # es la regla que evalua train_models.py y que /metricas publica como sensibilidad.
+    # Antes se cortaba la probabilidad CALIBRADA en 0,5, que es otro clasificador: los
+    # modelos se entrenan con clases balanceadas y la calibracion deshace ese balanceo,
+    # asi que en diabetes marcaba 3 positivos de 1247 (sensibilidad 0,6%) mientras la
+    # pagina publicaba 80,5%.
+    pred_class = 1 if raw_prob >= 0.5 else 0
 
     clinical_flags = compute_clinical_flags(clinical_glucose, clinical_hba1c, clinical_bp)
     clinical_note = " ".join(f["detail"] for f in clinical_flags) or \

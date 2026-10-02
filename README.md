@@ -31,8 +31,9 @@ las probabilidades (calibración isotónica con curva de fiabilidad).
 > glucosa, con el marcador en el valor actual del usuario.
 
 - **Métricas en vivo y honestas**: leaderboard del bake-off de algoritmos por
-  enfermedad (AUC de validación cruzada), reporte por clase y **diagrama de
-  fiabilidad** de la calibración; en diabetes, comparación con/sin glucosa.
+  enfermedad (AUC de validación cruzada), reporte por clase, **diagrama de
+  fiabilidad** de la calibración y cómo reparten las **bandas del simulador** a la
+  gente real del test; en diabetes, comparación con/sin glucosa.
 
 > 📸 **Captura de pantalla de:** la página de métricas — leaderboard de algoritmos
 > y curva de calibración, con el toggle "Sin glucosa / Con glucosa".
@@ -89,7 +90,7 @@ las probabilidades (calibración isotónica con curva de fiabilidad).
   el tramo sin respaldo.
 - **Capa de datos agnóstica al motor** (SQLAlchemy): SQLite en dev, Postgres en
   producción cambiando solo `DATABASE_URL`.
-- **243 tests de pytest** sobre los invariantes delicados: ruteo híbrido, alias de
+- **263 tests de pytest** sobre los invariantes delicados: ruteo híbrido, alias de
   features, monotonía riesgo↔glucosa, calibración, capa clínica y auth del admin.
 
 ## Arquitectura
@@ -154,7 +155,7 @@ admin requiere definir la variable de entorno `ADMIN_TOKEN` en el backend.
 **Tests del backend:**
 ```powershell
 pip install -r requirements-dev.txt
-python -m pytest         # 243 tests, ~4 s (BD temporal, no toca la de dev)
+python -m pytest         # 263 tests, ~4 s (BD temporal, no toca la de dev)
 ```
 
 **CI:** cada push y pull request a `main` corre en GitHub Actions la suite de pytest

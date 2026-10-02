@@ -23,6 +23,7 @@ from sklearn.model_selection import (
 from sklearn.calibration import calibration_curve
 from joblib import dump
 
+from risk_banding import band_report
 from train_models import build_models, fit_calibrator, load_split_or_fallback, CV_FOLDS, SEED
 
 # El CSV canonico lo consume curate_and_synthesize.py, que produce el split de
@@ -39,10 +40,12 @@ SELF_REPORT = ["age", "bmi", "hypertension", "heart_disease",
 GLUCOSA = SELF_REPORT + ["blood_glucose_level"]
 
 
-def _fit_calibrator_and_curve(pipe, X_tr, y_tr, y_te, proba_te, cv):
+def _fit_calibrator_and_curve(pipe, X_tr, y_tr, y_te, proba_te, cv, prevalencia):
     oof = cross_val_predict(pipe, X_tr, y_tr, cv=cv, method="predict_proba", n_jobs=-1)[:, 1]
     cal = fit_calibrator(oof, y_tr)  # isotonica sin escalones extremos de 0% / 100%
     cal_te = cal.predict(proba_te)
+    # Las dos variantes comparten bandas: se leen contra la prevalencia de diabetes.
+    bands = band_report(y_te, cal_te, prevalencia)
     fr, mr = calibration_curve(y_te, proba_te, n_bins=10, strategy="quantile")
     fc, mc = calibration_curve(y_te, cal_te, n_bins=10, strategy="quantile")
     curve = {
@@ -52,7 +55,7 @@ def _fit_calibrator_and_curve(pipe, X_tr, y_tr, y_te, proba_te, cv):
         "raw_curve": [{"mean_pred": float(a), "frac_pos": float(b)} for a, b in zip(mr, fr)],
         "calibrated_curve": [{"mean_pred": float(a), "frac_pos": float(b)} for a, b in zip(mc, fc)],
     }
-    return cal, curve
+    return cal, curve, bands
 
 
 def _xy(df, features):
@@ -91,7 +94,8 @@ def train_variant(key, train_df, test_df, features):
     auc_te = float(roc_auc_score(y_te, proba_te))
     report_te = classification_report(y_te, (proba_te >= 0.5).astype(int),
                                       output_dict=True, zero_division=0)
-    cal, calib = _fit_calibrator_and_curve(best_pipe, X_tr, y_tr, y_te, proba_te, cv)
+    cal, calib, bands = _fit_calibrator_and_curve(
+        best_pipe, X_tr, y_tr, y_te, proba_te, cv, float(train_df["target"].mean()))
     print(f"   => ganador: {best_name} | AUC_test={auc_te:.3f} | "
           f"Brier {calib['brier_raw']:.4f}->{calib['brier_calibrated']:.4f}")
 
@@ -102,7 +106,7 @@ def train_variant(key, train_df, test_df, features):
     meta = {"dataset": "diabetes_nhanes", "variant": key, "features": features,
             "best_model": best_name, "cv_auc": best_cv, "leaderboard": leaderboard,
             "auc": auc_te, "report": report_te, "auc_test": auc_te,
-            "report_test": report_te, "calibration": calib}
+            "report_test": report_te, "calibration": calib, "bands": bands}
     with open(os.path.join(MODELS_DIR, f"{key}_metrics.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2, ensure_ascii=False)
 

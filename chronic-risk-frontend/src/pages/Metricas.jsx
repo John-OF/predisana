@@ -6,6 +6,7 @@ import {
 } from 'recharts';
 import { getMetrics } from '../services/api';
 import { getLabel } from '../utils/translations';
+import { riskBand, bandNote } from '../utils/riskBand';
 
 const DISEASES = ['diabetes', 'hipertension', 'cardiovascular'];
 
@@ -58,6 +59,7 @@ const Metricas = () => {
   const report = metrics?.report;
   const classPos = report?.['1'];
   const calib = metrics?.calibration;
+  const bands = metrics?.bands;
 
   return (
     <Container className="py-5">
@@ -113,7 +115,7 @@ const Metricas = () => {
               <div className="ps-kpi">
                 <div className="k-lbl">Sensibilidad</div>
                 <div className="k-val">{classPos ? pct(classPos.recall) : '—'}</div>
-                <div className="k-sub">recall · clase riesgo</div>
+                <div className="k-sub">de la clasificación del modelo</div>
               </div>
             </Col>
             <Col sm={6} lg={3}>
@@ -223,10 +225,55 @@ const Metricas = () => {
             </div>
           )}
 
+          {/* Bandas del simulador: lo que el usuario ve de verdad. La sensibilidad de
+              arriba es de la clasificacion si/no del modelo, que el simulador no muestra. */}
+          {bands?.test && (
+            <div className="mb-5">
+              <h3 style={{ fontSize: '1.3rem', marginBottom: '6px' }}>Bandas del simulador (conjunto de test)</h3>
+              <p className="text-soft small mb-3">
+                El simulador no responde sí o no: muestra la probabilidad calibrada y la lee en tres
+                bandas. Así reparten a las personas reales del conjunto de test, y cuántas de cada
+                banda tienen de verdad la enfermedad. {bandNote(bands)}
+              </p>
+              <div className="table-responsive">
+                <Table className="align-middle">
+                  <thead>
+                    <tr>
+                      <th>Banda</th>
+                      <th>Personas</th>
+                      <th>Con la enfermedad</th>
+                      <th>Casos que recoge</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {bands.test.map((b) => {
+                      const banda = riskBand({ risk_band: b.band });
+                      return (
+                        <tr key={b.band}>
+                          <td>
+                            <span className="ps-risk-pill" style={{ background: banda.bg, color: banda.color }}>{banda.label}</span>
+                          </td>
+                          <td className="num">{pct(b.share)} <span className="text-faint">({b.n})</span></td>
+                          <td className="num">{pct(b.positive_rate)}</td>
+                          <td className="num">{pct(b.share_of_positives)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </Table>
+              </div>
+            </div>
+          )}
+
           {/* Reporte por clase */}
           {report && (
             <>
-              <h3 style={{ fontSize: '1.3rem', marginBottom: '14px' }}>Detalle por clase (conjunto de test)</h3>
+              <h3 style={{ fontSize: '1.3rem', marginBottom: '6px' }}>Detalle por clase (conjunto de test)</h3>
+              <p className="text-soft small mb-3">
+                La clasificación del propio modelo: «riesgo» cuando su salida sin calibrar llega a 0,5.
+                Es el campo <code>prediction</code> de la API y de aquí sale la sensibilidad de arriba;
+                el simulador no la muestra, enseña la probabilidad y su banda.
+              </p>
               <div className="table-responsive">
                 <Table className="align-middle">
                   <thead>
