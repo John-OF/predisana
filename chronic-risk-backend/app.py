@@ -632,6 +632,40 @@ def compute_clinical_flags(glucose_mgdl: float, hba1c: float, systolic: float) -
     return flags
 
 
+# Habitos que el modelo cardiovascular NO refleja (revision 2026-10). El modelo
+# aprendia que fumar y beber protegen (asi salen en su dataset, autorreportado), de
+# modo que se le impidio bajar el riesgo por ellos (train_models.MONOTONIC_INCREASING).
+# Como los datos tampoco dan senal en el sentido clinico, su efecto quedo en CERO:
+# marcar "fumo" no mueve la estimacion. Callarlo seria otra forma de mentir, asi que
+# se dice aqui, en la capa de referencia que va al lado del numero sin tocarlo.
+# OJO: estos textos afirman que el modelo servido les da peso cero. Hay un test que
+# lo comprueba; si un reentrenamiento cambia eso, hay que revisarlos.
+HABITOS_NO_REFLEJADOS: Dict[str, Dict[str, str]] = {
+    "cardiovascular": {
+        "smoke": ("Indicaste que fumas. El tabaco es uno de los principales factores de "
+                  "riesgo cardiovascular, pero esta estimación no lo refleja: en los datos "
+                  "de entrenamiento los fumadores no enferman más, así que el modelo no le "
+                  "da peso."),
+        "alco": ("Indicaste consumo habitual de alcohol. Esta estimación tampoco lo refleja "
+                 "(en los datos de entrenamiento no aporta señal); las guías recomiendan "
+                 "moderarlo porque eleva la presión arterial."),
+    },
+}
+
+
+def compute_habit_flags(key: str, payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    flags: List[Dict[str, Any]] = []
+    for feat, detail in HABITOS_NO_REFLEJADOS.get(_data_disease(key), {}).items():
+        try:
+            valor = _to_float(feat, _safe_get(payload, feat))
+        except InvalidPayload:
+            continue  # ausente: no hay nada que avisar
+        if valor >= 1:
+            flags.append({"indicator": feat, "value": valor, "category": "no_reflejado_en_el_modelo",
+                          "source": "ACC/AHA", "detail": detail})
+    return flags
+
+
 # ==========================================
 # COBERTURA DE DATOS DE ENTRENAMIENTO (AUD-16)
 # ==========================================
@@ -1254,6 +1288,7 @@ def predict(disease: str):
     pred_class = 1 if raw_prob >= 0.5 else 0
 
     clinical_flags = compute_clinical_flags(clinical_glucose, clinical_hba1c, clinical_bp)
+    clinical_flags += compute_habit_flags(model_key, payload)
     clinical_note = " ".join(f["detail"] for f in clinical_flags) or \
         "Sin indicadores clínicos por encima de umbrales de referencia."
 

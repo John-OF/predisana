@@ -64,29 +64,47 @@ DROP_NON_RESPONDABLE = {
 # para glucosa 157-158 mientras sus vecinos (155, 159) daban ~0.58. Forzar monotonia
 # creciente elimina el pozo de raiz y hace que el modelo respete la fisiologia:
 # a mas glucosa/edad/IMC/presion, el riesgo NUNCA puede bajar. Coste de AUC minimo.
-# Solo se listan features cuyo signo clinico es INEQUIVOCO (todas crecientes, +1);
-# las de signo ambiguo o protector (habitos, sexo) se dejan libres (0). Aplica solo
-# al candidato LightGBM (RandomForest de sklearn no soporta monotone_constraints;
+# Solo se listan features cuyo signo clinico es INEQUIVOCO; las de signo ambiguo
+# (sexo, tabaquismo en diabetes/hipertension) se dejan libres (0). Aplica solo al
+# candidato LightGBM (RandomForest de sklearn no soporta monotone_constraints;
 # LogReg ya es monotona por construccion).
 # OJO: la entrada "diabetes" se QUEDA aunque diabetes no este en DATASETS —
 # train_nhanes_diabetes.py llama build_models("diabetes", features) y depende de
 # este vector para la monotonia de ambas variantes del hibrido.
+#
+# Habitos de cardiovascular (revision 2026-10). Se dejaban libres y el modelo aprendia
+# que FUMAR y BEBER protegen: sobre el test real, marcar "fumo" bajaba la probabilidad
+# en el 59% de los casos (-2,6 puntos de media) y "bebo", en el 75% (-4,1). No es
+# fisiologia, es el dataset: son autorreportados y ahi los fumadores enferman menos
+# (47,4% frente a 50,0%), igual que los que beben (47,7% frente a 49,8%). Un simulador
+# de riesgo no puede premiar el tabaco, asi que `smoke` y `alco` no pueden BAJAR el
+# riesgo y `active` no puede SUBIRLO. Donde los datos no dan senal en el sentido
+# clinico, la restriccion deja el efecto en cero: es lo que ya pasaba con `gluc`, y
+# lo que paso con fumar y beber (app.py lo avisa en la capa clinica). El sedentarismo
+# si pesa: +4,0 puntos de media. Coste medido: AUC de CV 0,7996 -> 0,7993 y de test
+# 0,7943 -> 0,7936; LightGBM sigue ganando el bake-off (LogReg 0,7921).
 MONOTONIC_INCREASING = {
     "diabetes": ["blood_glucose_level", "hba1c_level", "age", "bmi",
                  "hypertension", "heart_disease"],
     "hipertension": ["age", "bmi", "weight", "waist_circumference",
                      "diabetes", "heart_disease", "high_cholesterol"],
-    "cardiovascular": ["age", "bmi", "ap_hi", "ap_lo", "cholesterol", "gluc"],
+    "cardiovascular": ["age", "bmi", "ap_hi", "ap_lo", "cholesterol", "gluc",
+                       "smoke", "alco"],
+}
+MONOTONIC_DECREASING = {
+    "cardiovascular": ["active"],
 }
 
 
 def _monotone_vector(disease: str, features):
-    """Vector de restricciones {0,1} alineado al orden de `features` para LightGBM.
-    +1 = la prediccion no puede decrecer al crecer esa feature; 0 = sin restriccion.
+    """Vector de restricciones {-1,0,1} alineado al orden de `features` para LightGBM.
+    +1 = la prediccion no puede decrecer al crecer esa feature; -1 = no puede crecer;
+    0 = sin restriccion.
     El StandardScaler(with_mean=False) divide por una desviacion positiva, asi que
     preserva la direccion: monotonia en la feature escalada == monotonia en la cruda."""
     inc = set(MONOTONIC_INCREASING.get(disease, []))
-    return [1 if f in inc else 0 for f in features]
+    dec = set(MONOTONIC_DECREASING.get(disease, []))
+    return [1 if f in inc else -1 if f in dec else 0 for f in features]
 
 # Validacion cruzada para la seleccion de modelo
 CV_FOLDS = 5

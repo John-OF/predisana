@@ -83,6 +83,11 @@ las probabilidades (calibración isotónica con curva de fiabilidad).
   glucosa de 250 y dejaban en "bajo" al 80% de los diabéticos reales del test.
 - **Capa clínica desacoplada**: los umbrales diagnósticos (ADA / ACC-AHA) se
   devuelven como `clinical_flags` junto al número del modelo, nunca encima de él.
+- **Un modelo que no premia el tabaco**: en el dataset cardiovascular los fumadores
+  enferman menos (hábitos autorreportados) y el modelo aprendía que fumar y beber
+  protegen. Con restricciones de monotonía ya no pueden bajar el riesgo; como los
+  datos no dan señal en el sentido clínico su efecto queda en cero, y la capa
+  clínica se lo dice a quien los marca. Coste: AUC de test 0.7943 → 0.7936.
 - **Aviso de cobertura de datos**: un modelo da un número igual de firme para una
   edad que vio 5000 veces que para una que no vio nunca (cardiovascular se entrenó
   con 29.7-64.9 años y el formulario acepta 18-100). `/predict` marca esas entradas
@@ -90,7 +95,7 @@ las probabilidades (calibración isotónica con curva de fiabilidad).
   el tramo sin respaldo.
 - **Capa de datos agnóstica al motor** (SQLAlchemy): SQLite en dev, Postgres en
   producción cambiando solo `DATABASE_URL`.
-- **263 tests de pytest** sobre los invariantes delicados: ruteo híbrido, alias de
+- **274 tests de pytest** sobre los invariantes delicados: ruteo híbrido, alias de
   features, monotonía riesgo↔glucosa, calibración, capa clínica y auth del admin.
 
 ## Arquitectura
@@ -155,7 +160,7 @@ admin requiere definir la variable de entorno `ADMIN_TOKEN` en el backend.
 **Tests del backend:**
 ```powershell
 pip install -r requirements-dev.txt
-python -m pytest         # 263 tests, ~4 s (BD temporal, no toca la de dev)
+python -m pytest         # 274 tests, ~4 s (BD temporal, no toca la de dev)
 ```
 
 **CI:** cada push y pull request a `main` corre en GitHub Actions la suite de pytest
