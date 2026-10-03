@@ -1,52 +1,52 @@
 {
   "n_used": 2000,
-  "overall": 0.9549,
-  "column_shapes": 0.9789,
-  "column_pair_trends": 0.9309,
+  "overall": 0.94,
+  "column_shapes": 0.959,
+  "column_pair_trends": 0.9211,
   "per_column": [
     {
-      "column": "smoking_history_current",
+      "column": "smoking_history_former",
       "score": 0.999
     },
     {
       "column": "gender_Male",
-      "score": 0.998
+      "score": 0.996
     },
     {
       "column": "gender_Female",
-      "score": 0.998
-    },
-    {
-      "column": "heart_disease",
       "score": 0.996
     },
     {
-      "column": "smoking_history_never",
-      "score": 0.996
-    },
-    {
-      "column": "smoking_history_former",
+      "column": "smoking_history_current",
       "score": 0.996
     },
     {
       "column": "hypertension",
-      "score": 0.983
+      "score": 0.995
     },
     {
-      "column": "bmi",
-      "score": 0.969
+      "column": "smoking_history_never",
+      "score": 0.994
     },
     {
-      "column": "blood_glucose_level",
-      "score": 0.958
+      "column": "heart_disease",
+      "score": 0.991
     },
     {
       "column": "age",
-      "score": 0.946
+      "score": 0.919
+    },
+    {
+      "column": "bmi",
+      "score": 0.915
+    },
+    {
+      "column": "blood_glucose_level",
+      "score": 0.89
     },
     {
       "column": "hba1c_level",
-      "score": 0.93
+      "score": 0.856
     }
   ],
   "tstr": {
@@ -70,21 +70,21 @@
       {
         "model": "logreg",
         "trtr_auc": 0.9334,
-        "tstr_auc": 0.9158,
-        "ratio": 0.981
+        "tstr_auc": 0.9308,
+        "ratio": 0.997
       },
       {
         "model": "random_forest",
         "trtr_auc": 0.9389,
-        "tstr_auc": 0.9152,
+        "tstr_auc": 0.915,
         "ratio": 0.975
       }
     ]
   },
   "privacy": {
-    "median_synthetic": 0.301,
+    "median_synthetic": 0.2986,
     "median_real_test": 0.2697,
-    "ratio": 1.116,
+    "ratio": 1.107,
     "share_near_zero_synthetic": 0.0,
     "share_near_zero_real_test": 0.0,
     "exact_copies": 0,
@@ -128,26 +128,26 @@
     "synthetic": [
       [
         1.0,
-        0.12,
-        0.12,
-        0.21
+        0.11,
+        0.18,
+        0.35
       ],
       [
-        0.12,
+        0.11,
         1.0,
-        0.12,
-        0.14
+        0.09,
+        0.13
       ],
       [
-        0.12,
-        0.12,
+        0.18,
+        0.09,
         1.0,
-        0.48
+        0.36
       ],
       [
-        0.21,
-        0.14,
-        0.48,
+        0.35,
+        0.13,
+        0.36,
         1.0
       ]
     ]

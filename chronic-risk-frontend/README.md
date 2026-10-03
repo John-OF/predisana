@@ -78,7 +78,7 @@ tienen lógica de verdad:
   se pinta como `waist_circumference` en la ficha o en la barra de SHAP.
 - **`AvisoSoporte`** — los avisos de cuánto fiarse del resultado, con la forma exacta
   que devuelve `/predict`. No todos traen `trained_range`: el nivel `incoherente`
-  (peso, IMC y cintura que no cuadran entre sí) solo trae `detail`, y la primera
+  (peso, IMC y cintura que no cuadran entre sí, o una presión invertida) solo trae `detail`, y la primera
   versión, que lo desestructuraba siempre, tumbaba la página del simulador entera.
   Por encima del tope de edad de NHANES (80 = "80 o más") no dice que el modelo
   "nunca vio casos así": los vio, registrados como 80.

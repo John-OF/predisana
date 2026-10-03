@@ -42,8 +42,8 @@ las probabilidades (calibración isotónica con curva de fiabilidad).
   pacientes ficticios con CTGAN, juego "¿real o sintético?", distribuciones
   comparadas y **tres preguntas distintas** sobre el sintético — *fidelidad*
   (SDMetrics + heatmaps de correlación), *utilidad* (TSTR: entrenar solo con
-  sintético y evaluar contra el test real, ratio 0.965-0.984) y *privacidad*
-  (distancia al registro real más cercano, 1.1-1.8x la del propio test real).
+  sintético y evaluar contra el test real, ratio 0.972-0.997) y *privacidad*
+  (distancia al registro real más cercano, 1.07-1.24x la del propio test real).
 
 > 📸 **Captura de pantalla de:** el laboratorio sintético — pestaña de
 > distribuciones real vs sintético (o el juego "¿real o sintético?").
@@ -95,7 +95,7 @@ las probabilidades (calibración isotónica con curva de fiabilidad).
   el tramo sin respaldo.
 - **Capa de datos agnóstica al motor** (SQLAlchemy): SQLite en dev, Postgres en
   producción cambiando solo `DATABASE_URL`.
-- **274 tests de pytest** sobre los invariantes delicados: ruteo híbrido, alias de
+- **301 tests de pytest** sobre los invariantes delicados: ruteo híbrido, alias de
   features, monotonía riesgo↔glucosa, calibración, capa clínica y auth del admin.
 
 ## Arquitectura
@@ -160,7 +160,7 @@ admin requiere definir la variable de entorno `ADMIN_TOKEN` en el backend.
 **Tests del backend:**
 ```powershell
 pip install -r requirements-dev.txt
-python -m pytest         # 274 tests, ~4 s (BD temporal, no toca la de dev)
+python -m pytest         # 301 tests, ~7 s (BD temporal, no toca la de dev)
 ```
 
 **CI:** cada push y pull request a `main` corre en GitHub Actions la suite de pytest

@@ -89,3 +89,40 @@ def test_solo_aplica_a_hipertension(client):
     }
     r = client.post("/predict/cardiovascular", json=cardio).get_json()
     assert _avisos(r, "incoherente") == []
+
+
+# ---------- cardiovascular: sistolica y diastolica (revision 2026-10) ----------
+# Nada impedia mandar la presion al reves (100/120): cada valor cae en su rango y el
+# modelo devolvia un numero como si nada. Quedo anotado en la auditoria de 2026-08 sin
+# corregir; ahora avisa igual que el peso y la cintura.
+
+CARDIO = {
+    "age": 50, "bmi": 26, "ap_hi": 120, "ap_lo": 80, "cholesterol": 1, "gluc": 1,
+    "smoke": 0, "alco": 0, "active": 1, "gender_Female": 1, "gender_Male": 0,
+}
+
+
+def _cardio(client, **cambios):
+    return client.post("/predict/cardiovascular", json={**CARDIO, **cambios}).get_json()
+
+
+@pytest.mark.parametrize("ap_hi,ap_lo", [(100, 120), (110, 110)])
+def test_diastolica_igual_o_mayor_que_la_sistolica_avisa(client, ap_hi, ap_lo):
+    r = _cardio(client, ap_hi=ap_hi, ap_lo=ap_lo)
+    incoherentes = _avisos(r, "incoherente")
+    assert [a["feature"] for a in incoherentes] == ["ap_lo"]
+    assert "intercambiadas" in incoherentes[0]["detail"]
+    assert "no es coherente" in r["support_note"]
+
+
+def test_una_presion_normal_no_avisa(client):
+    assert _avisos(_cardio(client), "incoherente") == []
+    assert _avisos(_cardio(client, ap_hi=90, ap_lo=85), "incoherente") == []
+
+
+def test_el_aviso_de_presion_tampoco_toca_la_probabilidad(client, app_module, monkeypatch):
+    con_aviso = _cardio(client, ap_hi=100, ap_lo=120)
+    monkeypatch.setattr(app_module, "_check_coherencia_corporal", lambda *a: [])
+    sin_aviso = _cardio(client, ap_hi=100, ap_lo=120)
+    assert _avisos(con_aviso, "incoherente") and not _avisos(sin_aviso, "incoherente")
+    assert con_aviso["probability"] == sin_aviso["probability"]

@@ -6,6 +6,8 @@ import numpy as np
 import pandas as pd
 from typing import Tuple, List, Dict
 
+import coherence
+
 # --------- RUTAS ---------
 PROCESSED_DIR = "data_processed"
 CURATED_DIR = "data_curated"
@@ -206,12 +208,37 @@ def _columnas_categoricas(df: pd.DataFrame, grupos: Dict[str, List[str]]) -> Lis
             if c not in miembros and df[c].dropna().isin([0, 1]).all()]
 
 
-def _clave_estrato(df: pd.DataFrame, grupos: Dict[str, List[str]], cats: List[str]) -> pd.Series:
-    """Identifica el estrato de cada fila: la combinacion de todo lo categorico."""
+# Topes de codificacion (revision 2026-10). NHANES registra como 80 a todo el que pasa
+# de 80: el 5% del real tiene edad 80 exacta. El GAN alisa ese pico (1,6% en el
+# sintetico de hipertension, 2,3% en el de diabetes). "Estar en el tope" se trata como
+# una categoria mas al elegir filas del pool: igual que el resto de marginales
+# categoricas, queda IMPUESTO por seleccion, no aprendido.
+UMBRAL_TOPE = 0.02          # parte minima de las filas en el maximo para llamarlo tope
+MIN_VALORES_CONTINUA = 6    # con menos valores distintos es una escala, no una continua
+
+
+def _columnas_con_tope(real_df: pd.DataFrame, grupos: Dict[str, List[str]]) -> Dict[str, float]:
+    """Columnas continuas con un pico en su maximo, y ese maximo."""
+    aparte = {c for cols in grupos.values() for c in cols} | set(_columnas_categoricas(real_df, grupos))
+    topes: Dict[str, float] = {}
+    for c in real_df.columns:
+        if c == "target" or c in aparte:
+            continue
+        serie = pd.to_numeric(real_df[c], errors="coerce").dropna()
+        if serie.nunique() >= MIN_VALORES_CONTINUA and (serie == serie.max()).mean() >= UMBRAL_TOPE:
+            topes[c] = float(serie.max())
+    return topes
+
+
+def _clave_estrato(df: pd.DataFrame, grupos: Dict[str, List[str]], cats: List[str],
+                   topes: Dict[str, float] = None) -> pd.Series:
+    """Identifica el estrato de cada fila: la combinacion de todo lo categorico, mas
+    si la fila esta en el tope de alguna columna que lo tenga."""
     d = _colapsar_onehot(df, grupos)
     partes = [d[p].astype(str) for p in grupos]
     # A entero antes de comparar: el GAN puede devolver 1.0 donde el real trae 1.
     partes += [d[c].astype(float).round().astype(int).astype(str) for c in cats]
+    partes += [(d[c] >= tope).astype(int).astype(str) for c, tope in (topes or {}).items()]
     if not partes:
         return pd.Series([""] * len(df), index=df.index)
     return partes[0].str.cat(partes[1:], sep="|") if len(partes) > 1 else partes[0]
@@ -240,8 +267,9 @@ def _ajustar_marginales(real_df: pd.DataFrame, pool_df: pd.DataFrame,
     if not cats and not grupos:
         return pool_df.sample(n=min(n_objetivo, len(pool_df)), random_state=seed)
 
-    props = _clave_estrato(real_df, grupos, cats).value_counts(normalize=True)
-    k_pool = _clave_estrato(pool_df, grupos, cats)
+    topes = _columnas_con_tope(real_df, grupos)
+    props = _clave_estrato(real_df, grupos, cats, topes).value_counts(normalize=True)
+    k_pool = _clave_estrato(pool_df, grupos, cats, topes)
 
     rng = np.random.default_rng(seed)
     disponibles: Dict[str, List[int]] = {}
@@ -283,6 +311,125 @@ def _informe_marginales(real_df: pd.DataFrame, synth_df: pd.DataFrame,
     print(f"   peor desviacion de marginal categorica: {peor:.3f} ({culpable})")
     return peor
 
+# --------- REPARAMETRIZACION PARA EL GAN (revision 2026-10) ---------
+# CTGAN reproduce bien cada columna y mal las relaciones FUERTES entre dos: las
+# aprende a medias y la correlacion sale recortada (peso~IMC 0,89 real -> 0,64;
+# cintura~IMC 0,90 -> 0,71; glucosa~HbA1c 0,83 -> 0,52). No lo arregla entrenar mas
+# (AUD-24 midio que satura) y de ahi salian las filas imposibles: 100 pacientes de
+# hipertension con una talla implicita de 0,94 a 2,59 m y 96 con menos de 75 kg y mas
+# de 115 cm de cintura (en el real, 0 y 1).
+# Lo que funciona es no pedirle al GAN esa relacion: se le da UNA de las dos variables
+# y lo que le falta a la otra para quedar explicada por ella, y se recompone al volver.
+#   - El peso no es una variable libre: es IMC x talla^2. El GAN modela la TALLA, que
+#     casi no depende del IMC, y el peso se deriva.
+#   - La cintura: el GAN modela el RESIDUO de una recta sobre el IMC ajustada en el
+#     train real.
+# HONESTIDAD: asi la correlacion de esos pares viene dada en buena parte por
+# construccion (la recta, o la formula del IMC), no aprendida por el GAN. Lo que el
+# GAN sigue teniendo que aprender es todo lo demas: la talla, el residuo, y como se
+# relacionan con el resto de columnas y con el target.
+# NO se reparametrizan:
+#   - Cardiovascular: su presion va en multiplos de 10 (97% del real) y un residuo
+#     continuo destruiria ese patron, que es peor que el mal que se arregla.
+#   - La glucosa de diabetes (sobre HbA1c). Se probo: su residuo se dispersa 6 veces
+#     mas con la HbA1c alta que con la normal y el GAN lo aprende parejo, asi que con
+#     la recta lineal el 1,7% de las filas quedaba clavado en 40 mg/dL. En log eso
+#     desaparece, pero en las dos variantes bajaba la parte de diabeticos entre quienes
+#     tienen glucosa >= 126 (39-48% frente a 56-68% sin residuo; real 72%) y solo subia
+#     el numero de la correlacion (0,67-0,71 frente a 0,36-0,52; real 0,83).
+#     Ojo al medir: con el mismo codigo, la forma de la glucosa varia entre corridas
+#     del GAN de 0,80 a 0,96 (SDMetrics); una corrida sola no compara variantes.
+COLUMNA_TALLA = "__talla_m__"
+PREFIJO_RESIDUO = "__residuo__"
+# dependiente -> base. Solo se aplica si el dataset trae las dos columnas.
+RESIDUOS_SOBRE = {
+    "waist_circumference": "bmi",
+}
+
+
+def _al_espacio_del_gan(df: pd.DataFrame) -> Tuple[pd.DataFrame, List[dict]]:
+    """Devuelve el frame que ve el GAN y el plan para deshacer el cambio. El rango
+    real de cada columna derivada va en el plan: al recomponerla se topa ahi, igual
+    que SDV topa las columnas que si modela."""
+    out, plan = df.copy(), []
+    if {"weight", "bmi"} <= set(out.columns):
+        plan.append({"tipo": "talla", "lo": float(out["weight"].min()), "hi": float(out["weight"].max())})
+        out[COLUMNA_TALLA] = np.sqrt(out["weight"] / out["bmi"])
+        out = out.drop(columns=["weight"])
+    for dep, base in RESIDUOS_SOBRE.items():
+        if dep in out.columns and base in out.columns:
+            pendiente, ordenada = np.polyfit(out[base], out[dep], 1)
+            plan.append({"tipo": "residuo", "dep": dep, "base": base,
+                         "pendiente": float(pendiente), "ordenada": float(ordenada),
+                         "lo": float(out[dep].min()), "hi": float(out[dep].max())})
+            out[PREFIJO_RESIDUO + dep] = out[dep] - (ordenada + pendiente * out[base])
+            out = out.drop(columns=[dep])
+    return out, plan
+
+
+def _del_espacio_del_gan(muestra: pd.DataFrame, plan: List[dict]) -> pd.DataFrame:
+    """Inversa de `_al_espacio_del_gan`: recompone el peso y la cintura."""
+    out = muestra.copy()
+    for paso in reversed(plan):
+        if paso["tipo"] == "talla":
+            out["weight"] = (out["bmi"] * out[COLUMNA_TALLA] ** 2).clip(paso["lo"], paso["hi"])
+            out = out.drop(columns=[COLUMNA_TALLA])
+        else:
+            dep, residuo = paso["dep"], PREFIJO_RESIDUO + paso["dep"]
+            recta = paso["ordenada"] + paso["pendiente"] * out[paso["base"]]
+            out[dep] = (recta + out[residuo]).clip(paso["lo"], paso["hi"])
+            out = out.drop(columns=[residuo])
+    return out
+
+
+# --------- PRECISION DEL REAL ---------
+# El peso sintetico salia con dos decimales en el 90% de las filas y el real lleva
+# uno: bastaba mirar ese campo para acertar el juego "¿real o sintetico?".
+# La causa: UNA fila real de 4798 trae 62.87, y SDV toma el maximo de decimales que
+# ve. Por eso aqui cuenta lo que usa la columna casi siempre, no su peor fila.
+MAX_DECIMALES = 4
+PARTE_QUE_DECIDE = 0.99
+
+
+def _decimales(serie: pd.Series) -> int:
+    """Decimales que usa de verdad una columna (los que bastan para el 99% de sus
+    valores); MAX_DECIMALES + 1 si es continua de verdad (un IMC calculado), que
+    entonces no se redondea."""
+    valores = pd.to_numeric(serie, errors="coerce").dropna().to_numpy(dtype=float)
+    for d in range(MAX_DECIMALES + 1):
+        escalado = valores * 10 ** d
+        if np.mean(np.abs(escalado - np.round(escalado)) < 1e-6) >= PARTE_QUE_DECIDE:
+            return d
+    return MAX_DECIMALES + 1
+
+
+def _redondear_como_el_real(muestra: pd.DataFrame, real_df: pd.DataFrame) -> pd.DataFrame:
+    out = muestra.copy()
+    for c in out.columns:
+        if c == "target" or c not in real_df.columns or not pd.api.types.is_numeric_dtype(out[c]):
+            continue
+        d = _decimales(real_df[c])
+        if d <= MAX_DECIMALES:
+            out[c] = out[c].round(d)
+    return out
+
+
+# --------- FILAS QUE NO PUEDEN SER DE UNA PERSONA ---------
+def _descartar_incoherentes(name: str, pool_df: pd.DataFrame) -> pd.DataFrame:
+    """Quita del pool las filas que el propio simulador marcaria como `incoherente`
+    (coherence.py, la misma regla que /predict): una diastolica por encima de la
+    sistolica, o una cintura que no cuadra con el IMC. Solo descarta, no corrige."""
+    campos = coherence.CAMPOS.get(name)
+    if not campos or not set(campos) <= set(pool_df.columns):
+        return pool_df
+    malas = pool_df[list(campos)].apply(
+        lambda fila: bool(coherence.incoherencias(name, fila.to_dict())), axis=1)
+    if malas.any():
+        print(f"   {int(malas.sum())} filas incoherentes descartadas del pool "
+              f"({malas.mean() * 100:.2f}%)")
+    return pool_df[~malas].reset_index(drop=True)
+
+
 # --------- SANITIZACIÓN ---------
 def _sanitize_for_sdv(train_df: pd.DataFrame) -> pd.DataFrame:
     df = train_df.copy()
@@ -318,6 +465,8 @@ def fit_and_sample_sdv(train_df, model, synth_multiplier, seed, epochs, max_trai
 
     np.random.seed(seed)
     df = _sanitize_for_sdv(train_df)
+    # Peso -> talla y residuos de los pares fuertes: el GAN no ve esas columnas.
+    df, plan_gan = _al_espacio_del_gan(df)
 
     # AUD-13: los grupos one-hot se detectan sobre los datos REALES y se colapsan a
     # una sola columna categorica ANTES de filtrar y entrenar. Asi el GAN modela
@@ -370,8 +519,10 @@ def fit_and_sample_sdv(train_df, model, synth_multiplier, seed, epochs, max_trai
         n_synth = max(1, int(len(df) * synth_multiplier * oversample))
         muestra = synthesizer.sample(n_synth).reset_index(drop=True)
 
-    # Vuelta al esquema real: la categorica se reparte en sus columnas one-hot.
+    # Vuelta al esquema real: la categorica se reparte en sus columnas one-hot y se
+    # recomponen las columnas que el GAN no vio, con la precision del dato real.
     muestra = _expandir_onehot(muestra, grupos_onehot)
+    muestra = _redondear_como_el_real(_del_espacio_del_gan(muestra, plan_gan), train_df)
     # Mismo orden de columnas que el train, para que la ficha de paciente y las
     # comparaciones de distribucion no dependan del orden en que salio del GAN.
     orden = [c for c in train_df.columns if c in muestra.columns]
@@ -413,6 +564,7 @@ def process_one_dataset(name, test_size, seed, model, synth_multiplier, balance,
             if n > 0:
                 synth_df = pd.concat([ones.sample(n, random_state=seed), zeros.sample(n, random_state=seed)], ignore_index=True)
         grupos = _detect_onehot_groups(train_df)
+        synth_df = _descartar_incoherentes(name, synth_df)
 
         # AUD-24: del pool grande se eligen las filas que reproducen la composicion
         # categorica real. Se hace ANTES de balancear para no pelearse con ese flag.
