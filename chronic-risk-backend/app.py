@@ -1347,14 +1347,20 @@ def whatif(disease: str):
     base = dict(base_raw)
     # Mismo ruteo híbrido que /predict: si se barre la glucosa (o el base la trae),
     # se usa el modelo con glucosa; si no, el self-report.
+    glucosa = ("glucose", "blood_glucose_level")
     route_payload = _normalize_glucose_alias(dict(base))
-    if feature == "blood_glucose_level":
+    if feature in glucosa:
         route_payload["blood_glucose_level"] = vmax
     model_key = _resolve_model_key(disease, route_payload)
 
-    # Barrer una feature que el modelo no usa daba una curva plana sin sentido.
-    # Se aceptan los alias de glucosa porque _normalize_glucose_alias los refleja.
-    if feature not in FEATURES[model_key] + ["glucose", "blood_glucose_level"]:
+    # Barrer una feature que el modelo no usa daba una curva plana sin sentido. La
+    # glucosa tiene dos nombres y antes se aceptaba siempre: en hipertension y
+    # cardiovascular, que no la usan, salia una recta, y en diabetes el alias `glucose`
+    # caia en el modelo sin glucosa o, si el base traia `blood_glucose_level`, el modelo
+    # leia ese valor fijo. Ahora vale solo si el modelo la usa, con el nombre que lee.
+    if feature in glucosa:
+        feature = next((g for g in glucosa if g in FEATURES[model_key]), feature)
+    if feature not in FEATURES[model_key]:
         return jsonify({"error": f"'{feature}' no es una feature de {disease}"}), 400
 
     # Peso e IMC de hipertension se barren a talla fija (ver _acople_talla_fija).

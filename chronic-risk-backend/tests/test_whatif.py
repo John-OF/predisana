@@ -146,3 +146,54 @@ def test_el_acople_es_solo_de_hipertension(client, perfil_diabetes):
         "base": perfil_diabetes, "feature": "bmi", "min": 20, "max": 40, "steps": 5,
     })
     assert r.get_json()["coupled"] is None
+
+
+# ---------- glucosa: dos nombres, y solo donde el modelo la usa (auditoria 2026-09) ----------
+# `glucose` y `blood_glucose_level` son la misma variable y antes se aceptaban siempre.
+# Hipertension y cardiovascular no la usan: la curva era una recta (9,5% y 22,5% de
+# punta a punta). Y en diabetes el alias `glucose` daba otra recta.
+
+CARDIO = {
+    "age": 50, "bmi": 26, "ap_hi": 120, "ap_lo": 80, "cholesterol": 1, "gluc": 1,
+    "smoke": 0, "alco": 0, "active": 1, "gender_Female": 1, "gender_Male": 0,
+}
+
+
+@pytest.mark.parametrize("alias", ["glucose", "blood_glucose_level"])
+@pytest.mark.parametrize("enfermedad,base", [("hipertension", HTA), ("cardiovascular", CARDIO)])
+def test_barrer_la_glucosa_en_un_modelo_que_no_la_usa_da_400(client, enfermedad, base, alias):
+    r = _whatif(client, enfermedad, {
+        "base": base, "feature": alias, "min": 70, "max": 300, "steps": 5,
+    })
+    assert r.status_code == 400
+    assert alias in r.get_json()["error"]
+
+
+@pytest.mark.parametrize("glucosa_en_base", [{}, {"blood_glucose_level": 100}, {"glucose": 100}])
+@pytest.mark.parametrize("alias", ["glucose", "blood_glucose_level"])
+def test_la_glucosa_de_diabetes_se_barre_con_cualquiera_de_sus_nombres(
+        client, perfil_diabetes, alias, glucosa_en_base):
+    """Con `glucose` y un caso base sin glucosa se servia el modelo sin glucosa (15,4%
+    fijo); si el base traia `blood_glucose_level`, el modelo leia ese valor fijo (4,2%)."""
+    r = _whatif(client, "diabetes", {
+        "base": {**perfil_diabetes, **glucosa_en_base}, "feature": alias,
+        "min": 70, "max": 300, "steps": 5,
+    })
+    assert r.status_code == 200
+    d = r.get_json()
+    assert d["variant"] == "glucosa"
+    assert d["feature"] == "blood_glucose_level"   # el nombre que lee el modelo
+    assert d["supported_range"] is not None
+    assert d["curve"][-1]["probability"] > d["curve"][0]["probability"]
+
+
+def test_sin_la_variante_con_glucosa_barrer_la_glucosa_da_400(client, app_module,
+                                                              perfil_diabetes, monkeypatch):
+    """Sin la variante, diabetes cae en el modelo base, que no usa la glucosa: la curva
+    seria otra recta (/health ya marca ese deploy como degradado)."""
+    monkeypatch.delitem(app_module.MODELS, "diabetes_glucosa")
+    r = _whatif(client, "diabetes", {
+        "base": perfil_diabetes, "feature": "blood_glucose_level",
+        "min": 70, "max": 300, "steps": 5,
+    })
+    assert r.status_code == 400
