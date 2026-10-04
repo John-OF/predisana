@@ -1,6 +1,12 @@
 import { Container, Row, Col, Card, Badge, Tab, Nav, ListGroup } from 'react-bootstrap';
 import { Droplet, HeartPulse, Heart, GraphDownArrow, Cpu, ExclamationOctagon, ExclamationTriangle } from 'react-bootstrap-icons';
 
+// `variables_ia` describe los modelos servidos, no la medicina en general: el orden
+// sale de la media de |SHAP| sobre el test real (revision 2026-10). Hablaban de la
+// presion en hipertension y de la HbA1c en diabetes, que no son features de ningun
+// modelo, y del tabaco en cardiovascular, que pesa cero.
+// tests/test_textos_educacion.py (backend) comprueba cada afirmacion contra los
+// modelos: si un reentrenamiento cambia el orden, falla y hay que revisar el texto.
 const INFO_ENFERMEDADES = {
     diabetes: {
         titulo: "Diabetes Tipo 2",
@@ -9,7 +15,7 @@ const INFO_ENFERMEDADES = {
         mortalidad: "La diabetes mellitus es una de las principales causas de muerte no violenta a nivel mundial.",
         poblacion: "Se estima que afecta a cerca del 10% de la población adulta mundial (más de 500 millones de personas).",
         organos: ["Páncreas", "Riñones (Nefropatía)", "Ojos (Retina)", "Corazón", "Nervios periféricos"],
-        variables_ia: "El modelo analiza Glucosa, HbA1c y BMI porque son indicadores directos del estado metabólico.",
+        variables_ia: "Sin análisis de sangre, lo que más pesa es la edad, seguida de la hipertensión y el IMC. Si aportas tu glucosa, pasa a ser la variable de mayor peso. La HbA1c no entra en el modelo: se interpreta aparte con los umbrales de la ADA.",
         factores: [
             "Sedentarismo y falta de actividad física.",
             "Dieta alta en carbohidratos refinados y azúcares.",
@@ -26,7 +32,7 @@ const INFO_ENFERMEDADES = {
         mortalidad: "Conocida como 'el asesino silencioso', es un factor crítico en infartos y accidentes cerebrovasculares.",
         poblacion: "Afecta aproximadamente a 1 de cada 3 adultos en el mundo (cerca del 30%).",
         organos: ["Corazón (Insuficiencia)", "Arterias", "Cerebro", "Riñones"],
-        variables_ia: "La presión arterial sistólica/diastólica y la edad son las variables de mayor peso en la predicción.",
+        variables_ia: "Lo que más pesa es la edad, seguida del colesterol alto y el IMC. La presión no entra en el modelo, porque es la medida con la que se diagnostica la hipertensión: si la aportas, se interpreta aparte con los umbrales ACC/AHA.",
         factores: [
             "Consumo excesivo de sal (Sodio).",
             "Estrés crónico.",
@@ -43,7 +49,7 @@ const INFO_ENFERMEDADES = {
         mortalidad: "Es la causa #1 de muerte a nivel mundial (aprox. 32% de las defunciones).",
         poblacion: "El riesgo aumenta significativamente en hombres >45 años y mujeres >55 años.",
         organos: ["Corazón", "Cerebro", "Sistema circulatorio completo"],
-        variables_ia: "El modelo cruza datos de tabaquismo, colesterol y presión arterial para estimar este riesgo.",
+        variables_ia: "Lo que más pesa, con diferencia, es la presión sistólica; después, la edad y el colesterol. Fumar y beber son factores de riesgo reales, pero en estos datos no dan señal y el modelo no los tiene en cuenta: el simulador lo avisa si los marcas.",
         factores: [
             "Tabaquismo (Factor crítico).",
             "Colesterol LDL alto.",

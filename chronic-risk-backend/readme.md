@@ -16,7 +16,7 @@ API REST en Python/Flask que sirve modelos de Machine Learning para la estimaci�
 - **Generación de datos sintéticos** con SDV (CTGAN por defecto, TVAE opcional) + endpoints de comparación real vs sintético (muestras, distribuciones, calidad SDMetrics) que alimentan el laboratorio del frontend.
 - **Pipeline de datos por enfermedad** — desde fuentes públicas a un dataset limpio por enfermedad (sin frame maestro concatenado ni imputación cruzada).
 - **Registro anónimo de uso** sobre SQLAlchemy (`DATABASE_URL`: SQLite en dev, Postgres en prod con el mismo código) + **panel admin dev-only** con analítica agregada, protegido por `X-Admin-Token`.
-- **Suite de 329 tests (pytest)** sobre los invariantes delicados de la API.
+- **Suite de 334 tests (pytest)** sobre los invariantes delicados de la API.
 
 ---
 
@@ -145,8 +145,11 @@ alimenta la capa clínica ACC/AHA.
 La suite de `pytest` cubre los invariantes delicados de la API: ruteo del modelo
 híbrido de diabetes (con/sin glucosa), alias `glucose`↔`blood_glucose_level`,
 monotonía riesgo↔glucosa, calibración isotónica, filtro de género en SHAP, capa
-clínica ADA/ACC-AHA, el laboratorio sintético y la auth del panel admin. Corre
-contra una base SQLite temporal (nunca toca `medical_history.db`).
+clínica ADA/ACC-AHA, el laboratorio sintético y la auth del panel admin. También
+comprueba contra los modelos servidos lo que afirman los textos del frontend: los
+avisos de hábitos de cardiovascular y las variables que, según la página de
+Educación, más pesan en cada modelo (`test_textos_educacion.py`). Corre contra una
+base SQLite temporal (nunca toca `medical_history.db`).
 
 ```powershell
 pip install -r requirements-dev.txt
@@ -304,7 +307,7 @@ chronic-risk-backend/
 ├── risk_banding.py              # Regla de las bandas bajo/moderado/alto (API + entrenamiento)
 ├── monotonic_logreg.py          # LogReg que respeta el signo clínico de cada feature (la carga el API)
 ├── coherence.py                 # Datos que no cuadran entre sí (aviso de /predict + filtro del sintético)
-├── tests/                       # Suite pytest (329 tests; BD temporal propia)
+├── tests/                       # Suite pytest (334 tests; BD temporal propia)
 ├── pytest.ini
 ├── .env.example                 # Plantilla de variables de entorno
 ├── requirements.txt             # Runtime del API (directas, UTF-8)
