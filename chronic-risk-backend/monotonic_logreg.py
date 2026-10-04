@@ -23,8 +23,8 @@ class MonotonicLogisticRegression(LogisticRegression):
     Sigue siendo una LogisticRegression: predict_proba, el calibrador y el
     LinearExplainer de SHAP la usan igual."""
 
-    def __init__(self, monotone_constraints=None, *, class_weight=None, max_iter=100):
-        super().__init__(class_weight=class_weight, max_iter=max_iter)
+    def __init__(self, monotone_constraints=None, *, C=1.0, class_weight=None, max_iter=100):
+        super().__init__(C=C, class_weight=class_weight, max_iter=max_iter)
         self.monotone_constraints = monotone_constraints
 
     def fit(self, X, y, sample_weight=None):

@@ -116,9 +116,9 @@ def test_la_feature_en_contra_queda_en_cero_y_el_resto_es_ajustar_sin_ella():
 
 def test_se_clona_como_cualquier_estimador():
     """cross_val_score clona el estimador en cada fold del bake-off."""
-    m = clone(MonotonicLogisticRegression([1, 0, -1], class_weight="balanced", max_iter=500))
+    m = clone(MonotonicLogisticRegression([1, 0, -1], C=0.1, class_weight="balanced", max_iter=500))
     assert m.get_params() == {
-        "monotone_constraints": [1, 0, -1], "class_weight": "balanced", "max_iter": 500}
+        "monotone_constraints": [1, 0, -1], "C": 0.1, "class_weight": "balanced", "max_iter": 500}
 
 
 def test_restricciones_de_otra_longitud_es_un_error():
