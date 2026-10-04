@@ -86,8 +86,8 @@ if os.environ.get("TRUST_PROXY_HEADERS", "").lower() in ("1", "true", "yes"):
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
 
 # Limites configurables por env var (el deploy puede aflojarlos o apretarlos sin tocar
-# codigo). El de /admin/verify es el importante: es el endpoint contra el que se
-# fuerza-bruta el ADMIN_TOKEN.
+# codigo). RATE_LIMIT_ADMIN_VERIFY es el importante: los intentos FALLIDOS de
+# ADMIN_TOKEN por IP, sumando los cuatro endpoints del panel (_intentos_token_admin).
 RATE_LIMIT_DEFAULT = os.environ.get("RATE_LIMIT_DEFAULT", "300 per minute")
 RATE_LIMIT_PREDICT = os.environ.get("RATE_LIMIT_PREDICT", "60 per minute")
 RATE_LIMIT_ADMIN = os.environ.get("RATE_LIMIT_ADMIN", "60 per minute")
@@ -120,11 +120,17 @@ app.config["MAX_CONTENT_LENGTH"] = 256 * 1024  # 256 KB
 def _cuerpo_demasiado_grande(_e):
     return jsonify({"error": "cuerpo demasiado grande"}), 413
 
-BASE_MODELS = "models"
-DB_NAME = "medical_history.db"  # <--- Nombre de la Base de Datos
+# Rutas ancladas a la carpeta de este archivo, no al directorio de trabajo: arrancada
+# desde otra carpeta (la raiz del repo, o un deploy sin `--chdir`) la app levantaba
+# sin modelos ni datos, todo /predict daba 500 y /health decia "ok".
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_MODELS = os.path.join(BASE_DIR, "models")
+DATA_CURATED = os.path.join(BASE_DIR, "data_curated")
+DATA_PROCESSED = os.path.join(BASE_DIR, "data_processed")
+DB_PATH = os.path.join(BASE_DIR, "medical_history.db")
 # Capa de datos agnóstica al motor (A3): SQLite en dev, Postgres en prod (#7),
-# mismo código. Se controla con la env var DATABASE_URL.
-DATABASE_URL = os.environ.get("DATABASE_URL", f"sqlite:///{DB_NAME}")
+# mismo código. Se controla con la env var DATABASE_URL (vacia = la SQLite de aqui).
+DATABASE_URL = os.environ.get("DATABASE_URL") or "sqlite:///" + DB_PATH.replace(os.sep, "/")
 # Token del panel admin dev-only (A3). Si no está seteado, el admin queda
 # deshabilitado (los endpoints /admin/* responden 503). NO es auth de usuario:
 # los usuarios nunca se loguean, las simulaciones son anónimas.
@@ -435,8 +441,8 @@ def _load_background_for_shap(disease: str, feats: List[str], n: int = 200) -> n
     Carga datos reales o sintéticos para usar como background en SHAP.
     NO afecta entrenamiento ni predicción.
     """
-    curated_path = os.path.join("data_curated", disease, f"{disease}_train.csv")
-    processed_path = os.path.join("data_processed", f"{disease}_dataset.csv")
+    curated_path = os.path.join(DATA_CURATED, disease, f"{disease}_train.csv")
+    processed_path = os.path.join(DATA_PROCESSED, f"{disease}_dataset.csv")
     path = curated_path if os.path.exists(curated_path) else processed_path
 
     if not os.path.exists(path):
@@ -525,6 +531,14 @@ def _shap_vector_for_positive_class(disease: str, Xt: np.ndarray, n_features: in
 # ==========================================
 # CARGA DE MODELOS
 # ==========================================
+def _modelos_faltantes() -> List[str]:
+    """Modelos que la app tiene que servir y no estan cargados (sin pipeline o sin
+    features, /predict no puede responder). Cuenta la variante con glucosa: sin ella
+    diabetes responde con el modelo base e ignora la glucosa en silencio."""
+    return sorted(k for k in list(FILES) + EXTRA_MODEL_KEYS
+                  if k not in MODELS or k not in FEATURES)
+
+
 def _load_all():
     # Enfermedades servidas (FILES) + variantes de modelo extra (p.ej. glucosa).
     for dis in list(FILES.keys()) + EXTRA_MODEL_KEYS:
@@ -547,6 +561,10 @@ def _load_all():
                 CALIBRATORS[dis] = load(cal_path)
             except Exception as e:
                 print(f"⚠️ Calibrador no cargado para {dis}: {e}")
+    faltan = _modelos_faltantes()
+    if faltan:
+        print(f"⚠️ Modelos sin cargar: {', '.join(faltan)} (buscados en {BASE_MODELS}); "
+              f"/health respondera 503.")
     # >>> SHAP START
     for dis in MODELS:
         try:
@@ -685,8 +703,8 @@ _MIN_VALORES_CONTINUA = 6
 
 def _train_csv_path(disease: str) -> Optional[str]:
     """CSV real de la enfermedad: el train curado o, si falta, el dataset completo."""
-    curated = os.path.join("data_curated", disease, f"{disease}_train.csv")
-    processed = os.path.join("data_processed", f"{disease}_dataset.csv")
+    curated = os.path.join(DATA_CURATED, disease, f"{disease}_train.csv")
+    processed = os.path.join(DATA_PROCESSED, f"{disease}_dataset.csv")
     path = curated if os.path.exists(curated) else processed
     return path if os.path.exists(path) else None
 
@@ -905,7 +923,7 @@ def _read_csv_cached(csv_path: str) -> pd.DataFrame:
 def _synthetic_files(disease: str) -> List[str]:
     """Sinteticos de una enfermedad, CTGAN primero. Ordenados: glob no garantiza
     orden y con varios archivos se servia uno u otro segun el sistema de archivos."""
-    base_dir = os.path.join("data_curated", disease)
+    base_dir = os.path.join(DATA_CURATED, disease)
     return (sorted(glob.glob(os.path.join(base_dir, f"{disease}_synthetic_ctgan*.csv")))
             or sorted(glob.glob(os.path.join(base_dir, f"{disease}_synthetic*.csv"))))
 
@@ -933,9 +951,9 @@ def get_real_sample(disease):
     """Una fila REAL aleatoria del split de entrenamiento curado
     (data_curated/<disease>/<disease>_train.csv), con fallback al procesado."""
     disease = disease.lower()
-    csv_path = os.path.join("data_curated", disease, f"{disease}_train.csv")
+    csv_path = os.path.join(DATA_CURATED, disease, f"{disease}_train.csv")
     if not os.path.exists(csv_path):
-        csv_path = os.path.join("data_processed", f"{disease}_dataset.csv")
+        csv_path = os.path.join(DATA_PROCESSED, f"{disease}_dataset.csv")
     return _sample_row_from_csv(csv_path, "real")
 
 
@@ -955,7 +973,7 @@ def get_random_sample(disease):
         source_type = "synthetic"
     else:
         # Fallback final: Datos reales procesados
-        csv_path = os.path.join("data_processed", f"{disease}_dataset.csv")
+        csv_path = os.path.join(DATA_PROCESSED, f"{disease}_dataset.csv")
         print(f"⚠️ No se hallaron sintéticos para {disease}. Usando datos reales procesados.")
 
     # Misma normalizacion que la ficha real (incluido NaN -> None).
@@ -987,15 +1005,19 @@ def _db_ok_cached() -> bool:
 @limiter.exempt
 def health():
     """Liveness + comprobacion REAL de la BD (antes devolvia el string fijo
-    'sqlite_connected', que ademas mentiria al pasar a Postgres en el deploy)."""
+    'sqlite_connected', que ademas mentiria al pasar a Postgres en el deploy) y de
+    los modelos: sin ellos la app levanta igual, pero /predict responde 500."""
     db_ok = _db_ok_cached()
+    faltan = _modelos_faltantes()
+    ok = db_ok and not faltan
     payload = {
-        "status": "ok" if db_ok else "degraded",
+        "status": "ok" if ok else "degraded",
         "database": engine.url.get_backend_name(),   # sqlite | postgresql | ...
         "database_ok": db_ok,
         "models_loaded": sorted(MODELS.keys()),
+        "models_missing": faltan,
     }
-    return jsonify(payload), (200 if db_ok else 503)
+    return jsonify(payload), (200 if ok else 503)
 
 @app.get("/metrics/<disease>")
 def get_metrics(disease: str):
@@ -1427,7 +1449,7 @@ def get_distribution(disease):
     except (TypeError, ValueError):
         nbins = 18
 
-    real_path = os.path.join("data_curated", disease, f"{disease}_train.csv")
+    real_path = os.path.join(DATA_CURATED, disease, f"{disease}_train.csv")
     synth_files = _synthetic_files(disease)
     if not os.path.exists(real_path) or not synth_files:
         return jsonify({"error": "data not available"}), 500
@@ -1494,8 +1516,22 @@ def get_synthetic_quality(disease):
 # ==========================================
 # PANEL ADMIN (dev-only, anónimo, server-side — A3)
 # ==========================================
+# Fuerza bruta del ADMIN_TOKEN (auditoria 2026-09). Los cuatro endpoints comprueban
+# el token y contestan 401 si no cuadra, asi que cualquiera sirve para probarlo: con
+# el limite estricto solo en /admin/verify salian 10 + 3 x 60 = 190 intentos por
+# minuto. Ahora los fallos comparten una cubeta por IP. Solo descuentan los 401 (el
+# uso con el token bueno no la gasta) y, agotada, todo el panel responde 429 tambien
+# al token bueno: si no, el acierto se distinguiria. El descuento llega al terminar
+# la peticion, asi que N peticiones simultaneas cuelan hasta N-1 intentos de mas.
+_intentos_token_admin = limiter.shared_limit(
+    RATE_LIMIT_ADMIN_VERIFY, scope="admin_token",
+    deduct_when=lambda resp: resp.status_code == 401,
+)
+
+
 @app.get("/admin/verify")
-@limiter.limit(RATE_LIMIT_ADMIN_VERIFY)
+@limiter.limit(RATE_LIMIT_ADMIN)
+@_intentos_token_admin
 @require_admin
 def admin_verify():
     """El frontend lo usa para validar el token antes de mostrar el dashboard."""
@@ -1529,6 +1565,7 @@ def _query_predictions_filtered(s):
 
 @app.get("/admin/stats")
 @limiter.limit(RATE_LIMIT_ADMIN)
+@_intentos_token_admin
 @require_admin
 def admin_stats():
     """Analítica de uso AGREGADA y anónima (sin datos personales). Solo cuenta las
@@ -1620,6 +1657,7 @@ def admin_stats():
 
 @app.get("/admin/predictions")
 @limiter.limit(RATE_LIMIT_ADMIN)
+@_intentos_token_admin
 @require_admin
 def admin_predictions():
     """Lista las simulaciones más recientes (server-side, anónimas)."""
@@ -1659,6 +1697,7 @@ def admin_predictions():
 
 @app.get("/admin/export.csv")
 @limiter.limit(RATE_LIMIT_ADMIN)
+@_intentos_token_admin
 @require_admin
 def admin_export_csv():
     """Exporta las simulaciones (anónimas) como CSV server-side. Respeta el filtro

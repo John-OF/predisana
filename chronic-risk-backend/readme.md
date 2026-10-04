@@ -16,7 +16,7 @@ API REST en Python/Flask que sirve modelos de Machine Learning para la estimaci�
 - **Generación de datos sintéticos** con SDV (CTGAN por defecto, TVAE opcional) + endpoints de comparación real vs sintético (muestras, distribuciones, calidad SDMetrics) que alimentan el laboratorio del frontend.
 - **Pipeline de datos por enfermedad** — desde fuentes públicas a un dataset limpio por enfermedad (sin frame maestro concatenado ni imputación cruzada).
 - **Registro anónimo de uso** sobre SQLAlchemy (`DATABASE_URL`: SQLite en dev, Postgres en prod con el mismo código) + **panel admin dev-only** con analítica agregada, protegido por `X-Admin-Token`.
-- **Suite de 301 tests (pytest)** sobre los invariantes delicados de la API.
+- **Suite de 307 tests (pytest)** sobre los invariantes delicados de la API.
 
 ---
 
@@ -69,8 +69,12 @@ gunicorn app:app
 ```
 
 Al arrancar, `app.py` ejecuta automáticamente:
-1. `_load_all()` — carga los pipelines de `models/` (las 3 enfermedades + la variante `diabetes_glucosa`), sus calibradores isotónicos, lee el modelo ganador de cada `_metrics.json` y construye un explainer SHAP acorde al tipo de cada modelo (Linear o Tree).
-2. `init_db()` — crea la tabla `predictions` vía SQLAlchemy (por defecto `sqlite:///medical_history.db`; con `DATABASE_URL` apunta a Postgres u otro motor) y migra columnas nuevas si la BD venía del esquema viejo.
+1. `_load_all()` — carga los pipelines de `models/` (las 3 enfermedades + la variante `diabetes_glucosa`), sus calibradores isotónicos, lee el modelo ganador de cada `_metrics.json` y construye un explainer SHAP acorde al tipo de cada modelo (Linear o Tree). Si falta alguno de los cuatro modelos lo dice en el log y `/health` responde 503.
+2. `init_db()` — crea la tabla `predictions` vía SQLAlchemy (por defecto SQLite en `medical_history.db`; con `DATABASE_URL` apunta a Postgres u otro motor) y migra columnas nuevas si la BD venía del esquema viejo.
+
+Las rutas (`models/`, `data_curated/`, `data_processed/` y esa SQLite) cuelgan de la carpeta del
+backend, no del directorio desde el que se arranque: antes, lanzada desde la raíz del repo, la app
+levantaba sin modelos ni datos y `/health` decía "ok".
 
 Variables de entorno: `DATABASE_URL` (motor de BD), `ADMIN_TOKEN` (habilita los endpoints
 `/admin/*`; sin ella responden 503), `FLASK_DEBUG` (debugger local) y las de CORS / rate limiting
@@ -83,8 +87,10 @@ en `.env.example`.
 desarrollo) y además rechaza con **403** cualquier `Origin` fuera de la lista — CORS por sí solo
 únicamente le oculta la respuesta al navegador, la petición se ejecuta igual. Los límites son **por
 IP**: `RATE_LIMIT_DEFAULT` global, `RATE_LIMIT_PREDICT` en `/predict` y `/whatif`, `RATE_LIMIT_ADMIN`
-en el panel y uno estricto (`RATE_LIMIT_ADMIN_VERIFY`, 10/min) en `/admin/verify`, que es contra lo
-que se fuerza-brutea el token. `/health` está exento para no romper los monitores de uptime. Detrás
+en cada endpoint del panel y uno estricto para los intentos de token **fallidos**
+(`RATE_LIMIT_ADMIN_VERIFY`, 10/min), compartido por los cuatro endpoints del panel: todos comprueban el
+token, así que cualquiera sirve para fuerza-brutearlo. `/health` está exento para no romper los
+monitores de uptime. Detrás
 de un proxy hay que activar `TRUST_PROXY_HEADERS=1` (si no, todo el tráfico comparte una sola
 cubeta); sin proxy delante, activarlo permitiría falsear la IP con `X-Forwarded-For`.
 
@@ -156,14 +162,15 @@ Todos los endpoints aceptan/devuelven JSON. El CORS de los endpoints públicos d
 **nunca** hereda ese `*` — ver la sección de CORS y rate limiting más arriba.
 
 ### `GET /health`
-Liveness + comprobación real de la BD (`SELECT 1`). Devuelve **503** si la base no responde. Está exento del rate limiting (un 429 marcaría el deploy como caído ante un monitor de uptime), así que el resultado de la BD se reutiliza **5 s**: un bucle contra `/health` no se traduce en una consulta por petición.
+Liveness + comprobación real de la BD (`SELECT 1`) y de los modelos. Devuelve **503** (`"status": "degraded"`) si la base no responde o si falta alguno de los cuatro modelos que se sirven (`models_missing`): sin ellos la app levanta igual, pero su `/predict` responde 500. Cuenta también la variante con glucosa, porque sin ella diabetes responde con el modelo base e ignora la glucosa en silencio. Está exento del rate limiting (un 429 marcaría el deploy como caído ante un monitor de uptime), así que el resultado de la BD se reutiliza **5 s**: un bucle contra `/health` no se traduce en una consulta por petición.
 
 ```json
 {
   "status": "ok",
   "database": "sqlite",
   "database_ok": true,
-  "models_loaded": ["cardiovascular", "diabetes", "diabetes_glucosa", "hipertension"]
+  "models_loaded": ["cardiovascular", "diabetes", "diabetes_glucosa", "hipertension"],
+  "models_missing": []
 }
 ```
 
@@ -272,7 +279,7 @@ Histograma comparado real vs sintético de una variable numérica, sobre bins co
 Tres preguntas sobre el sintético, no una. **Fidelidad**: SDMetrics `QualityReport` (overall, column shapes, pair trends, detalle por columna) + matrices de correlación real/sintético para el heatmap. **Utilidad** (`tstr`): se entrena un modelo **solo con sintético** y se evalúa contra el *test real*, junto al mismo modelo entrenado con datos reales sobre ese mismo test — los **mismos dos algoritmos en las dos ramas**, para que la diferencia sea de los datos y no del modelo. Ratios actuales: **0,972-0,997**. **Privacidad** (`privacy`): distancia al registro real más cercano (DCR). La referencia **no es cero** — el propio test real también está cerca del train, así que se reportan las dos; el sintético queda **1,07-1,24x más lejos**. Las copias exactas se cuentan en el sintético *y* entre los reales, porque con datos gruesos (cardiovascular son enteros) las colisiones son normales: 2 de 54 392 sintéticas frente a 119 de 13 599 reales. El informe se **precomputa** en el pipeline (`build_quality_reports.py` → `data_curated/<enfermedad>/<enfermedad>_quality.json`) y la API lo sirve tal cual, así que producción no necesita `sdmetrics` (que arrastra torch). Solo lo recalcula si el JSON falta y la librería está instalada.
 
 ### Admin (dev-only): `GET /admin/verify` · `/admin/stats` · `/admin/predictions` · `/admin/export.csv`
-Protegidos por el header `X-Admin-Token`, que debe coincidir con la env var `ADMIN_TOKEN` (sin ella responden **503**; token incorrecto, **401**). No es auth de usuario — los usuarios nunca se loguean. Además: `Origin` no permitido → **403**, y más de `RATE_LIMIT_ADMIN_VERIFY` intentos de token por minuto y por IP → **429**.
+Protegidos por el header `X-Admin-Token`, que debe coincidir con la env var `ADMIN_TOKEN` (sin ella responden **503**; token incorrecto, **401**). No es auth de usuario — los usuarios nunca se loguean. Además: `Origin` no permitido → **403**, y más de `RATE_LIMIT_ADMIN_VERIFY` intentos de token **fallidos** por minuto y por IP, sumando los cuatro endpoints → **429** en todo el panel, también con el token bueno (si no, el acierto se distinguiría de los fallos). El uso con el token bueno no gasta ese cupo; cada endpoint tiene además su `RATE_LIMIT_ADMIN`.
 
 - `/admin/stats` — analítica **agregada y anónima**: totales, sesiones únicas, conteo/tasa de positivos/probabilidad media por enfermedad, histograma de probabilidades, timeline diario, uso por hora y features SHAP más frecuentes. Acepta `?from=YYYY-MM-DD&to=YYYY-MM-DD`.
 - `/admin/predictions?limit=&disease=&from=&to=` — simulaciones recientes. `limit` va de 1 a 500 (50 por defecto, también si llega ≤ 0: SQLite lee `LIMIT -1` como "sin límite").
@@ -325,4 +332,4 @@ chronic-risk-backend/
 - **Coherencia peso/IMC/cintura en hipertensión (auditoría externa, 2026-08).** Hipertensión pide `weight`, `bmi` y `waist_circumference` como 3 campos sueltos, sin altura ni validación cruzada entre ellos. En los datos reales están fuertemente correlacionados (r≈0,89-0,90); el LogReg ganador del bake-off aprendió, por colinealidad, un coeficiente **negativo** para `weight` (−0,37 — el único signo invertido entre las features con dirección clínica inequívoca: age +0,84, bmi +0,56, waist_circumference +0,29, high_cholesterol +0,37, diabetes +0,26, heart_disease +0,25). Con datos que covarían de forma realista el modelo predice bien (a más tamaño corporal, más riesgo); el síntoma solo aparece con combinaciones incoherentes (p.ej. cintura de 115 cm con IMC 19, o 180 kg con IMC 25), donde el riesgo puede **bajar** al subir el peso — y antes ningún aviso lo detectaba, porque `compute_support_warnings` mira una feature a la vez y cada campo, por separado, cae dentro de su rango individual. `_check_coherencia_corporal()` agrega un tercer chequeo: una altura implícita `sqrt(weight/bmi)` fuera de [1,30, 2,20] m, o un `bmi`/`waist_circumference` en combinación fisiológicamente casi imposible (IMC≤22 con cintura≥100cm, o IMC≥35 con cintura≤80cm). Igual que el resto de esta capa, **no toca la probabilidad**: agrega un nivel `incoherente` más a `support_warnings`. Ese nivel no trae `trained_range` (no hay un rango que citar: son varios campos que no cuadran entre sí), así que el frontend lo pinta aparte con su `detail` en `AvisoSoporte.jsx`; la primera versión asumía `trained_range` en todos los avisos y con un `incoherente` la página del simulador se rompía entera. **El what-if tenía el mismo problema sin que nadie escribiera nada raro (revisión 2026-10):** barrer el peso "con el resto igual" deja quieto el IMC, y con otro peso y el mismo IMC lo que cambia es la *estatura*, así que la curva contestaba "¿y si fuera más alto?" y **bajaba** (hombre de 55 años: 59% a 45 kg, 27% a 140 kg). El modelo no está mal —a igual IMC y cintura, más peso es más talla—; lo incoherente era la pregunta. `/whatif` barre ahora `weight` y `bmi` a talla fija (`_acople_talla_fija`): la misma persona pasa de 33% a 53% entre 45 y 140 kg, y los dos barridos cuentan la misma historia en vez de una opuesta. La cintura **no** se mueve (no hay relación exacta de la que derivarla), así que la curva se queda corta respecto a engordar de verdad. SHAP sigue mostrando el peso con signo negativo: explica el modelo tal cual es.
 - **Presión sistólica/diastólica invertida (auditoría externa 2026-08; corregido en la revisión 2026-10).** El 0,28% del sintético de cardiovascular (150 de 54 392 filas: 73 con `ap_hi < ap_lo` y 77 con las dos iguales) traía una diastólica igual o mayor que la sistólica, fisiológicamente imposible; en el real es 0%. Y `/predict` aceptaba la presión al revés (100/120) y devolvía un número como si nada. Las reglas de coherencia entre campos viven ahora en **`coherence.py`**, que comparten la API y el generador: `/predict` cardiovascular añade un aviso `incoherente` sobre `ap_lo` (sin tocar la probabilidad, igual que el de peso/IMC/cintura), y `curate_and_synthesize.py` descarta del pool del GAN toda fila que el simulador marcaría así, en las dos enfermedades. Solo descarta, no corrige: un "caso virtual" del laboratorio cargado en el simulador ya no puede disparar el aviso.
 - **Relaciones fuertes y pistas del sintético (revisión 2026-10).** CTGAN reproduce bien cada columna y mal las relaciones fuertes entre dos, y entrenar más no lo arregla (AUD-24). En hipertensión peso~IMC salía a 0,64 (real 0,89) y cintura~IMC a 0,71 (real 0,90), y de ahí 100 pacientes con una talla implícita de 0,94 a 2,59 m y 96 con menos de 75 kg y más de 115 cm de cintura (en el real, 0 y 1). Ahora no se le pide al GAN esa relación: modela la **talla** en vez del peso, que se deriva como IMC × talla², y el **residuo** de la cintura sobre una recta del IMC; las dos se recomponen al muestrear y se topan al rango real. Resultado: peso~IMC 0,92 y cintura~IMC 0,94 (un poco por encima del real) y 0 filas incoherentes. **Para contarlo bien:** esas correlaciones vienen en buena parte por construcción, no aprendidas; el GAN sigue aprendiendo la talla, el residuo y cómo se relacionan con el resto. La glucosa de diabetes **no** se reparametriza. Se probó sobre la HbA1c: su residuo se dispersa 6 veces más con la HbA1c alta que con la normal y el GAN lo aprende parejo, así que con la recta lineal el 1,7% del sintético quedaba clavado en 40 mg/dL. En log eso desaparece, pero en las dos variantes bajaba la parte de diabéticos entre quienes tienen glucosa ≥126 (39-48% frente a 56-68% sin residuo; real 72%) y solo subía el número de la correlación (0,67-0,71 frente a 0,36-0,52; real 0,83). Ojo al medirlo: con el mismo código, la forma de la glucosa varía entre corridas del GAN de **0,80 a 0,96** (SDMetrics), así que una corrida sola no sirve para comparar variantes. Aparte se quitaron dos pistas del juego "¿real o sintético?". El peso salía con dos decimales en el 90% de las filas porque **una** fila real de 4798 trae 62.87 y SDV toma el máximo de decimales que ve; ahora cada columna se redondea a los que usa el 99% del real. Y el pico de edad 80 de NHANES ("80 o más", el 5% del real) salía alisado al 1,6-2,3%: "estar en el tope" es ahora un estrato más al elegir filas del pool, así que, como las marginales categóricas, queda impuesto, no aprendido.
-- El engine de BD se construye desde **`DATABASE_URL`** (default `sqlite:///medical_history.db`); para Postgres en producción basta cambiar la env var, mismo código.
+- El engine de BD se construye desde **`DATABASE_URL`** (default: SQLite en `medical_history.db`, dentro de la carpeta del backend); para Postgres en producción basta cambiar la env var, mismo código.

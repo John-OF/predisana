@@ -133,6 +133,50 @@ def test_el_limite_es_por_ip(client, admin_headers, app_module):
     assert otra.status_code == 200
 
 
+RUTAS_ADMIN = ["/admin/verify", "/admin/stats", "/admin/predictions", "/admin/export.csv"]
+
+
+def test_fuerza_bruta_repartida_entre_endpoints_admin(client, app_module):
+    """Auditoria 2026-09: el limite estricto estaba solo en /admin/verify, pero los
+    otros tres endpoints tambien contestan 401 a un token malo, a 60/min cada uno:
+    190 intentos por minuto en vez de 10. Los fallos comparten ahora una cubeta."""
+    limite = int(app_module.RATE_LIMIT_ADMIN_VERIFY.split()[0])
+    ip = {"REMOTE_ADDR": "203.0.113.20"}
+    codigos = [
+        client.get(RUTAS_ADMIN[i % len(RUTAS_ADMIN)],
+                   headers={"X-Admin-Token": f"intento-{i}"}, environ_base=ip).status_code
+        for i in range(limite + len(RUTAS_ADMIN))
+    ]
+    assert codigos[:limite] == [401] * limite
+    assert codigos[limite:] == [429] * len(RUTAS_ADMIN)   # cortado en los cuatro
+
+
+def test_el_token_bueno_no_gasta_la_cubeta_de_fallos(client, admin_headers, app_module):
+    """El panel carga varios endpoints a la vez: con el token bueno solo cuenta el
+    limite de cada endpoint, no el cupo de intentos fallidos."""
+    limite = int(app_module.RATE_LIMIT_ADMIN_VERIFY.split()[0])
+    ip = {"REMOTE_ADDR": "203.0.113.21"}
+    codigos = {
+        client.get(RUTAS_ADMIN[i % len(RUTAS_ADMIN)], headers=admin_headers,
+                   environ_base=ip).status_code
+        for i in range(limite + 5)
+    }
+    assert codigos == {200}
+    assert client.get("/admin/stats", headers={"X-Admin-Token": "x"},
+                      environ_base=ip).status_code == 401
+
+
+def test_con_la_cubeta_agotada_tampoco_entra_el_token_bueno(client, admin_headers, app_module):
+    """Si el token bueno entrara estando bloqueado, el atacante distinguiria el
+    acierto (200) de los fallos (429) y seguiria probando al mismo ritmo."""
+    limite = int(app_module.RATE_LIMIT_ADMIN_VERIFY.split()[0])
+    ip = {"REMOTE_ADDR": "203.0.113.22"}
+    for i in range(limite):
+        client.get("/admin/stats", headers={"X-Admin-Token": f"intento-{i}"}, environ_base=ip)
+    assert client.get("/admin/stats", headers=admin_headers,
+                      environ_base=ip).status_code == 429
+
+
 def test_health_exento_del_limite(client, app_module):
     """Los monitores de uptime pinchan /health en bucle: un 429 ahi marcaria el
     deploy como caido."""

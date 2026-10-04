@@ -1,7 +1,8 @@
 # conftest.py — arranque de la suite.
 # `app.py` tiene side effects al importar (_load_all + init_db), asi que TODO el
 # entorno se prepara aqui ANTES de que cualquier test importe `app`:
-#   - cwd = carpeta del backend (las rutas de modelos/datos son relativas)
+#   - cwd = carpeta del backend (los tests leen data_curated/ y models/ con rutas
+#     relativas; la app no depende del cwd, ver test_la_app_arranca_desde_otra_carpeta)
 #   - DATABASE_URL -> SQLite temporal (los tests NUNCA tocan medical_history.db)
 #   - ADMIN_TOKEN de prueba (habilita los endpoints /admin/*)
 import os
@@ -25,8 +26,8 @@ os.environ["ADMIN_TOKEN"] = TEST_ADMIN_TOKEN
 
 # AUD-4: el rate limiting queda ACTIVO en los tests (los hooks del limiter se
 # registran al importar `app`, no se pueden encender despues), pero con cubetas
-# holgadas para que la suite no se auto-limite. El limite de /admin/verify se deja
-# bajo a proposito: es lo que `test_seguridad_cors_ratelimit.py` verifica, y cada
+# holgadas para que la suite no se auto-limite. El de tokens fallidos del admin se
+# deja bajo a proposito: es lo que `test_seguridad_cors_ratelimit.py` verifica, y cada
 # test usa su propia IP falsa (environ_base REMOTE_ADDR) para no pisarse.
 os.environ["RATE_LIMIT_DEFAULT"] = "100000 per hour"
 os.environ["RATE_LIMIT_PREDICT"] = "100000 per hour"

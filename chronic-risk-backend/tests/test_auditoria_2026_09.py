@@ -1,10 +1,14 @@
-"""Auditoria 2026-09 — hallazgos de severidad baja.
+"""Auditoria 2026-09 — hallazgos de severidad baja, y de la media /health + rutas.
 
 Cada test fija el comportamiento CORREGIDO. Los dos de severidad alta (JSON invalido
-con datos clinicos no finitos) viven en test_auditoria.py, junto a AUD-2.
+con datos clinicos no finitos) viven en test_auditoria.py, junto a AUD-2; la fuerza
+bruta del token repartida entre endpoints, en test_seguridad_cors_ratelimit.py.
 """
 import glob
+import json
 import os
+import subprocess
+import sys
 
 import pandas as pd
 import pytest
@@ -156,6 +160,73 @@ def test_health_no_consulta_la_bd_en_cada_peticion(client, app_module, monkeypat
     assert codigos == {200}
     assert len(conexiones) == 1
     app_module._health_db["checked_at"] = None
+
+
+# ---------- /health sin modelos (severidad media) ----------
+
+def test_health_sin_modelos_responde_503(client, app_module, monkeypatch):
+    """Antes: 200 "ok" con models_loaded vacio. El deploy se daba por sano mientras
+    todos los /predict respondian 500."""
+    monkeypatch.setattr(app_module, "MODELS", {})
+    r = client.get("/health")
+    assert r.status_code == 503
+    d = r.get_json()
+    assert d["status"] == "degraded"
+    assert d["database_ok"] is True
+    assert d["models_missing"] == ["cardiovascular", "diabetes", "diabetes_glucosa",
+                                   "hipertension"]
+
+
+def test_health_sin_la_variante_con_glucosa_responde_503(client, app_module, monkeypatch):
+    """Sin la variante, /predict de diabetes sigue respondiendo con el modelo base e
+    ignora la glucosa en silencio: tambien es un deploy roto."""
+    monkeypatch.delitem(app_module.MODELS, "diabetes_glucosa")
+    r = client.get("/health")
+    assert r.status_code == 503
+    assert r.get_json()["models_missing"] == ["diabetes_glucosa"]
+
+
+# ---------- Rutas ancladas a la carpeta del backend (severidad media) ----------
+
+_ARRANQUE = r"""
+import json, sys
+sys.path.insert(0, sys.argv[1])
+import app
+c = app.app.test_client()
+salud = c.get("/health")
+print(json.dumps({
+    "health": [salud.status_code, salud.get_json()],
+    "shap": sorted(app.EXPLAINERS),
+    "support": sorted(app.SUPPORT),
+    "prevalence": sorted(app.PREVALENCE),
+    "sample": c.get("/sample/diabetes?source=real").status_code,
+    "synthetic": c.get("/sample/diabetes?source=synthetic").status_code,
+    "distribution": c.get("/distribution/diabetes?feature=age").status_code,
+    "quality": c.get("/synthetic_quality/diabetes").status_code,
+}))
+"""
+
+
+def test_la_app_arranca_desde_otra_carpeta(app_module, tmp_path):
+    """Las rutas eran relativas al directorio de trabajo. Arrancada desde otra carpeta
+    (la raiz del repo, o un deploy sin `--chdir`), la app levantaba sin ningun
+    modelo ni datos, /predict daba 500 y /health decia "ok"."""
+    backend = os.path.dirname(os.path.abspath(app_module.__file__))
+    env = {**os.environ,
+           "DATABASE_URL": "sqlite:///" + str(tmp_path / "otra.db").replace(os.sep, "/")}
+    salida = subprocess.run(
+        [sys.executable, "-c", _ARRANQUE, backend], cwd=tmp_path, env=env,
+        capture_output=True, encoding="utf-8", errors="replace", timeout=180,
+    )
+    assert salida.returncode == 0, salida.stderr[-2000:]
+    r = json.loads(salida.stdout.strip().splitlines()[-1])
+    codigo, salud = r["health"]
+    assert codigo == 200 and salud["status"] == "ok"
+    assert salud["models_missing"] == []
+    modelos = ["cardiovascular", "diabetes", "diabetes_glucosa", "hipertension"]
+    assert salud["models_loaded"] == r["shap"] == modelos   # SHAP lee el fondo de data_curated
+    assert r["support"] == r["prevalence"] == ["cardiovascular", "diabetes", "hipertension"]
+    assert (r["sample"], r["synthetic"], r["distribution"], r["quality"]) == (200, 200, 200, 200)
 
 
 # ---------- Tope de edad de NHANES (80 = "80 o mas") ----------

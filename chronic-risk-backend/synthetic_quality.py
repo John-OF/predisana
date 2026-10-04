@@ -15,7 +15,8 @@ import os
 
 import pandas as pd
 
-CURATED_DIR = "data_curated"
+# Anclada a esta carpeta: la API puede arrancar desde otro directorio de trabajo.
+CURATED_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data_curated")
 
 # Variables continuas por enfermedad para el heatmap de correlaciones.
 CORR_FEATURES = {

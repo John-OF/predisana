@@ -165,6 +165,7 @@ def test_health_reporta_estado_real_de_la_bd(client):
     assert d["database_ok"] is True
     assert d["database"] == "sqlite"          # el motor real, no un string fijo
     assert "diabetes" in d["models_loaded"]
+    assert d["models_missing"] == []
 
 
 # ---------- AUD-7: solo se persiste lo que el modelo usa ----------
