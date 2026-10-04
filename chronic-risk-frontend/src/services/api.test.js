@@ -67,5 +67,24 @@ describe('predictRisk', () => {
     expect(ruta).toBe('/predict/diabetes');
     expect(cuerpo).toEqual({ age: 40 });
     expect(config.headers['X-Session-Id']).toBe(api.getSessionId());
+    // Una simulacion del usuario se registra: no lleva la marca de sintetico.
+    expect(config.params).toBeUndefined();
+  });
+});
+
+describe('evaluateSyntheticCase', () => {
+  it('marca el paciente del laboratorio con ?source=synthetic', async () => {
+    // Auditoria 2026-09: sin la marca, el backend lo guardaba como una simulacion mas
+    // y la analitica del admin mezclaba pacientes del GAN con usuarios.
+    const api = await importarApi();
+    const espia = vi.fn().mockResolvedValue({ data: {} });
+    api.default.post = espia;
+
+    await api.evaluateSyntheticCase('cardiovascular', { age: 50 });
+
+    const [ruta, cuerpo, config] = espia.mock.calls[0];
+    expect(ruta).toBe('/predict/cardiovascular');
+    expect(cuerpo).toEqual({ age: 50 });
+    expect(config.params).toEqual({ source: 'synthetic' });
   });
 });

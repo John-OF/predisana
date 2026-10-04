@@ -1274,13 +1274,18 @@ def predict(disease: str):
     support_warnings += _check_coherencia_corporal(model_key, payload)
 
     used_glucose = model_key == DIABETES_GLUCOSE_KEY
-    log_prediction_to_db(
-        disease, _loggable_payload(model_key, payload), pred_class, prob,
-        model_name=MODEL_NAMES.get(model_key),
-        clinical_note=clinical_note,
-        top_features=top_features,
-        session_id=_clean_session_id(request.headers.get("X-Session-Id")),
-    )
+    # Los pacientes del GAN que evalua el laboratorio (Proyecto.jsx) no son simulaciones
+    # de nadie: antes se guardaban igual y la analitica del admin los contaba como uso
+    # real. Llegan con ?source=synthetic (como en /sample) y, igual que /whatif, no se
+    # registran.
+    if (request.args.get("source") or "").lower() != "synthetic":
+        log_prediction_to_db(
+            disease, _loggable_payload(model_key, payload), pred_class, prob,
+            model_name=MODEL_NAMES.get(model_key),
+            clinical_note=clinical_note,
+            top_features=top_features,
+            session_id=_clean_session_id(request.headers.get("X-Session-Id")),
+        )
 
     return jsonify({
         "disease": disease,

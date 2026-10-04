@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Container, Row, Col, Card, Button, Table, Badge, Accordion, Spinner, Tabs, Tab } from 'react-bootstrap';
-import { getSyntheticCase, getMetrics, predictRisk, getSampleCase, getDistribution, getSyntheticQuality } from '../services/api';
+import { getSyntheticCase, getMetrics, evaluateSyntheticCase, getSampleCase, getDistribution, getSyntheticQuality } from '../services/api';
 import { getLabel } from '../utils/translations';
 import { riskBand } from '../utils/riskBand';
 import { Droplet, HeartPulse, Heart, Eyedropper, Robot, Lightbulb, Magic, Stars, BarChartLineFill, ArrowRight, TrophyFill, CpuFill, ArrowUpShort, ArrowDownShort, ArrowRepeat, PatchQuestion, ClipboardCheck, ClipboardPulse, CodeSlash, Window, Github, PersonBadge } from 'react-bootstrap-icons';
@@ -195,11 +195,12 @@ const Proyecto = () => {
     };
 
     // Bucle: el paciente sintético se pasa por el modelo (cierra CTGAN → modelo → SHAP).
+    // No se registra en la BD: no es una simulación de un usuario.
     const evaluateSynthetic = async () => {
         if (!syntheticData) return;
         setPredicting(true);
         try {
-            const { data } = await predictRisk(syntheticData._disease, stripMeta(syntheticData));
+            const { data } = await evaluateSyntheticCase(syntheticData._disease, stripMeta(syntheticData));
             setPrediction(data);
         } catch (err) {
             console.error('Error evaluando paciente:', err);

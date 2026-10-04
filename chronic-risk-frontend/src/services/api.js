@@ -33,6 +33,12 @@ export const getMetrics = (disease) => api.get(`/metrics/${disease}`);
 export const predictRisk = (disease, data) =>
     api.post(`/predict/${disease}`, data, { headers: { 'X-Session-Id': getSessionId() } });
 
+// Paciente sintético del laboratorio por el mismo modelo. Con ?source=synthetic el
+// backend NO lo registra: no es una simulación de nadie y mezclaría la analítica del
+// admin con datos del GAN.
+export const evaluateSyntheticCase = (disease, data) =>
+    api.post(`/predict/${disease}`, data, { params: { source: 'synthetic' } });
+
 // Análisis contrafactual: barre una feature sobre un rango y devuelve la curva de
 // riesgo (probabilidad calibrada). NO se registra en la BD.
 export const getWhatIf = (disease, { base, feature, min, max, steps = 25 }) =>

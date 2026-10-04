@@ -42,6 +42,23 @@ def test_predict_se_loguea_y_admin_lo_lista(client, admin_headers, perfil_diabet
     assert isinstance(ultimo["input_data"], dict)
 
 
+def test_paciente_sintetico_del_laboratorio_no_se_registra(client, app_module, perfil_diabetes):
+    """Auditoria 2026-09: el laboratorio (Proyecto.jsx) evaluaba pacientes del GAN con
+    /predict y quedaban guardados como simulaciones de usuarios, mezclados en la
+    analitica del admin. Con ?source=synthetic se evaluan igual pero no se guardan."""
+    def filas():
+        with app_module.SessionLocal() as s:
+            return s.query(app_module.Prediction).count()
+
+    antes = filas()
+    sintetico = client.post("/predict/diabetes?source=synthetic", json=perfil_diabetes)
+    assert sintetico.status_code == 200
+    assert filas() == antes
+    usuario = client.post("/predict/diabetes", json=perfil_diabetes)
+    assert filas() == antes + 1
+    assert sintetico.get_json()["probability"] == usuario.get_json()["probability"]
+
+
 def test_admin_stats_agrega_coherente(client, admin_headers):
     r = client.get("/admin/stats", headers=admin_headers)
     assert r.status_code == 200

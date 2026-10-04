@@ -50,7 +50,7 @@ npm run dev       # Vite dev server con HMR (http://localhost:5173)
 npm run build     # build de producción en dist/
 npm run preview   # sirve el build localmente para probarlo
 npm run lint      # ESLint sobre todo el proyecto
-npm test          # Vitest (31 tests, ~2 s)
+npm test          # Vitest (32 tests, ~2 s)
 npm run test:watch  # los mismos, en modo watch
 ```
 
@@ -59,7 +59,7 @@ npm run test:watch  # los mismos, en modo watch
 
 ## Tests
 
-**31 tests con Vitest + Testing Library** (`npm test`), sobre las cosas del front que
+**32 tests con Vitest + Testing Library** (`npm test`), sobre las cosas del front que
 tienen lógica de verdad:
 
 - **`ErrorBoundary`** — que un fallo de render muestre una salida en vez de dejar la
@@ -71,7 +71,8 @@ tienen lógica de verdad:
   uno por petición, la analítica del admin contaría una sesión por click), que
   sobreviva al saneo del backend (`[A-Za-z0-9_-]`, 64 chars, AUD-8) y que haya
   fallback sin `crypto.randomUUID`. Más que `predictRisk` mande la cabecera
-  `X-Session-Id`.
+  `X-Session-Id` y que `evaluateSyntheticCase` marque al paciente del laboratorio con
+  `?source=synthetic`, para que no cuente como una simulación.
 - **Contrato de etiquetas** — lee los `*_features.json` del **backend** y exige que
   ninguna feature servida llegue a la UI sin etiqueta en español. Es el fallo
   silencioso que apareció al migrar hipertensión a NHANES: cambia el esquema y algo
@@ -141,6 +142,8 @@ Cliente axios con base URL = `VITE_API_URL`. Expone:
 
 **Laboratorio sintético (página Proyecto)**
 - `getSyntheticCase(disease)` → `GET /synthetic/<disease>`
+- `evaluateSyntheticCase(disease, payload)` → `POST /predict/<disease>?source=synthetic`
+  (el paciente sintético por el modelo; el backend NO lo registra en la BD)
 - `getSampleCase(disease, source)` → `GET /sample/<disease>?source=real|synthetic`
 - `getDistribution(disease, feature, bins)` → `GET /distribution/<disease>`
 - `getSyntheticQuality(disease)` → `GET /synthetic_quality/<disease>`

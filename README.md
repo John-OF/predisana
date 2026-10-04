@@ -95,7 +95,7 @@ las probabilidades (calibración isotónica con curva de fiabilidad).
   el tramo sin respaldo.
 - **Capa de datos agnóstica al motor** (SQLAlchemy): SQLite en dev, Postgres en
   producción cambiando solo `DATABASE_URL`.
-- **318 tests de pytest** sobre los invariantes delicados: ruteo híbrido, alias de
+- **319 tests de pytest** sobre los invariantes delicados: ruteo híbrido, alias de
   features, monotonía riesgo↔glucosa, calibración, capa clínica y auth del admin.
 
 ## Arquitectura
@@ -151,7 +151,7 @@ python app.py                     # http://localhost:8000
 ```powershell
 npm install
 npm run dev              # Vite dev server (http://localhost:5173)
-npm test                 # 31 tests de Vitest (~2 s)
+npm test                 # 32 tests de Vitest (~2 s)
 ```
 
 El frontend lee `VITE_API_URL` (por defecto `http://localhost:8000`). El panel
@@ -160,7 +160,7 @@ admin requiere definir la variable de entorno `ADMIN_TOKEN` en el backend.
 **Tests del backend:**
 ```powershell
 pip install -r requirements-dev.txt
-python -m pytest         # 318 tests, ~8 s (BD temporal, no toca la de dev)
+python -m pytest         # 319 tests, ~8 s (BD temporal, no toca la de dev)
 ```
 
 **CI:** cada push y pull request a `main` corre en GitHub Actions la suite de pytest
