@@ -177,7 +177,8 @@ def _isotonica(x, y) -> IsotonicRegression:
 
 
 def fit_calibrator(oof_proba, y) -> IsotonicRegression:
-    """Isotonica sobre las predicciones out-of-fold, SIN escalones extremos puros.
+    """Isotonica centrada sobre las predicciones out-of-fold, sin escalones extremos
+    puros.
 
     La isotonica a secas termina siempre en 0.0 y en 1.0: su primer escalon son los
     scores mas bajos hasta el primer enfermo (todos sanos -> 0%) y el ultimo, los mas
@@ -188,8 +189,17 @@ def fit_calibrator(oof_proba, y) -> IsotonicRegression:
 
     Cada escalon extremo puro se funde con su vecino y el conjunto toma la tasa real
     de los dos juntos (en diabetes, 1 de 1 + 5 de 10 -> 6 de 11 = 54,5%). Sin
-    parametros que elegir, el resto de la curva no se toca y sigue siendo monotona;
-    el Brier en test no se mueve (cambia en el cuarto decimal)."""
+    parametros que elegir, el resto de los escalones no se toca y la curva sigue
+    siendo monotona; el Brier en test no se mueve (cambia en el cuarto decimal).
+
+    La curva final no es de escalones: une con rectas el centro de cada escalon (la
+    media de sus scores) con su nivel, que es la isotonica centrada (Oron y Flournoy,
+    2017). Con escalones el what-if subia a saltos: entre el 30% y el 56% de los pasos
+    de un barrido el modelo se movia y la probabilidad no, y en diabetes con glucosa
+    un crudo de 0,868 daba 33% y uno de 0,870, 57%. Cada escalon conserva su nivel en
+    su centro, los extremos son los mismos (por fuera del primer y el ultimo centro la
+    curva se queda en el nivel del borde) y el Brier en test no empeora en ningun
+    modelo (hipertension 0,1737 -> 0,1733; los otros tres, igual)."""
     oof_proba = np.asarray(oof_proba, dtype=float)
     y = np.asarray(y, dtype=float)
     ajustado = _isotonica(oof_proba, y).predict(oof_proba)
@@ -200,15 +210,13 @@ def fit_calibrator(oof_proba, y) -> IsotonicRegression:
         vecino = niveles[1] if lado == 0 else niveles[-2]
         fundidos = (ajustado == niveles[lado]) | (ajustado == vecino)
         ajustado[fundidos] = y[fundidos].mean()
-    # El calibrador final se ajusta sobre los dos bordes de cada escalon, que ya son
-    # monotonos: reproduce esa curva exacta. Reajustar sobre todos los puntos no vale,
-    # porque al promediar miles de valores iguales el redondeo parte cada escalon en
-    # varios casi identicos.
-    orden = np.argsort(oof_proba, kind="stable")
-    x, nivel = oof_proba[orden], ajustado[orden]
-    cambia = nivel[1:] != nivel[:-1]
-    borde = np.r_[True, cambia] | np.r_[cambia, True]
-    return _isotonica(x[borde], nivel[borde])
+    # Un punto por escalon: su nivel en la media de sus scores. Los escalones son
+    # tramos contiguos de score con niveles crecientes, asi que los centros tambien
+    # crecen y la isotonica sobre esos puntos los reproduce tal cual; predict une
+    # cada par con una recta.
+    niveles, escalon = np.unique(ajustado, return_inverse=True)
+    centros = np.bincount(escalon, weights=oof_proba) / np.bincount(escalon)
+    return _isotonica(centros, niveles)
 
 
 def load_split_or_fallback(name: str):

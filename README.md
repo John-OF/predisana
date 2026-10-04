@@ -72,10 +72,11 @@ las probabilidades (calibración isotónica con curva de fiabilidad).
   usuario aporte.
 - **Selección de modelos por CV**: por enfermedad compiten LogReg / RandomForest /
   LightGBM; se sirve el ganador y se publica el leaderboard completo.
-- **Probabilidades calibradas**: isotónica out-of-fold por modelo (Brier de
+- **Probabilidades calibradas**: isotónica centrada out-of-fold por modelo (Brier de
   diabetes 0.187 → 0.100; la variante con glucosa 0.111 → 0.071), sin escalones
   extremos: ningún resultado vale 0% ni 100%, porque ningún grupo de personas del
-  entrenamiento permite afirmar certeza. La API devuelve
+  entrenamiento permite afirmar certeza. Tampoco hay mesetas: la curva une con rectas
+  el centro de cada escalón, así que el what-if ya no sube a saltos. La API devuelve
   la probabilidad calibrada y la cruda, y SHAP explica la cruda — todo etiquetado.
 - **Bandas de riesgo por enfermedad**: "bajo" es quedar por debajo de la media de
   los datos y "alto", al menos el doble, con los tercios (33% / 66%) como tope. En
@@ -102,7 +103,7 @@ las probabilidades (calibración isotónica con curva de fiabilidad).
   el tramo sin respaldo.
 - **Capa de datos agnóstica al motor** (SQLAlchemy): SQLite en dev, Postgres en
   producción cambiando solo `DATABASE_URL`.
-- **334 tests de pytest** sobre los invariantes delicados: ruteo híbrido, alias de
+- **337 tests de pytest** sobre los invariantes delicados: ruteo híbrido, alias de
   features, monotonía riesgo↔glucosa, calibración, capa clínica y auth del admin.
 
 ## Arquitectura
@@ -167,7 +168,7 @@ admin requiere definir la variable de entorno `ADMIN_TOKEN` en el backend.
 **Tests del backend:**
 ```powershell
 pip install -r requirements-dev.txt
-python -m pytest         # 334 tests, ~8 s (BD temporal, no toca la de dev)
+python -m pytest         # 337 tests, ~8 s (BD temporal, no toca la de dev)
 ```
 
 **CI:** cada push y pull request a `main` corre en GitHub Actions la suite de pytest
