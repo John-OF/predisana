@@ -23,8 +23,8 @@
     },
     {
       "model": "logreg",
-      "cv_auc_mean": 0.7921159333048516,
-      "cv_auc_std": 0.00239711028712821
+      "cv_auc_mean": 0.7915214401235103,
+      "cv_auc_std": 0.0026567454271520918
     },
     {
       "model": "random_forest",

@@ -377,7 +377,7 @@ const Simulacion = () => {
     Swal.fire({
       icon: 'success',
       title: 'Escenario base fijado',
-      text: 'Ahora modifica las variables (ej. baja el peso) y vuelve a calcular.',
+      text: 'Ahora modifica las variables (ej. baja el IMC) y vuelve a calcular.',
     });
   };
 
@@ -619,8 +619,9 @@ const Simulacion = () => {
                 : ' Ahí la curva es una extrapolación.'}
             </p>
           )}
-          {/* Sin esto la curva de peso bajaba: con el IMC quieto, mas peso es mas
-              estatura. El backend mueve los dos a la vez y lo declara en `coupled`. */}
+          {/* Sin esto la curva de peso contestaba otra pregunta: con el IMC quieto, mas
+              peso es mas estatura. El backend mueve los dos a la vez y lo declara en
+              `coupled`. */}
           {whatIf.coupled && (
             <p className="text-secondary small mt-2 mb-0">
               Peso e IMC se mueven juntos: la curva mantiene tu talla
@@ -726,7 +727,7 @@ const Simulacion = () => {
 
               {baseResult && (
                 <Alert variant="info" className="py-2 mb-4">
-                  <small><strong>Modo comparación:</strong> modifica los valores (ej. reduce el peso) y recalcula para ver el impacto.</small>
+                  <small><strong>Modo comparación:</strong> modifica los valores (ej. reduce el IMC) y recalcula para ver el impacto.</small>
                 </Alert>
               )}
 

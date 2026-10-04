@@ -41,6 +41,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 import coherence
+import monotonic_logreg  # noqa: F401  el pipeline de hipertension la referencia al cargarse
 import synthetic_quality as sq
 from risk_banding import band_cutoffs, band_of
 
@@ -850,10 +851,11 @@ def risk_band(key: str, prob: float) -> str:
 
 # WHAT-IF A TALLA FIJA (revision 2026-10). Barrer el peso "con el resto igual" deja
 # quieto el IMC, y con otro peso y el mismo IMC lo que cambia es la ESTATURA: la curva
-# contestaba "y si fuera mas alto", no "y si pesara mas", y por el coeficiente negativo
-# de weight BAJABA (hombre de 55: 59% a 45 kg, 27% a 140 kg). Barrer el IMC con el peso
-# quieto es lo mismo al reves: una persona cada vez mas baja. El modelo no esta mal
-# —a igual IMC y cintura, mas peso es mas talla—, lo incoherente era la pregunta.
+# contestaba "y si fuera mas alto", no "y si pesara mas". Con el coeficiente negativo
+# que tenia weight BAJABA (hombre de 55: 59% a 45 kg, 27% a 140 kg); desde que la LogReg
+# respeta las restricciones de monotonia el peso pesa cero y saldria plana, que tampoco
+# contesta la pregunta. Barrer el IMC con el peso quieto es lo mismo al reves: una
+# persona cada vez mas baja.
 # La talla no se pide, pero sale de lo que el usuario ya dio (peso / IMC = talla^2):
 # se deja fija y, al barrer uno de los dos, el otro lo sigue. La cintura NO se mueve:
 # no hay una relacion exacta de la que derivarla, asi que la curva se queda corta.

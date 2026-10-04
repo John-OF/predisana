@@ -88,6 +88,13 @@ las probabilidades (calibración isotónica con curva de fiabilidad).
   protegen. Con restricciones de monotonía ya no pueden bajar el riesgo; como los
   datos no dan señal en el sentido clínico su efecto queda en cero, y la capa
   clínica se lo dice a quien los marca. Coste: AUC de test 0.7943 → 0.7936.
+- **Más peso no baja el riesgo**: en hipertensión, con el mismo IMC y la misma
+  cintura, más peso es más estatura, y la LogReg aprendía que eso protege: un
+  hombre de 50 años con IMC 30 daba 26,7% con 70 kg y 13,0% con 100 kg, y SHAP
+  marcaba el peso como protector a casi 2 de cada 3 personas con obesidad. Las
+  restricciones de monotonía, que solo llegaban a LightGBM, ahora se aplican
+  también a la LogReg: el peso actúa a través del IMC y la cintura. Coste: AUC de test
+  0.8037 → 0.8027.
 - **Aviso de cobertura de datos**: un modelo da un número igual de firme para una
   edad que vio 5000 veces que para una que no vio nunca (cardiovascular se entrenó
   con 29.7-64.9 años y el formulario acepta 18-100). `/predict` marca esas entradas
@@ -95,7 +102,7 @@ las probabilidades (calibración isotónica con curva de fiabilidad).
   el tramo sin respaldo.
 - **Capa de datos agnóstica al motor** (SQLAlchemy): SQLite en dev, Postgres en
   producción cambiando solo `DATABASE_URL`.
-- **319 tests de pytest** sobre los invariantes delicados: ruteo híbrido, alias de
+- **329 tests de pytest** sobre los invariantes delicados: ruteo híbrido, alias de
   features, monotonía riesgo↔glucosa, calibración, capa clínica y auth del admin.
 
 ## Arquitectura
@@ -160,7 +167,7 @@ admin requiere definir la variable de entorno `ADMIN_TOKEN` en el backend.
 **Tests del backend:**
 ```powershell
 pip install -r requirements-dev.txt
-python -m pytest         # 319 tests, ~8 s (BD temporal, no toca la de dev)
+python -m pytest         # 329 tests, ~8 s (BD temporal, no toca la de dev)
 ```
 
 **CI:** cada push y pull request a `main` corre en GitHub Actions la suite de pytest

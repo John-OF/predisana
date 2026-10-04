@@ -15,7 +15,6 @@ import pandas as pd
 
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
-from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.isotonic import IsotonicRegression
 from sklearn.calibration import calibration_curve
@@ -27,6 +26,7 @@ from joblib import dump
 
 from lightgbm import LGBMClassifier
 
+from monotonic_logreg import MonotonicLogisticRegression
 from risk_banding import band_report
 
 PROCESSED_DIR = "data_processed"
@@ -65,9 +65,9 @@ DROP_NON_RESPONDABLE = {
 # creciente elimina el pozo de raiz y hace que el modelo respete la fisiologia:
 # a mas glucosa/edad/IMC/presion, el riesgo NUNCA puede bajar. Coste de AUC minimo.
 # Solo se listan features cuyo signo clinico es INEQUIVOCO; las de signo ambiguo
-# (sexo, tabaquismo en diabetes/hipertension) se dejan libres (0). Aplica solo al
-# candidato LightGBM (RandomForest de sklearn no soporta monotone_constraints;
-# LogReg ya es monotona por construccion).
+# (sexo, tabaquismo en diabetes/hipertension) se dejan libres (0). Aplica a LightGBM
+# y a la LogReg (MonotonicLogisticRegression); RandomForest de sklearn no soporta
+# monotone_constraints.
 # OJO: la entrada "diabetes" se QUEDA aunque diabetes no este en DATASETS —
 # train_nhanes_diabetes.py llama build_models("diabetes", features) y depende de
 # este vector para la monotonia de ambas variantes del hibrido.
@@ -83,6 +83,16 @@ DROP_NON_RESPONDABLE = {
 # lo que paso con fumar y beber (app.py lo avisa en la capa clinica). El sedentarismo
 # si pesa: +4,0 puntos de media. Coste medido: AUC de CV 0,7996 -> 0,7993 y de test
 # 0,7943 -> 0,7936; LightGBM sigue ganando el bake-off (LogReg 0,7921).
+#
+# Peso en hipertension (revision 2026-10). La LogReg no recibia estas restricciones:
+# se daba por hecho que "ya es monotona por construccion", y lo es, pero en el sentido
+# que diga el dato. Gano el bake-off con el peso en -0,0167 por kg: a igual IMC y
+# cintura, mas peso es mas talla, y el modelo lo premiaba. Un hombre de 50 con IMC 30
+# y cintura 100 daba 26,7% con 70 kg y 13,0% con 100 kg, y el SHAP ponia el peso en
+# "lo reduce" al 63% de la gente con obesidad del test. Ahora la LogReg tambien las
+# respeta (monotonic_logreg.py) y el peso queda en cero: su efecto llega por el IMC y
+# la cintura. Coste medido: AUC de CV 0,8181 -> 0,8172 y de test 0,8037 -> 0,8027; la
+# LogReg sigue ganando el bake-off (LightGBM 0,8124).
 MONOTONIC_INCREASING = {
     "diabetes": ["blood_glucose_level", "hba1c_level", "age", "bmi",
                  "hypertension", "heart_disease"],
@@ -97,9 +107,9 @@ MONOTONIC_DECREASING = {
 
 
 def _monotone_vector(disease: str, features):
-    """Vector de restricciones {-1,0,1} alineado al orden de `features` para LightGBM.
-    +1 = la prediccion no puede decrecer al crecer esa feature; -1 = no puede crecer;
-    0 = sin restriccion.
+    """Vector de restricciones {-1,0,1} alineado al orden de `features` para LightGBM
+    y la LogReg. +1 = la prediccion no puede decrecer al crecer esa feature; -1 = no
+    puede crecer; 0 = sin restriccion.
     El StandardScaler(with_mean=False) divide por una desviacion positiva, asi que
     preserva la direccion: monotonia en la feature escalada == monotonia en la cruda."""
     inc = set(MONOTONIC_INCREASING.get(disease, []))
@@ -132,18 +142,22 @@ def build_models(disease: str = None, features=None) -> dict:
     Pipeline con los pasos 'scaler' + 'clf' (nombres load-bearing para el SHAP
     de app.py). El StandardScaler(with_mean=False) es inocuo para los arboles.
 
-    Si se pasan `disease` + `features`, el LightGBM recibe el vector de monotonia
-    de esa enfermedad (ver MONOTONIC_INCREASING); sin ellos queda sin restringir."""
+    Si se pasan `disease` + `features`, el LightGBM y la LogReg reciben el vector de
+    monotonia de esa enfermedad (ver MONOTONIC_INCREASING); sin ellos quedan sin
+    restringir."""
     lgbm_kwargs = dict(
         n_estimators=400, class_weight="balanced",
         random_state=SEED, n_jobs=-1, verbose=-1)
+    restricciones = None
     if disease is not None and features is not None:
-        lgbm_kwargs["monotone_constraints"] = _monotone_vector(disease, features)
+        restricciones = _monotone_vector(disease, features)
+        lgbm_kwargs["monotone_constraints"] = restricciones
 
     return {
         "logreg": Pipeline([
             ("scaler", StandardScaler(with_mean=False)),
-            ("clf", LogisticRegression(max_iter=2000, class_weight="balanced")),
+            ("clf", MonotonicLogisticRegression(
+                restricciones, max_iter=2000, class_weight="balanced")),
         ]),
         "random_forest": Pipeline([
             ("scaler", StandardScaler(with_mean=False)),
