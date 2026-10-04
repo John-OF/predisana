@@ -117,7 +117,7 @@ const VARIABLE_DESCRIPTIONS = {
   hypertension: "Indica si ya has sido diagnosticado previamente con presión alta.",
   diabetes: "Indica si un médico te ha dicho alguna vez que tienes diabetes.",
   high_cholesterol: "Indica si un médico te ha dicho alguna vez que tienes el colesterol alto.",
-  weight: "Tu peso corporal en kilogramos.",
+  weight: "Tu peso en kilogramos. El modelo lo tiene en cuenta a través del IMC: si cambias el peso, actualiza también el IMC.",
   waist_circumference: "Contorno de cintura en cm. Refleja la grasa abdominal, clave en el riesgo metabólico.",
   ap_hi: "Presión sistólica (la 'alta'): el primer número al medir la presión.",
   ap_lo: "Presión diastólica (la 'baja'): el segundo número al medir la presión.",

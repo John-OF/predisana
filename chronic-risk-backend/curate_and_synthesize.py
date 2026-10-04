@@ -1,6 +1,7 @@
 # curate_and_synthesize.py
 import os
 import math
+import random
 import argparse
 import numpy as np
 import pandas as pd
@@ -463,7 +464,16 @@ def fit_and_sample_sdv(train_df, model, synth_multiplier, seed, epochs, max_trai
     if not SDV_AVAILABLE:
         raise RuntimeError("SDV no disponible. Revisa instalación.")
 
+    # CTGAN inicializa los pesos, el dropout y el ruido con el RNG de torch, y solo se
+    # fijaba el de numpy: dos corridas con la misma semilla daban GANs distintos (en
+    # diabetes, la forma de la glucosa iba de 0,80 a 0,96 en SDMetrics). Ahora la misma
+    # semilla da el mismo sintetico. La varianza entre semillas sigue ahi: para comparar
+    # variantes del GAN hacen falta varias. torch se importa aqui porque los tests cargan
+    # este modulo en un entorno sin SDV ni torch (CI).
+    import torch
+    random.seed(seed)
     np.random.seed(seed)
+    torch.manual_seed(seed)
     df = _sanitize_for_sdv(train_df)
     # Peso -> talla y residuos de los pares fuertes: el GAN no ve esas columnas.
     df, plan_gan = _al_espacio_del_gan(df)

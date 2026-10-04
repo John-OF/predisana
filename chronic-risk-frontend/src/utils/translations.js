@@ -2,7 +2,7 @@ export const LABELS_ES = {
     // Generales
     age: "Edad",
     gender: "Género",
-    bmi: "Índice de Masa Corporal (BMI)",
+    bmi: "Índice de Masa Corporal (IMC)",
     smoking_history: "Historial de Tabaquismo",
     
     // Clínicos
