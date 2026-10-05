@@ -77,7 +77,7 @@ BATCH_SIZE_CTGAN = 500  # el default de SDV; si se cambia alli, cambiarlo aqui
 # ruido del GAN. 30k pasos cuesta el doble de tiempo y no da nada por encima de eso.
 #
 # La v1 dejaba cardiovascular en 5500 pasos: era el dataset de Kaggle (55k filas) y su
-# unica corrida a 15k puntuo peor. Desde la v2 las tres enfermedades salen de NHANES,
+# unica corrida a 15k puntuo peor. Desde la v2 todas las enfermedades salen de NHANES,
 # con tamanos parecidos, asi que todas usan los 15k. Solo mover esto con medicion.
 PASOS_POR_DATASET: Dict[str, int] = {}
 

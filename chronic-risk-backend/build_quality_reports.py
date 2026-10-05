@@ -6,15 +6,16 @@
 # sintetico. El API sirve estos JSON tal cual, asi que produccion no necesita
 # sdmetrics/sdv (que arrastran torch, ~479 MB) — ver AUD-17.
 #
-#   python build_quality_reports.py                 # las tres enfermedades
+#   python build_quality_reports.py                 # todas las enfermedades
 #   python build_quality_reports.py --only diabetes
 import argparse
 import json
 import os
 
+import modos as M
 import synthetic_quality as sq
 
-DISEASES = ["diabetes", "hipertension", "cardiovascular"]
+DISEASES = list(M.ENFERMEDADES)
 
 
 def main():

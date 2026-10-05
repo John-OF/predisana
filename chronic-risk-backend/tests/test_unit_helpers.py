@@ -11,7 +11,7 @@ def test_clave_y_partes_son_inversas(app_module):
 
 def test_hay_un_modelo_por_enfermedad_y_modo(app_module):
     assert sorted(app_module.CLAVES) == sorted(app_module.MODELS)
-    assert len(app_module.CLAVES) == 6
+    assert len(app_module.CLAVES) == len(app_module.ENFERMEDADES) * len(app_module.MODOS)
 
 
 # ---------- el IMC del simplificado sale del peso y la talla ----------
@@ -103,6 +103,41 @@ def test_flags_presion_con_la_diastolica(app_module, sistolica, diastolica, cate
     flags = app_module.compute_clinical_flags(0, 0, sistolica, diastolica)
     cats = [f["category"] for f in flags if f["indicator"] == "blood_pressure"]
     assert cats == ([categoria] if categoria else [])
+
+
+# ---------- funcion renal: KDIGO (enfermedad renal cronica) ----------
+
+@pytest.mark.parametrize("egfr,categoria", [
+    (10, "filtrado_G5"),
+    (22, "filtrado_G4"),
+    (38, "filtrado_G3b"),
+    (59.9, "filtrado_G3a"),
+    (60, None),          # 60-89 (G2) solo es enfermedad con albuminuria
+    (95, None),
+    (0, None),           # 0 = no lo aporto
+])
+def test_flags_filtrado_kdigo(app_module, egfr, categoria):
+    flags = app_module.compute_clinical_flags(0, 0, 0, egfr=egfr)
+    cats = [f["category"] for f in flags if f["indicator"] == "egfr"]
+    assert cats == ([categoria] if categoria else [])
+
+
+@pytest.mark.parametrize("acr,categoria", [
+    (450, "albuminuria_A3"),
+    (300, "albuminuria_A2"),
+    (30, "albuminuria_A2"),
+    (29.9, None),
+])
+def test_flags_albuminuria_kdigo(app_module, acr, categoria):
+    flags = app_module.compute_clinical_flags(0, 0, 0, albumin_creatinine=acr)
+    cats = [f["category"] for f in flags if f["indicator"] == "albuminuria"]
+    assert cats == ([categoria] if categoria else [])
+
+
+def test_kdigo_recuerda_que_una_medicion_no_basta(app_module):
+    """El diagnostico exige que se mantenga 3 meses: un solo analisis no lo es."""
+    for flag in app_module.compute_clinical_flags(0, 0, 0, egfr=45, albumin_creatinine=80):
+        assert flag["source"] == "KDIGO" and "3 meses" in flag["detail"]
 
 
 def test_enumerar_en_castellano(app_module):

@@ -18,7 +18,9 @@ import numpy as np
 import pytest
 from sklearn.isotonic import IsotonicRegression
 
+import modos as M
 from train_models import fit_calibrator
+
 
 
 def _a_secas(oof, y):
@@ -145,7 +147,7 @@ MEJOR_COMPLETO = {"age": 20, "bmi": 20, "waist_circumference": 70, "ap_hi": 105,
                   "albumin_creatinine_ratio": 4, **_NINGUN_DX, **_MUJER_NO_FUMADORA}
 
 
-@pytest.mark.parametrize("disease", ["diabetes", "hipertension", "cardiovascular"])
+@pytest.mark.parametrize("disease", list(M.ENFERMEDADES))
 def test_ni_el_peor_perfil_da_100_ni_el_mejor_da_0(client, disease):
     peor = client.post(f"/predict/{disease}", json=PEOR_CASO).get_json()
     mejor = client.post(f"/predict/{disease}", json=MEJOR_CASO).get_json()
@@ -153,7 +155,7 @@ def test_ni_el_peor_perfil_da_100_ni_el_mejor_da_0(client, disease):
     assert 0.0 < mejor["probability"] < 0.1
 
 
-@pytest.mark.parametrize("disease", ["diabetes", "hipertension", "cardiovascular"])
+@pytest.mark.parametrize("disease", list(M.ENFERMEDADES))
 def test_el_modo_completo_tampoco_llega_a_los_extremos(client, disease):
     peor = client.post(f"/predict/{disease}?mode=completo", json=PEOR_COMPLETO).get_json()
     mejor = client.post(f"/predict/{disease}?mode=completo", json=MEJOR_COMPLETO).get_json()

@@ -247,7 +247,7 @@ def test_la_app_arranca_desde_otra_carpeta(app_module, tmp_path):
     assert salud["models_missing"] == []
     # SHAP y la cobertura leen el train de data_curated.
     assert salud["models_loaded"] == r["shap"] == r["support"] == CLAVES
-    assert r["prevalence"] == ["cardiovascular", "diabetes", "hipertension"]
+    assert r["prevalence"] == sorted(M.ENFERMEDADES)
     assert (r["sample"], r["synthetic"], r["distribution"], r["quality"]) == (200, 200, 200, 200)
 
 

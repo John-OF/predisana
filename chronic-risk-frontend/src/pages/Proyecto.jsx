@@ -4,15 +4,16 @@ import { Container, Row, Col, Card, Button, Table, Badge, Accordion, Spinner, Ta
 import { getSyntheticCase, getMetrics, evaluateSyntheticCase, getSampleCase, getDistribution, getSyntheticQuality } from '../services/api';
 import { getLabel, getFeatureLabel } from '../utils/translations';
 import { riskBand } from '../utils/riskBand';
-import { Droplet, HeartPulse, Heart, Eyedropper, Robot, Lightbulb, Magic, Stars, BarChartLineFill, ArrowRight, TrophyFill, CpuFill, ArrowUpShort, ArrowDownShort, ArrowRepeat, PatchQuestion, ClipboardCheck, ClipboardPulse, CodeSlash, Window, Github, PersonBadge } from 'react-bootstrap-icons';
+import { Droplet, HeartPulse, Heart, Funnel, Eyedropper, Robot, Lightbulb, Magic, Stars, BarChartLineFill, ArrowRight, TrophyFill, CpuFill, ArrowUpShort, ArrowDownShort, ArrowRepeat, PatchQuestion, ClipboardCheck, ClipboardPulse, CodeSlash, Window, Github, PersonBadge } from 'react-bootstrap-icons';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
-// Desde la v2 las tres enfermedades salen de NHANES 2017-2023 con el mismo esquema
+// Desde la v2 todas las enfermedades salen de NHANES 2017-2023 con el mismo esquema
 // (cambian los diagnósticos previos: el de la propia enfermedad no está).
 const DISEASE_TABS = [
     { key: 'diabetes', label: 'Diabetes', icon: <Droplet className="me-2" />, variant: 'primary' },
     { key: 'hipertension', label: 'Hipertensión', icon: <HeartPulse className="me-2" />, variant: 'danger' },
     { key: 'cardiovascular', label: 'Cardiovascular', icon: <Heart className="me-2" />, variant: 'info' },
+    { key: 'renal', label: 'Renal', icon: <Funnel className="me-2" />, variant: 'success' },
 ];
 
 const diseaseLabel = (key) => DISEASE_TABS.find((t) => t.key === key)?.label ?? key;
@@ -22,6 +23,7 @@ const DIST_FEATURES = {
     diabetes: ['age', 'bmi', 'hba1c_level', 'waist_circumference', 'bmi_autodeclarado'],
     hipertension: ['age', 'bmi', 'ap_hi', 'waist_circumference', 'bmi_autodeclarado'],
     cardiovascular: ['age', 'bmi', 'ap_hi', 'total_cholesterol', 'egfr'],
+    renal: ['age', 'egfr', 'albumin_creatinine_ratio', 'ap_hi', 'bmi_autodeclarado'],
 };
 
 // Nombres legibles de los algoritmos del leaderboard (claves que emite el backend).
@@ -684,7 +686,7 @@ const Proyecto = () => {
                 <span className="ps-eyebrow">Los datos</span>
                 <h2>De dónde salen los datos</h2>
                 <p>
-                    Las tres enfermedades salen de <strong>NHANES 2017-2023</strong>, la encuesta de salud
+                    Las cuatro enfermedades salen de <strong>NHANES 2017-2023</strong>, la encuesta de salud
                     de los CDC con examen físico y laboratorio. Antes de entrenar se revisan y limpian los
                     datos: fuera las embarazadas, un «no sabe» cuenta como dato faltante y no como un «no»,
                     y fuera las variables cuyo cuestionario cambió entre ciclos.
@@ -692,7 +694,7 @@ const Proyecto = () => {
             </div>
 
             <Row className="g-3 mb-5">
-                <Col md={4}>
+                <Col md={6} xl={3}>
                     <Card className="h-100 ps-card-hover">
                         <Card.Body>
                             <div className="d-flex align-items-center mb-2 fw-bold text-primary">
@@ -710,7 +712,7 @@ const Proyecto = () => {
                         </Card.Body>
                     </Card>
                 </Col>
-                <Col md={4}>
+                <Col md={6} xl={3}>
                     <Card className="h-100 ps-card-hover">
                         <Card.Body>
                             <div className="d-flex align-items-center mb-2 fw-bold text-danger">
@@ -727,7 +729,7 @@ const Proyecto = () => {
                         </Card.Body>
                     </Card>
                 </Col>
-                <Col md={4}>
+                <Col md={6} xl={3}>
                     <Card className="h-100 ps-card-hover">
                         <Card.Body>
                             <div className="d-flex align-items-center mb-2 fw-bold text-info">
@@ -741,6 +743,25 @@ const Proyecto = () => {
                             <p className="text-faint small mb-0">
                                 Transparencia: en el modo completo, la presión, el colesterol y la HbA1c no
                                 tienen efecto — quien ya tuvo un evento suele estar en tratamiento — y la app lo avisa.
+                            </p>
+                        </Card.Body>
+                    </Card>
+                </Col>
+                <Col md={6} xl={3}>
+                    <Card className="h-100 ps-card-hover">
+                        <Card.Body>
+                            <div className="d-flex align-items-center mb-2 fw-bold text-success">
+                                <Funnel className="me-2" />Renal crónica
+                            </div>
+                            <p className="text-soft small mb-2">
+                                <strong>13 532</strong> adultos con análisis de sangre y de orina. Se estima la
+                                enfermedad total: diagnosticada, filtrado glomerular &lt; 60 o albúmina en orina
+                                ≥ 30 mg/g (19%). Solo 1 de cada 5 estaba diagnosticado.
+                            </p>
+                            <p className="text-faint small mb-0">
+                                Transparencia: el filtrado y la albúmina <strong>no</strong> son variables del
+                                modelo: definen la enfermedad. Si se aportan, las interpreta la guía (KDIGO), que
+                                pide además que se mantengan 3 meses.
                             </p>
                         </Card.Body>
                     </Card>
@@ -929,7 +950,7 @@ const Proyecto = () => {
                         const board = m?.leaderboard || [];
                         const maxAuc = Math.max(...board.map((r) => r.cv_auc_mean || 0), 0.5001);
                         return (
-                            <Col md={4} key={key}>
+                            <Col md={6} xl={3} key={key}>
                                 <Card className="h-100 ps-card-hover">
                                     <Card.Body>
                                         <div className="d-flex align-items-center justify-content-between mb-3">

@@ -2,7 +2,9 @@
 # y el laboratorio sintetico (synthetic/sample/distribution/synthetic_quality).
 import pytest
 
-DISEASES = ["diabetes", "hipertension", "cardiovascular"]
+import modos as M
+
+DISEASES = list(M.ENFERMEDADES)
 MODOS = ["simplificado", "completo"]
 
 
@@ -108,7 +110,8 @@ def test_synthetic_quality(client):
 import pytest as _pytest
 
 
-@_pytest.mark.parametrize("enf", ["diabetes", "hipertension", "cardiovascular"])
+
+@_pytest.mark.parametrize("enf", list(M.ENFERMEDADES))
 def test_calidad_incluye_tstr(client, enf):
     d = client.get(f"/synthetic_quality/{enf}").get_json()
     tstr = d["tstr"]
@@ -121,7 +124,7 @@ def test_calidad_incluye_tstr(client, enf):
         assert 0.5 < m["tstr_auc"] < 1.0
 
 
-@_pytest.mark.parametrize("enf", ["diabetes", "hipertension", "cardiovascular"])
+@_pytest.mark.parametrize("enf", list(M.ENFERMEDADES))
 def test_calidad_incluye_privacidad(client, enf):
     p = client.get(f"/synthetic_quality/{enf}").get_json()["privacy"]
     # La referencia no es cero: se compara con lo que dista el propio test real.

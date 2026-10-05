@@ -1,8 +1,8 @@
 """Datos v2 (prepare_nhanes.py): NHANES 2017-2020 + 2021-2023, enfermedad total.
 
 Lo que la auditoria de datos de la revision 2026-10 encontro y estos tests fijan:
-- el objetivo es la enfermedad total, asi que nadie con HbA1c >= 6,5, ayunas >= 126
-  o presion >= 140/90 puede figurar como sano;
+- el objetivo es la enfermedad total, asi que nadie con HbA1c >= 6,5, ayunas >= 126,
+  presion >= 140/90, filtrado < 60 o albumina en orina >= 30 puede figurar como sano;
 - ninguna variable puede significar cosas distintas segun el ciclo: la actividad
   fisica se quito porque el cuestionario cambio (34% frente a 53% cumplian los 150
   min de la OMS), y este test la habria parado;
@@ -13,7 +13,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-ENFERMEDADES = ("diabetes", "hipertension", "cardiovascular")
+import modos as M
+
+ENFERMEDADES = M.ENFERMEDADES
 CICLOS = {"2017-2020", "2021-2023"}
 NO_VARIABLES = ("ciclo", "peso_entrevista", "peso_examen", "target")
 
@@ -110,6 +112,29 @@ def test_hipertension_medida_cuenta_aunque_no_este_diagnosticada():
 def test_cardiovascular_empieza_a_los_20_y_las_cardiopatias_de_18_19_son_cero():
     """MCQ160 solo se pregunta desde los 20: a los de 18-19 les falta por diseno."""
     assert _uno("cardiovascular")["age"].min() >= 20
-    for nombre in ("diabetes", "hipertension"):
+    for nombre in ("diabetes", "hipertension", "renal"):
         jovenes = _uno(nombre).query("age < 20")
         assert len(jovenes) > 100 and (jovenes["heart_disease"] == 0).all()
+
+
+def _renal_por_analitica(d):
+    return (d["egfr"] < 60) | (d["albumin_creatinine_ratio"] >= 30)
+
+
+def test_renal_por_analitica_cuenta_aunque_no_este_diagnosticada():
+    """KDIGO: filtrado < 60 o albumina/creatinina >= 30 mg/g. Solo el 19% de quienes
+    la tienen estaba diagnosticado; el diagnostico sin analitica alterada es el 1%."""
+    d = _uno("renal")
+    por_lab = _renal_por_analitica(d)
+    assert (d.loc[por_lab, "target"] == 1).all()
+    assert d[["egfr", "albumin_creatinine_ratio"]].notna().all().all()   # sin las dos no se sabe
+    assert 0 < d.loc[~por_lab, "target"].mean() < 0.03
+    assert d["target"].mean() == pytest.approx(0.188, abs=0.005)
+
+
+def test_renal_de_18_19_la_define_solo_la_analitica():
+    """KIQ022 ("rinones debiles o en fallo") se pregunta desde los 20."""
+    d = _uno("renal")
+    jovenes = d[d["age"] < 20]
+    assert len(jovenes) > 100
+    assert (jovenes["target"] == _renal_por_analitica(jovenes).astype(int)).all()

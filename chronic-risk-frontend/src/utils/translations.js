@@ -38,7 +38,8 @@ export const LABELS_ES = {
     // Enfermedades (`diabetes` es también una variable: el formulario la reetiqueta)
     diabetes: "Diabetes Tipo 2",
     hipertension: "Hipertensión Arterial",
-    cardiovascular: "Enfermedad Cardiovascular"
+    cardiovascular: "Enfermedad Cardiovascular",
+    renal: "Enfermedad Renal Crónica"
 };
 
 export const getLabel = (key) => LABELS_ES[key] || key;

@@ -6,7 +6,7 @@
 import numpy as np
 from sklearn.base import BaseEstimator, TransformerMixin
 
-ENFERMEDADES = ("diabetes", "hipertension", "cardiovascular")
+ENFERMEDADES = ("diabetes", "hipertension", "cardiovascular", "renal")
 MODOS = ("simplificado", "completo")
 
 # El tabaco entra como dos columnas frente a "nunca ha fumado", que es la referencia:
@@ -20,8 +20,9 @@ CATEGORICAS = {"gender": ("Female", "Male"), "smoking_history": ("current", "for
 
 # Simplificado: lo que cualquiera sabe de si mismo. Completo: lo que mide o pide el
 # personal sanitario. Las variables que DEFINEN la enfermedad (HbA1c y glucosa en
-# diabetes, presion en hipertension) se piden en el modo completo, pero ningun modelo
-# las usa: las interpreta la capa clinica con las guias (ADA, OMS/ESC).
+# diabetes, presion en hipertension, filtrado y albumina en orina en la renal) se piden
+# en el modo completo, pero ningun modelo las usa: las interpreta la capa clinica con
+# las guias (ADA, OMS/ESC, KDIGO).
 FEATURES = {
     "diabetes": {
         "simplificado": COMUNES + ("bmi", "hypertension", "high_cholesterol", "heart_disease"),
@@ -41,13 +42,24 @@ FEATURES = {
                                "high_cholesterol", "ap_hi", "ap_lo", "total_cholesterol",
                                "hdl_cholesterol", "hba1c_level", "egfr", "albumin_creatinine_ratio"),
     },
+    # Enfermedad renal cronica. Sus factores de riesgo son los mismos que los de las
+    # otras tres (la diabetes y la hipertension son sus dos primeras causas).
+    "renal": {
+        "simplificado": COMUNES + ("bmi", "diabetes", "hypertension", "high_cholesterol",
+                                   "heart_disease"),
+        "completo": COMUNES + ("bmi", "waist_circumference", "diabetes", "hypertension",
+                               "high_cholesterol", "heart_disease", "ap_hi", "ap_lo",
+                               "total_cholesterol", "hdl_cholesterol", "hba1c_level"),
+    },
 }
 DEFINITORIAS = {"diabetes": ("hba1c_level", "blood_glucose_level"),
                 "hipertension": ("ap_hi", "ap_lo"),
-                "cardiovascular": ()}
+                "cardiovascular": (),
+                "renal": ("egfr", "albumin_creatinine_ratio")}
 
 # El modo simplificado lee el IMC AUTODECLARADO: es el que va a escribir el usuario,
-# y la gente se quita IMC (-0,8 de media, -1,9 con obesidad).
+# y la gente se quita IMC (-0,8 de media, -1,5 con obesidad y -2,3 con un IMC de 40 o
+# mas).
 FUENTE = {("simplificado", "bmi"): "bmi_autodeclarado"}
 
 # En el simplificado el usuario no da su IMC sino su peso (kg) y su talla (cm): la API

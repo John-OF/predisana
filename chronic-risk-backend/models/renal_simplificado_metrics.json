@@ -1,0 +1,317 @@
+{
+  "dataset": "nhanes_v2_renal",
+  "version": 2,
+  "modo": "simplificado",
+  "features": [
+    "age",
+    "gender_Male",
+    "gender_Female",
+    "smoking_history_current",
+    "smoking_history_former",
+    "bmi",
+    "diabetes",
+    "hypertension",
+    "high_cholesterol",
+    "heart_disease"
+  ],
+  "definitorias": [
+    "egfr",
+    "albumin_creatinine_ratio"
+  ],
+  "objetivo": "diagnosticada, filtrado glomerular < 60 o albumina/creatinina en orina >= 30 mg/g",
+  "n_train": 10386,
+  "n_test": 2596,
+  "prevalencia": 0.18659734257654534,
+  "best_model": "lightgbm",
+  "cv_auc": 0.7731732109211308,
+  "sin_efecto": [
+    "smoking_history_former",
+    "high_cholesterol"
+  ],
+  "leaderboard": [
+    {
+      "model": "random_forest",
+      "cv_auc_mean": 0.7745092542100572,
+      "best_params": {
+        "max_depth": 6,
+        "min_samples_leaf": 20
+      },
+      "violaciones_signo": {
+        "age": 0.0427,
+        "smoking_history_current": 0.4327,
+        "smoking_history_former": 0.5702,
+        "bmi": 0.3198,
+        "diabetes": 0.0,
+        "hypertension": 0.0004,
+        "high_cholesterol": 0.4241,
+        "heart_disease": 0.0
+      },
+      "sin_efecto": [],
+      "auc_subgrupos_cv": {
+        "hombres": 0.798,
+        "mujeres": 0.7451,
+        "edad_18_39": 0.614,
+        "edad_40_59": 0.6982,
+        "edad_60_80": 0.7392
+      },
+      "pasa_filtro": false,
+      "motivos": [
+        "age al reves en el 4.3%",
+        "smoking_history_current al reves en el 43.3%",
+        "smoking_history_former al reves en el 57.0%",
+        "bmi al reves en el 32.0%",
+        "hypertension al reves en el 0.0%",
+        "high_cholesterol al reves en el 42.4%"
+      ]
+    },
+    {
+      "model": "lightgbm",
+      "cv_auc_mean": 0.7731732109211308,
+      "best_params": {
+        "reg_lambda": 5.0,
+        "num_leaves": 7,
+        "n_estimators": 600,
+        "min_child_samples": 50,
+        "learning_rate": 0.1
+      },
+      "violaciones_signo": {
+        "age": 0.0,
+        "smoking_history_current": 0.0,
+        "smoking_history_former": 0.0,
+        "bmi": 0.0,
+        "diabetes": 0.0,
+        "hypertension": 0.0,
+        "high_cholesterol": 0.0,
+        "heart_disease": 0.0
+      },
+      "sin_efecto": [
+        "smoking_history_former",
+        "high_cholesterol"
+      ],
+      "auc_subgrupos_cv": {
+        "hombres": 0.7981,
+        "mujeres": 0.7412,
+        "edad_18_39": 0.5948,
+        "edad_40_59": 0.6963,
+        "edad_60_80": 0.741
+      },
+      "pasa_filtro": true,
+      "motivos": []
+    },
+    {
+      "model": "logreg",
+      "cv_auc_mean": 0.7645348915333677,
+      "best_params": {
+        "C": 10.0
+      },
+      "violaciones_signo": {
+        "age": 0.0,
+        "smoking_history_current": 0.0,
+        "smoking_history_former": 0.0,
+        "bmi": 0.0,
+        "diabetes": 0.0,
+        "hypertension": 0.0,
+        "high_cholesterol": 0.0,
+        "heart_disease": 0.0
+      },
+      "sin_efecto": [
+        "high_cholesterol"
+      ],
+      "auc_subgrupos_cv": {
+        "hombres": 0.7922,
+        "mujeres": 0.7363,
+        "edad_18_39": 0.5566,
+        "edad_40_59": 0.6952,
+        "edad_60_80": 0.7254
+      },
+      "pasa_filtro": true,
+      "motivos": []
+    }
+  ],
+  "auc": 0.7835666640378627,
+  "auc_test": 0.7835666640378627,
+  "auc_test_ponderado": 0.7942789982435975,
+  "auc_train": 0.781728340633502,
+  "report": {
+    "0": {
+      "precision": 0.9119905493207324,
+      "recall": 0.7321005215742058,
+      "f1-score": 0.8122041031036297,
+      "support": 2109.0
+    },
+    "1": {
+      "precision": 0.3743078626799557,
+      "recall": 0.6940451745379876,
+      "f1-score": 0.48633093525179855,
+      "support": 487.0
+    },
+    "accuracy": 0.7249614791987673,
+    "macro avg": {
+      "precision": 0.6431492060003441,
+      "recall": 0.7130728480560967,
+      "f1-score": 0.6492675191777141,
+      "support": 2596.0
+    },
+    "weighted avg": {
+      "precision": 0.811123265655841,
+      "recall": 0.7249614791987673,
+      "f1-score": 0.7510715018925966,
+      "support": 2596.0
+    }
+  },
+  "report_test": {
+    "0": {
+      "precision": 0.9119905493207324,
+      "recall": 0.7321005215742058,
+      "f1-score": 0.8122041031036297,
+      "support": 2109.0
+    },
+    "1": {
+      "precision": 0.3743078626799557,
+      "recall": 0.6940451745379876,
+      "f1-score": 0.48633093525179855,
+      "support": 487.0
+    },
+    "accuracy": 0.7249614791987673,
+    "macro avg": {
+      "precision": 0.6431492060003441,
+      "recall": 0.7130728480560967,
+      "f1-score": 0.6492675191777141,
+      "support": 2596.0
+    },
+    "weighted avg": {
+      "precision": 0.811123265655841,
+      "recall": 0.7249614791987673,
+      "f1-score": 0.7510715018925966,
+      "support": 2596.0
+    }
+  },
+  "subgrupos_test": {
+    "hombres": 0.8225,
+    "mujeres": 0.7442,
+    "edad_18_39": 0.701,
+    "edad_40_59": 0.7293,
+    "edad_60_80": 0.7392
+  },
+  "calibration": {
+    "method": "isotonic",
+    "n_bins": 10,
+    "strategy": "quantile",
+    "brier_raw": 0.18692646472824098,
+    "brier_calibrated": 0.12419626677387532,
+    "brier_calibrated_ponderado": 0.10283163094131258,
+    "raw_curve": [
+      {
+        "mean_pred": 0.15839569128970837,
+        "frac_pos": 0.02097902097902098
+      },
+      {
+        "mean_pred": 0.22702179597851402,
+        "frac_pos": 0.06486486486486487
+      },
+      {
+        "mean_pred": 0.25007153163213713,
+        "frac_pos": 0.056818181818181816
+      },
+      {
+        "mean_pred": 0.2672249354439007,
+        "frac_pos": 0.10144927536231885
+      },
+      {
+        "mean_pred": 0.3056249966932953,
+        "frac_pos": 0.09578544061302682
+      },
+      {
+        "mean_pred": 0.397167503432111,
+        "frac_pos": 0.14393939393939395
+      },
+      {
+        "mean_pred": 0.49919549910973177,
+        "frac_pos": 0.18972332015810275
+      },
+      {
+        "mean_pred": 0.6142389707784821,
+        "frac_pos": 0.27307692307692305
+      },
+      {
+        "mean_pred": 0.7260883393768989,
+        "frac_pos": 0.3667953667953668
+      },
+      {
+        "mean_pred": 0.8360326615419329,
+        "frac_pos": 0.573076923076923
+      }
+    ],
+    "calibrated_curve": [
+      {
+        "mean_pred": 0.04319867533135434,
+        "frac_pos": 0.02097902097902098
+      },
+      {
+        "mean_pred": 0.06983688820063781,
+        "frac_pos": 0.06486486486486487
+      },
+      {
+        "mean_pred": 0.07849867365309732,
+        "frac_pos": 0.056818181818181816
+      },
+      {
+        "mean_pred": 0.08113330469992938,
+        "frac_pos": 0.10144927536231885
+      },
+      {
+        "mean_pred": 0.08778817782830096,
+        "frac_pos": 0.09578544061302682
+      },
+      {
+        "mean_pred": 0.13401457817642032,
+        "frac_pos": 0.14393939393939395
+      },
+      {
+        "mean_pred": 0.18895615561642856,
+        "frac_pos": 0.18972332015810275
+      },
+      {
+        "mean_pred": 0.25292287609429753,
+        "frac_pos": 0.27307692307692305
+      },
+      {
+        "mean_pred": 0.3942170624739104,
+        "frac_pos": 0.3667953667953668
+      },
+      {
+        "mean_pred": 0.5402495850115716,
+        "frac_pos": 0.573076923076923
+      }
+    ]
+  },
+  "bands": {
+    "low_below": 0.18780600461893765,
+    "high_from": 0.3756120092378753,
+    "prevalence": 0.18780600461893765,
+    "relative_to_prevalence": true,
+    "test": [
+      {
+        "band": "low",
+        "n": 1684,
+        "share": 0.6486902927580893,
+        "positive_rate": 0.08669833729216152,
+        "share_of_positives": 0.2997946611909651
+      },
+      {
+        "band": "mid",
+        "n": 465,
+        "share": 0.17912172573189522,
+        "positive_rate": 0.25591397849462366,
+        "share_of_positives": 0.24435318275154005
+      },
+      {
+        "band": "high",
+        "n": 447,
+        "share": 0.1721879815100154,
+        "positive_rate": 0.4966442953020134,
+        "share_of_positives": 0.45585215605749485
+      }
+    ]
+  }
+}

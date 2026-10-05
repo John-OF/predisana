@@ -2,7 +2,10 @@
 # calibracion, contrato de respuesta, SHAP y capa clinica. Usa el test_client de Flask.
 import pytest
 
-ENFERMEDADES = ["diabetes", "hipertension", "cardiovascular"]
+import modos as M
+
+
+ENFERMEDADES = list(M.ENFERMEDADES)
 
 CARDIO_COMPLETO = {
     "age": 62, "bmi": 31, "waist_circumference": 108, "ap_hi": 150, "ap_lo": 92,

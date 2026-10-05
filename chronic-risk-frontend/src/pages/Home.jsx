@@ -19,7 +19,8 @@ const Home = () => {
               </h1>
               <p className="lead">
                 Predisana estima tu probabilidad de <strong>diabetes</strong>,{' '}
-                <strong>hipertensión</strong> y <strong>riesgo cardiovascular</strong> con
+                <strong>hipertensión</strong>, <strong>riesgo cardiovascular</strong> y{' '}
+                <strong>enfermedad renal crónica</strong> con
                 Machine Learning — y te muestra <strong>por qué</strong>, variable por
                 variable, con total transparencia.
               </p>
@@ -107,7 +108,7 @@ const Home = () => {
                 <span className="ps-tag">1 · Datos</span>
                 <h3 style={{ fontSize: '1.2rem', margin: '12px 0 8px' }}>Datos reales, revisados</h3>
                 <p className="text-soft mb-0">
-                  Las tres enfermedades salen de NHANES 2017-2023 (CDC), con examen físico y
+                  Las cuatro enfermedades salen de NHANES 2017-2023 (CDC), con examen físico y
                   laboratorio. Antes de entrenar se limpian, y el modo simplificado usa el peso y
                   la talla que la gente <em>declara</em>, que es lo que escribirá aquí.
                 </p>

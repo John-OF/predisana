@@ -9,13 +9,13 @@ ejecuta `python prepare_nhanes.py` (escribe `data_processed/`).
 
 ## NHANES 2017-2020 + 2021-2023 → `data_raw/nhanes/`
 
-Desde la v2 las tres enfermedades salen de **NHANES**, la encuesta de salud y nutrición
+Desde la v2 todas las enfermedades salen de **NHANES**, la encuesta de salud y nutrición
 de los CDC (EE. UU.), con los dos ciclos juntos: 2017-marzo 2020 prepandemia (archivos
 `P_*`) y 2021-2023 (`*_L`). Todo es **dominio público** y se descarga sin cuenta:
 
 ```bash
 cd data_raw/nhanes
-for c in DEMO BMX BPXO BPQ DIQ MCQ SMQ WHQ GHB GLU BIOPRO TCHOL HDL ALB_CR; do
+for c in DEMO BMX BPXO BPQ DIQ MCQ SMQ WHQ GHB GLU BIOPRO TCHOL HDL ALB_CR KIQ_U; do
   curl -sLO "https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/2021/DataFiles/${c}_L.xpt"
   curl -sLO "https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/2017/DataFiles/P_${c}.xpt"
 done
@@ -27,13 +27,12 @@ simplificado), `BPXO` (presión medida, 3 lecturas), `BPQ` (hipertensión y cole
 alto diagnosticados, medicación), `DIQ` (diabetes diagnosticada), `MCQ` (cardiopatías e
 ictus), `SMQ` (tabaco), `GHB` (HbA1c), `GLU` (glucosa en ayunas, submuestra), `BIOPRO`
 (creatinina para el eGFR), `TCHOL` y `HDL` (colesterol), `ALB_CR` (albúmina/creatinina
-en orina).
+en orina), `KIQ_U` (enfermedad renal diagnosticada: "riñones débiles o en fallo").
 
 Se descargaron también y **no se usan**: `PAQ` (actividad física: el cuestionario
 cambió entre ciclos y no hay forma honesta de igualarlo, ver la cabecera de
 `prepare_nhanes.py`), `ALQ` (alcohol: en datos de un solo momento quien enferma deja de
-beber y sale "protector"), `TRIGLY` (triglicéridos, solo en la submuestra en ayunas) y
-`KIQ_U` (enfermedad renal autorreportada, para una futura enfermedad renal crónica).
+beber y sale "protector") y `TRIGLY` (triglicéridos, solo en la submuestra en ayunas).
 
 ## Fuentes de la v1 (retiradas)
 

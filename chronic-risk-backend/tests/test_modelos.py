@@ -50,7 +50,7 @@ def test_ningun_modelo_usa_las_variables_que_definen_su_enfermedad():
             assert not set(M.DEFINITORIAS[enfermedad]) & set(M.features(enfermedad, modo))
         # ni la propia enfermedad como variable
         nombre = {"diabetes": "diabetes", "hipertension": "hypertension",
-                  "cardiovascular": "heart_disease"}[enfermedad]
+                  "cardiovascular": "heart_disease", "renal": "kidney_disease"}[enfermedad]
         assert all(nombre not in M.features(enfermedad, m) for m in M.MODOS)
 
 

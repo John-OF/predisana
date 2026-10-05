@@ -1,21 +1,21 @@
 # Predisana Backend
 
-API REST en Python/Flask que sirve modelos de Machine Learning para estimar el riesgo de tres enfermedades crónicas (diabetes, hipertensión y enfermedad cardiovascular). Es el backend de una plataforma educativa: integra inferencia con **calibración isotónica centrada**, explicabilidad con **SHAP**, **dos modos por enfermedad** (simplificado y completo), análisis contrafactual (**what-if**), generación de datos sintéticos con **CTGAN**, una capa de interpretación clínica (**ADA / ACC-AHA**) y registro anónimo de uso sobre **SQLAlchemy** (SQLite en dev, Postgres en prod) consultable desde un panel admin protegido por token.
+API REST en Python/Flask que sirve modelos de Machine Learning para estimar el riesgo de cuatro enfermedades crónicas (diabetes, hipertensión, enfermedad cardiovascular y enfermedad renal crónica). Es el backend de una plataforma educativa: integra inferencia con **calibración isotónica centrada**, explicabilidad con **SHAP**, **dos modos por enfermedad** (simplificado y completo), análisis contrafactual (**what-if**), generación de datos sintéticos con **CTGAN**, una capa de interpretación clínica (**ADA, ACC/AHA, KDIGO**) y registro anónimo de uso sobre **SQLAlchemy** (SQLite en dev, Postgres en prod) consultable desde un panel admin protegido por token.
 
 ---
 
 ## Características
 
-- **Datos reales de NHANES 2017-2023** (CDC, EE. UU.) para las tres enfermedades: dos ciclos juntos, 14 000-17 000 adultos por enfermedad, con su peso muestral.
-- **Enfermedad total, no solo diagnosticada**: el objetivo cuenta a quien lo tiene aunque no lo sepa (diabetes: diagnosticada, HbA1c ≥ 6,5% o glucosa en ayunas ≥ 126 mg/dL; hipertensión: diagnosticada, ≥ 140/90 mmHg medida o medicación; cardiovascular: cardiopatía coronaria, angina, infarto, insuficiencia cardíaca o ictus autorreportados).
-- **Dos modos por enfermedad, seis modelos**: el **simplificado** pide lo que cualquiera sabe de sí mismo (edad, sexo, tabaco, peso y talla, diagnósticos previos); el **completo**, además, lo que mide el personal sanitario (IMC y cintura medidos, presión, colesterol total y HDL, HbA1c, eGFR y albúmina en orina).
-- **Lo que define la enfermedad no entra al modelo**: la HbA1c y la glucosa en diabetes, o la presión en hipertensión. Con ellas el modelo solo reaprendería el umbral diagnóstico. Se piden igual (en el completo) y las interpreta la capa clínica con las guías.
+- **Datos reales de NHANES 2017-2023** (CDC, EE. UU.) para las cuatro enfermedades: dos ciclos juntos, 13 000-17 000 adultos por enfermedad, con su peso muestral.
+- **Enfermedad total, no solo diagnosticada**: el objetivo cuenta a quien lo tiene aunque no lo sepa (diabetes: diagnosticada, HbA1c ≥ 6,5% o glucosa en ayunas ≥ 126 mg/dL; hipertensión: diagnosticada, ≥ 140/90 mmHg medida o medicación; cardiovascular: cardiopatía coronaria, angina, infarto, insuficiencia cardíaca o ictus autorreportados; renal crónica: diagnosticada, filtrado glomerular < 60 o albúmina/creatinina en orina ≥ 30 mg/g).
+- **Dos modos por enfermedad, ocho modelos**: el **simplificado** pide lo que cualquiera sabe de sí mismo (edad, sexo, tabaco, peso y talla, diagnósticos previos); el **completo**, además, lo que mide el personal sanitario (IMC y cintura medidos, presión, colesterol total y HDL, HbA1c, eGFR y albúmina en orina).
+- **Lo que define la enfermedad no entra al modelo**: la HbA1c y la glucosa en diabetes, la presión en hipertensión, o el filtrado glomerular y la albúmina en orina en la renal. Con ellas el modelo solo reaprendería el umbral diagnóstico. Se piden igual (en el completo) y las interpreta la capa clínica con las guías.
 - **Cada modelo es el ganador de un bake-off con validación cruzada anidada** (LogReg / LightGBM / RandomForest) **y un filtro de validación**: ningún candidato puede invertir el sentido clínico de una variable ni ordenar mal un subgrupo (sexo, tramo de edad). Se publica el leaderboard completo, con los descartados y su motivo.
 - **Probabilidades calibradas** (isotónica centrada out-of-fold), que nunca valen 0% ni 100% y no suben a saltos; la API devuelve la calibrada y la cruda.
 - **Explicabilidad SHAP** (`LinearExplainer` para la LogReg, `TreeExplainer` para LightGBM): top-5 de variables por predicción.
-- **Capa clínica, cobertura de datos y coherencia desacopladas**: umbrales ADA / ACC-AHA, avisos de extrapolación y de datos que no cuadran entre sí. Nada de eso toca la probabilidad.
+- **Capa clínica, cobertura de datos y coherencia desacopladas**: umbrales ADA, ACC/AHA y KDIGO, avisos de extrapolación y de datos que no cuadran entre sí. Nada de eso toca la probabilidad.
 - **Análisis contrafactual (`/whatif`)**, **laboratorio de datos sintéticos** (CTGAN + informe de fidelidad, utilidad y privacidad) y **registro anónimo de uso** con panel admin.
-- **Suite de 503 tests (pytest)** sobre los invariantes delicados de la API, los modelos y los datos.
+- **Suite de 607 tests (pytest)** sobre los invariantes delicados de la API, los modelos y los datos.
 
 ---
 
@@ -68,7 +68,7 @@ gunicorn app:app
 ```
 
 Al arrancar, `app.py` ejecuta automáticamente:
-1. `_load_all()` — carga de `models/` los seis pipelines (`<enfermedad>_<modo>`), sus calibradores, el modelo ganador y las variables sin efecto de cada `_metrics.json`, y construye el explainer SHAP de cada uno. Del train curado saca la cobertura de datos de cada modo, las medianas de lo que el modelo no usa y la prevalencia de cada enfermedad. Si falta algún modelo lo dice en el log y `/health` responde 503.
+1. `_load_all()` — carga de `models/` los ocho pipelines (`<enfermedad>_<modo>`), sus calibradores, el modelo ganador y las variables sin efecto de cada `_metrics.json`, y construye el explainer SHAP de cada uno. Del train curado saca la cobertura de datos de cada modo, las medianas de lo que el modelo no usa y la prevalencia de cada enfermedad. Si falta algún modelo lo dice en el log y `/health` responde 503.
 2. `init_db()` — crea la tabla `predictions` vía SQLAlchemy (por defecto SQLite en `medical_history.db`; con `DATABASE_URL` apunta a Postgres u otro motor) y migra columnas nuevas si la BD venía de un esquema viejo.
 
 Las rutas (`models/`, `data_curated/`, `data_processed/` y esa SQLite) cuelgan de la carpeta del
@@ -119,13 +119,17 @@ python build_quality_reports.py
 2021-2023, con el peso muestral repartido según la duración de cada uno (3,2 y 2 años). Se
 excluye a menores de 18 años y a embarazadas, y los "no sabe" / "se niega" son dato
 faltante, no un "no". Solo entra quien tiene la medición que define su objetivo (HbA1c,
-presión): si no, los no diagnosticados sin analítica contarían como sanos. Resultado:
-diabetes 14 347 personas (18,9% con la enfermedad), hipertensión 14 017 (44,3%) y
-cardiovascular 16 815 (12,8%). Decisiones con su porqué en la cabecera del script:
+presión; en la renal, la creatinina y la orina): si no, los no diagnosticados sin
+analítica contarían como sanos. Resultado: diabetes 14 347 personas (18,9% con la
+enfermedad), hipertensión 14 017 (44,3%), cardiovascular 16 815 (12,8%) y renal
+13 532 (18,8%). Decisiones con su porqué en la cabecera del script:
 
 - **Enfermedad total**: según el ciclo, el 22-24% de quienes tienen diabetes y el 15-17%
-  de quienes tienen hipertensión no estaban diagnosticados. Entrenar con "alguna vez se
-  lo dijeron" enseñaba al modelo a predecir el diagnóstico, no la enfermedad.
+  de quienes tienen hipertensión no estaban diagnosticados; de la renal, el 81%. Entrenar
+  con "alguna vez se lo dijeron" enseñaba al modelo a predecir el diagnóstico, no la
+  enfermedad. La renal la define KDIGO (filtrado < 60 o albúmina en orina ≥ 30 mg/g) en
+  una sola medición, como la vigilancia de los CDC: el diagnóstico clínico exige que
+  dure 3 meses.
 - **La glucosa es la de ayunas** (`LBXGLU`). La v1 usaba la del perfil bioquímico, con y
   sin ayuno mezclados, y la app la leía con umbrales de ayunas.
 - **El simplificado usa el peso y la talla autodeclarados** (`WHQ`), que es lo que el
@@ -164,15 +168,18 @@ EE. UU.):
 | Hipertensión | completo | LightGBM | 0,828 | 0,824 | 0,170 → 0,168 |
 | Cardiovascular | simplificado | LightGBM | 0,823 | 0,840 | 0,185 → 0,094 |
 | Cardiovascular | completo | LogReg | 0,829 | 0,848 | 0,183 → 0,088 |
+| Renal crónica | simplificado | LightGBM | 0,784 | 0,794 | 0,187 → 0,124 |
+| Renal crónica | completo | LightGBM | 0,797 | 0,797 | 0,179 → 0,117 |
 
 **Variables sin efecto.** Las restricciones impiden que un modelo aprenda una relación al
 revés, y si los datos no dan señal en el sentido clínico el efecto queda en cero exacto:
 en datos de un solo momento, quien ya está diagnosticado suele estar tratado
 (antihipertensivos, estatinas) o ha dejado de fumar. Pasa con el tabaco en diabetes
-(haber fumado en el simplificado; fumar y haber fumado en el completo) y con la presión,
-el colesterol total y la HbA1c en el completo de cardiovascular. Quedan en
-`_metrics.json.sin_efecto`, `/config` las sirve como `not_used` y, si el usuario las
-aporta, la capa clínica lo dice. Un test exige que de verdad pesen cero.
+(haber fumado en el simplificado; fumar y haber fumado en el completo), con la presión,
+el colesterol total y la HbA1c en el completo de cardiovascular, y con haber fumado y el
+colesterol alto diagnosticado en la renal. Quedan en `_metrics.json.sin_efecto`,
+`/config` las sirve como `not_used` y, si el usuario las aporta, la capa clínica lo dice
+(un sí/no, solo si está marcado). Un test exige que de verdad pesen cero.
 
 ### Tests
 
@@ -202,7 +209,7 @@ endpoints públicos depende de `CORS_ORIGINS` (sin definir = abierto, cómodo en
 rate limiting más arriba.
 
 ### `GET /health`
-Liveness + comprobación real de la BD (`SELECT 1`) y de los modelos. Devuelve **503** (`"status": "degraded"`) si la base no responde o si falta alguno de los seis modelos (`models_missing`): sin el modelo de un modo, el `/predict` de ese modo responde 500 aunque el otro funcione. Está exento del rate limiting (un 429 marcaría el deploy como caído ante un monitor de uptime), así que el resultado de la BD se reutiliza **5 s**: un bucle contra `/health` no se traduce en una consulta por petición.
+Liveness + comprobación real de la BD (`SELECT 1`) y de los modelos. Devuelve **503** (`"status": "degraded"`) si la base no responde o si falta alguno de los ocho modelos (`models_missing`): sin el modelo de un modo, el `/predict` de ese modo responde 500 aunque el otro funcione. Está exento del rate limiting (un 429 marcaría el deploy como caído ante un monitor de uptime), así que el resultado de la BD se reutiliza **5 s**: un bucle contra `/health` no se traduce en una consulta por petición.
 
 ```json
 {
@@ -210,7 +217,8 @@ Liveness + comprobación real de la BD (`SELECT 1`) y de los modelos. Devuelve *
   "database": "sqlite",
   "database_ok": true,
   "models_loaded": ["cardiovascular_completo", "cardiovascular_simplificado", "diabetes_completo",
-                    "diabetes_simplificado", "hipertension_completo", "hipertension_simplificado"],
+                    "diabetes_simplificado", "hipertension_completo", "hipertension_simplificado",
+                    "renal_completo", "renal_simplificado"],
   "models_missing": []
 }
 ```
@@ -296,9 +304,9 @@ Recibe las variables del modo y devuelve la probabilidad de riesgo + explicació
 - **Todo lo que el modelo usa es obligatorio**: si falta, la respuesta es **400** y dice qué falta (`faltan datos del modo simplificado: age`; en el simplificado, el IMC se puede dar o sacar del peso y la talla). La v1 rellenaba con 0 lo ausente, y un IMC de 0 no es un paciente. Lo único que puede faltar son las variables sin efecto, que toman la mediana del train: no cambian nada. Cada grupo (sexo, tabaco) tiene que traer una categoría y solo una.
 - **Límites físicos (`INPUT_LIMITS`)**: todo valor que se aporta, feature o dato clínico, tiene que caer dentro de su rango (edad 18-100, peso 25-300 kg, IMC 10-95, glucosa 30-700…) o la respuesta es **400** con el rango aceptado. Son topes de lo físicamente posible, no el rango entrenado: cubren todas las filas reales y sintéticas (hay un test que lo exige). Antes una edad de −30 con un IMC de 900 daba 200, probabilidad 1,0 y una fila en la BD. Un peso y una talla que dan un IMC fuera de su rango también son 400.
 - **Calibración**: `probability` es la salida del modelo **calibrada**; `raw_model_probability` es la cruda (la que SHAP explica). Es un reescalado monótono: no cambia el ranking (AUC intacto). **Sin extremos**: la isotónica a secas termina siempre en 0,0 y en 1,0 — su primer escalón son los scores más bajos hasta el primer enfermo y el último, los más altos desde el último sano, tengan los puntos que tengan — y en la v1 de diabetes el 100% lo sostenía **una sola persona** del train. `fit_calibrator()` funde cada escalón extremo puro con su vecino y le da la tasa real de los dos juntos. **Sin mesetas**: la curva une con rectas el centro de cada escalón con su nivel (la isotónica *centrada*, Oron y Flournoy 2017); con escalones el what-if subía a saltos. Rangos servidos en la v2: diabetes 0,5%–83,3% (simplificado) y 0,2%–94,3% (completo), hipertensión 0,8%–92,5% y 1,2%–97,9%, cardiovascular 0,3%–62,1% y 0,4%–75,0%.
-- **Bandas de riesgo por enfermedad**: `risk_band` (`low` / `mid` / `high`) es la lectura de `probability` frente a la media de la enfermedad, y `risk_bands` trae los cortes. **"Bajo" es quedar por debajo de la media de los datos de entrenamiento y "alto", al menos el doble**, con los tercios (33% / 66%) como tope. Los dos modos de una enfermedad comparten los cortes: diabetes 18,9% / 37,8%, cardiovascular 12,8% / 25,6%; hipertensión, con un 44,3% de prevalencia, conserva los tercios. Con tercios fijos, en la v1 una mujer sana de 25 años con glucosa de 250 salía **"Riesgo bajo"** con un 31,8%, más del doble de la media. Medido en el test real (diabetes, simplificado): bajo = 58,1% de la gente con un 6,8% de diabéticos, moderado = 27,4% con un 29,2%, alto = 14,4% con un 47,6%. Igual que la capa clínica, la banda **no** altera la probabilidad ni `prediction`. `/metricas` publica el reparto de cada modo con los mismos cortes que sirve la API (hasta la revisión de la v2, el entrenamiento los sacaba de las filas de cada modo: en cardiovascular completo publicaba 11,9% / 23,8% y servía 12,8% / 25,6%).
+- **Bandas de riesgo por enfermedad**: `risk_band` (`low` / `mid` / `high`) es la lectura de `probability` frente a la media de la enfermedad, y `risk_bands` trae los cortes. **"Bajo" es quedar por debajo de la media de los datos de entrenamiento y "alto", al menos el doble**, con los tercios (33% / 66%) como tope. Los dos modos de una enfermedad comparten los cortes: diabetes 18,9% / 37,8%, cardiovascular 12,8% / 25,6%, renal 18,8% / 37,6%; hipertensión, con un 44,3% de prevalencia, conserva los tercios. Con tercios fijos, en la v1 una mujer sana de 25 años con glucosa de 250 salía **"Riesgo bajo"** con un 31,8%, más del doble de la media. Medido en el test real (diabetes, simplificado): bajo = 58,1% de la gente con un 6,8% de diabéticos, moderado = 27,4% con un 29,2%, alto = 14,4% con un 47,6%. Igual que la capa clínica, la banda **no** altera la probabilidad ni `prediction`. `/metricas` publica el reparto de cada modo con los mismos cortes que sirve la API (hasta la revisión de la v2, el entrenamiento los sacaba de las filas de cada modo: en cardiovascular completo publicaba 11,9% / 23,8% y servía 12,8% / 25,6%).
 - **`prediction` es la clase del modelo**: 1 cuando la salida **cruda** llega a 0,5 (lo mismo que `pipeline.predict`), que es exactamente la regla que evalúa el entrenamiento y que `/metricas` publica como sensibilidad. Los modelos se entrenan con clases balanceadas y la calibración deshace ese balanceo, así que cortar la **calibrada** en 0,5 es otro clasificador: en diabetes (simplificado) daría una sensibilidad del 17,4% frente al 78,5% publicado. Consecuencia a tener presente: `prediction` puede valer 1 con una `probability` del 26%, como en el ejemplo de arriba. Son tres lecturas distintas y las tres van etiquetadas: `probability` (calibrada), `risk_band` (frente a la media de la enfermedad) y `prediction` (la clase del modelo). El simulador enseña las dos primeras; `prediction` solo se ve en el panel admin.
-- **Capa de interpretación clínica desacoplada (A4)**: `clinical_flags`/`clinical_note` exponen los umbrales diagnósticos de referencia (ADA: glucosa en ayunas ≥ 100/≥ 126/≥ 200, HbA1c ≥ 5,7/≥ 6,5; ACC/AHA: la más alta de sistólica ≥ 120/≥ 130/≥ 140/≥ 180 y diastólica ≥ 80/≥ 90/≥ 120). Esta capa **no** altera la probabilidad. Los datos que solo la alimentan (glucosa, HbA1c y presión cuando el modelo no los usa) se validan igual que las features: no numérico, no finito o fuera de rango → 400. Además, si el usuario marca o aporta una variable **sin efecto**, un indicador `sin_efecto` le dice que esta estimación no la refleja y por qué.
+- **Capa de interpretación clínica desacoplada (A4)**: `clinical_flags`/`clinical_note` exponen los umbrales diagnósticos de referencia (ADA: glucosa en ayunas ≥ 100/≥ 126/≥ 200, HbA1c ≥ 5,7/≥ 6,5; ACC/AHA: la más alta de sistólica ≥ 120/≥ 130/≥ 140/≥ 180 y diastólica ≥ 80/≥ 90/≥ 120; KDIGO: filtrado glomerular < 60, por estadios G3a-G5, y albúmina/creatinina en orina ≥ 30 mg/g, A2 o A3, recordando que el diagnóstico exige que se mantenga 3 meses). Esta capa **no** altera la probabilidad. Los datos que solo la alimentan (glucosa, HbA1c, presión y función renal cuando el modelo no los usa) se validan igual que las features: no numérico, no finito o fuera de rango → 400. El formulario ofrece como opcionales la glucosa, la HbA1c y la presión, y la función renal solo donde la define (la renal): en el simplificado de diabetes, un filtrado glomerular sería un campo más que casi nadie conoce. Además, si el usuario aporta una variable **sin efecto** (o marca un sí/no: con un «no» no hay nada que avisar), un indicador `sin_efecto` le dice que esta estimación no la refleja y por qué.
 - **Filtro de SHAP**: las features `gender_*` (no son un factor sobre el que actuar) y las variables sin efecto (su SHAP es 0) se omiten del top-5.
 - **Aviso de cobertura de datos (AUD-16)**: `support_warnings`/`support_note` señalan las entradas que caen donde el modelo de ese modo tiene pocos datos (`pocos_datos`, fuera del p1-p99) o ninguno (`sin_datos`, fuera del min-max observado). Por encima del tope de edad de NHANES (80) el aviso lleva `topcoded` y no dice que el modelo "no vio ningún caso": sí los vio, pero registrados como 80. Las variables sin efecto no avisan: no mueven la estimación.
 - **Coherencia entre campos**: el nivel `incoherente` de `support_warnings` marca combinaciones que no pueden ser de una misma persona aunque cada dato caiga en su rango (`coherence.py`): una cintura que no cuadra con el IMC, una diastólica igual o mayor que la sistólica, o, en el simplificado, un IMC dado a mano que con ese peso implica una talla imposible. En el completo el peso no se juzga: no es dato del modo, y el laboratorio manda la ficha entera, con el peso **declarado** junto al IMC **medido** — cruzar dos mediciones distintas daba una talla implícita de menos de 1,30 m a 9 de cada 9 500 personas reales. Ese nivel no trae `trained_range`, solo `detail`.
@@ -347,7 +355,7 @@ chronic-risk-backend/
 ├── curate_and_synthesize.py     # Síntesis CTGAN/TVAE sobre el train de cada enfermedad
 ├── build_quality_reports.py     # Precomputa el informe de calidad del sintético a JSON
 ├── synthetic_quality.py         # SDMetrics + correlaciones + TSTR + privacidad
-├── tests/                       # Suite pytest (503 tests; BD temporal propia)
+├── tests/                       # Suite pytest (607 tests; BD temporal propia)
 ├── pytest.ini
 ├── .env.example                 # Plantilla de variables de entorno
 ├── requirements.txt             # Runtime del API (directas, UTF-8)
@@ -365,7 +373,7 @@ chronic-risk-backend/
 
 ## Notas técnicas
 
-- **`modos.py` es la fuente única** de qué es cada modelo: enfermedades, modos, variables de cada uno (`FEATURES`), las que definen la enfermedad (`DEFINITORIAS`), el sentido clínico de cada variable (`SENTIDO`), de qué columna sale cada una (`FUENTE`: el `bmi` del simplificado es el IMC autodeclarado), lo que la API calcula (`DERIVADAS`), lo que va en escala log (`LOG`: la albúmina) y las columnas de las fichas del laboratorio. La usan la ingesta, el entrenamiento, el sintético y la API. Para añadir una enfermedad: su objetivo en `prepare_nhanes.py`, su entrada en `modos.py`, entrenar, y declararla en el frontend (`DISEASES` de `Simulacion.jsx`, `Metricas.jsx` y `Proyecto.jsx`).
+- **`modos.py` es la fuente única** de qué es cada modelo: enfermedades, modos, variables de cada uno (`FEATURES`), las que definen la enfermedad (`DEFINITORIAS`), el sentido clínico de cada variable (`SENTIDO`), de qué columna sale cada una (`FUENTE`: el `bmi` del simplificado es el IMC autodeclarado), lo que la API calcula (`DERIVADAS`), lo que va en escala log (`LOG`: la albúmina) y las columnas de las fichas del laboratorio. La usan la ingesta, el entrenamiento, el sintético y la API. Para añadir una enfermedad (así entró la renal): su objetivo en `prepare_nhanes.py`, su entrada en `modos.py` y el texto de su objetivo en `train_models.py`; entrenarla (`--only`), generar su sintético y su informe; y en el frontend, su etiqueta, su ficha de `Educacion.jsx` y las listas de `Simulacion.jsx`, `Metricas.jsx` y `Proyecto.jsx` (un test de Vitest avisa si falta alguna).
 - El pipeline sklearn tiene pasos nombrados **`prep`** (log de la albúmina), **`scaler`** y **`clf`**. SHAP explica lo que ve el clasificador: la salida de `pipe[:-1]`. Renombrar los pasos rompe la explicabilidad.
 - **`MonotonicLogisticRegression`** (`monotonic_logreg.py`): la feature que sale con el signo contrario al clínico se reajusta fuera y vuelve con coeficiente **cero exacto**, que con una pérdida convexa es el óptimo con esa cota. Nació en la v1, donde la LogReg de hipertensión aprendió, por colinealidad entre peso, IMC y cintura, que pesar más protegía (un hombre de 50 años con IMC 30 daba 26,7% con 70 kg y 13,0% con 100 kg); en la v2 ningún modelo recibe el peso y las restricciones van en todos.
 - **El tabaco va contra "nunca"**: `smoking_history_current` y `smoking_history_former` con sentido +1 y "nunca" como referencia. Con las tres columnas, la de "nunca" no tiene sentido clínico que imponer y el modelo podía hacer que haber fumado restara riesgo (en diabetes, −2,3 puntos para un exfumador).

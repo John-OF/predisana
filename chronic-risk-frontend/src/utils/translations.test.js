@@ -31,6 +31,7 @@ function tieneEtiqueta(feature, extras) {
 }
 
 const ficheros = readdirSync(MODELOS).filter(f => f.endsWith('_features.json'));
+const enfermedades = [...new Set(ficheros.map(f => f.replace(/_(simplificado|completo)_features\.json$/, '')))];
 
 /** Columnas de las fichas del laboratorio (v2: mas que las de los modelos, como el IMC
  * autodeclarado o la talla): la cabecera del sintetico de cada enfermedad. */
@@ -76,9 +77,20 @@ describe('etiquetas en español', () => {
     expect(getFeatureLabel('age')).toBe('Edad');
   });
 
-  it('las tres enfermedades tienen nombre propio', () => {
-    for (const d of ['diabetes', 'hipertension', 'cardiovascular']) {
+  it('cada enfermedad servida tiene nombre propio', () => {
+    expect(enfermedades).toContain('renal');
+    for (const d of enfermedades) {
       expect(getLabel(d)).not.toBe(d);
     }
   });
+
+  // Las paginas declaran su lista de enfermedades a mano: una nueva en el backend
+  // (como la renal) no aparece en el simulador ni en metricas hasta que se anade aqui.
+  it.each(['Simulacion.jsx', 'Metricas.jsx', 'Proyecto.jsx', 'Educacion.jsx'])(
+    '%s lista todas las enfermedades servidas', (pagina) => {
+      const src = readFileSync(join(process.cwd(), 'src', 'pages', pagina), 'utf-8');
+      for (const d of enfermedades) {
+        expect(src.includes(`'${d}'`) || src.includes(`${d}: {`), `${pagina}: ${d}`).toBe(true);
+      }
+    });
 });

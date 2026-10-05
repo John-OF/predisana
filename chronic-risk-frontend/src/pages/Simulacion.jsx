@@ -16,7 +16,7 @@ import {
   ArrowRepeat, CpuFill, GraphUpArrow, PersonFill, Clipboard2PulseFill,
 } from 'react-bootstrap-icons';
 
-const DISEASES = ['diabetes', 'hipertension', 'cardiovascular'];
+const DISEASES = ['diabetes', 'hipertension', 'cardiovascular', 'renal'];
 
 const MODEL_LABELS = {
   logistic_regression: 'Regresión Logística',
@@ -33,13 +33,19 @@ const MODE_COPY = {
   simplificado: {
     icon: PersonFill,
     desc: 'Lo que cualquiera sabe de sí mismo: edad, sexo, peso, talla, tabaco y diagnósticos previos.',
-    optional: 'Si conoces tu glucosa en ayunas, tu HbA1c o tu presión, no cambian la estimación: se interpretan aparte con las guías (ADA, ACC/AHA).',
+    optional: (guias) => `Si los conoces, no cambian la estimación: se interpretan aparte con las guías${guias ? ` (${guias})` : ''}.`,
   },
   completo: {
     icon: Clipboard2PulseFill,
     desc: 'Para personal sanitario: añade medidas y análisis (IMC medido, cintura, presión, colesterol, función renal).',
-    optional: 'No cambian la estimación: o definen la enfermedad (lo dice la guía, sin necesidad de un modelo) o el modelo no encuentra en ellos señal. Se interpretan aparte con las guías.',
+    optional: (guias) => `No cambian la estimación: o definen la enfermedad (lo dice la guía, sin necesidad de un modelo) o el modelo no encuentra en ellos señal. Se interpretan aparte con las guías${guias ? ` (${guias})` : ''}.`,
   },
+};
+
+// Guía que interpreta cada dato opcional: el texto del bloque cita solo las que tocan.
+const GUIAS = {
+  blood_glucose_level: 'ADA', hba1c_level: 'ADA', ap_hi: 'ACC/AHA', ap_lo: 'ACC/AHA',
+  egfr: 'KDIGO', albumin_creatinine_ratio: 'KDIGO',
 };
 
 // Rango de barrido del what-if por variable. Solo se ofrecen las que el modelo de ese
@@ -342,7 +348,11 @@ const Simulacion = () => {
           required={!aparte}
         />
         <Form.Text className="text-faint d-block text-end small">
-          {aparte ? 'No cambia la estimación: se interpreta aparte' : `Recomendado: ${hint.label}`}
+          {/* Lo que no tiene guía (el colesterol alto de la renal) no "se interpreta": el
+              modelo, simplemente, no le da peso. */}
+          {aparte
+            ? (GUIAS[feat] ? `No cambia la estimación: lo interpreta la guía (${GUIAS[feat]})` : 'No cambia la estimación: el modelo no le da peso')
+            : `Recomendado: ${hint.label}`}
         </Form.Text>
       </Form.Group>
     );
@@ -583,6 +593,7 @@ const Simulacion = () => {
   const notUsed = config?.not_used || [];
   const principales = (config?.inputs || []).filter(f => !config.categoricals?.[f] && !notUsed.includes(f));
   const aparte = [...notUsed.filter(f => (config?.inputs || []).includes(f)), ...(config?.optional_features || [])];
+  const guias = [...new Set(aparte.map(f => GUIAS[f]).filter(Boolean))].join(', ');
 
   return (
     <Container className="py-5">
@@ -681,7 +692,7 @@ const Simulacion = () => {
                     <div className="text-faint mb-2" style={{ fontSize: '.78rem', textTransform: 'uppercase', letterSpacing: '.05em', fontWeight: 600 }}>
                       {selectedMode === 'completo' ? 'Se interpretan con la guía' : 'Si los conoces'}
                     </div>
-                    <p className="small text-soft mb-2">{modeCopy.optional}</p>
+                    <p className="small text-soft mb-2">{modeCopy.optional(guias)}</p>
                     <Row>
                       {aparte.map(feat => <Col sm={6} key={feat}>{renderNumberInput(feat, true)}</Col>)}
                     </Row>

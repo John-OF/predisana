@@ -2,7 +2,10 @@
 # fija, que solo se barra lo que el modelo usa, validaciones y no-logueo en BD.
 import pytest
 
-ENFERMEDADES = ["diabetes", "hipertension", "cardiovascular"]
+import modos as M
+
+
+ENFERMEDADES = list(M.ENFERMEDADES)
 
 # 160 cm: talla^2 = 2,56 m2 exactos, asi el IMC acoplado sale redondo.
 BASE = {

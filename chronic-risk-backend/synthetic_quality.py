@@ -25,6 +25,7 @@ CORR_FEATURES = {
     "diabetes": ["age", "bmi", "waist_circumference", "hba1c_level"],
     "hipertension": ["age", "bmi", "waist_circumference", "ap_hi"],
     "cardiovascular": ["age", "bmi", "ap_hi", "ap_lo"],
+    "renal": ["age", "bmi", "ap_hi", "egfr"],
 }
 
 

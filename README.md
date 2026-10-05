@@ -1,7 +1,7 @@
 # Predisana — riesgo de enfermedades crónicas, explicado
 
-Aplicación web full-stack que **estima el riesgo** de tres enfermedades crónicas
-(**diabetes, hipertensión y cardiovascular**) con Machine Learning y — lo más
+Aplicación web full-stack que **estima el riesgo** de cuatro enfermedades crónicas
+(**diabetes, hipertensión, cardiovascular y renal crónica**) con Machine Learning y — lo más
 importante — **explica cada predicción**: qué variables la empujaron (SHAP), qué
 dicen los umbrales clínicos de referencia (ADA / ACC-AHA) y qué tan honestas son
 las probabilidades (calibración isotónica con curva de fiabilidad).
@@ -61,26 +61,27 @@ las probabilidades (calibración isotónica con curva de fiabilidad).
 
 ## Decisiones técnicas destacables
 
-- **Datos reales, revisados antes de entrenar**: las tres enfermedades salen de
-  **NHANES 2017-2023** (la encuesta de salud de los CDC, dos ciclos, 14 000-17 000
+- **Datos reales, revisados antes de entrenar**: las cuatro enfermedades salen de
+  **NHANES 2017-2023** (la encuesta de salud de los CDC, dos ciclos, 13 000-17 000
   adultos por enfermedad). La v1 mezclaba NHANES con un CSV de Kaggle para
   cardiovascular, donde los fumadores enfermaban menos y el modelo aprendía que fumar
   protege; antes aún se había descartado un dataset de hipertensión cuyo target era
   una fórmula del autor del CSV (el modelo daba 100% de riesgo a los 25 años).
-- **Enfermedad total, no solo diagnosticada**: el 22-24% de quienes tienen diabetes y
-  el 15-17% de quienes tienen hipertensión no estaban diagnosticados. El objetivo los
-  cuenta (HbA1c, glucosa en ayunas, presión medida), así que el modelo estima tener la
-  enfermedad, no que te la hayan diagnosticado.
+- **Enfermedad total, no solo diagnosticada**: el 22-24% de quienes tienen diabetes,
+  el 15-17% de quienes tienen hipertensión y el 81% de quienes tienen enfermedad renal
+  crónica no estaban diagnosticados. El objetivo los cuenta (HbA1c, glucosa en ayunas,
+  presión medida, filtrado glomerular y albúmina en orina), así que el modelo estima
+  tener la enfermedad, no que te la hayan diagnosticado.
 - **Lo que define la enfermedad no entra al modelo**: con la HbA1c dentro, un modelo
   de diabetes solo reaprende el umbral diagnóstico. Esos datos se piden en el modo
-  completo y los lee la capa clínica (ADA / ACC-AHA), que se devuelve como
+  completo y los lee la capa clínica (ADA, ACC/AHA, KDIGO), que se devuelve como
   `clinical_flags` junto al número del modelo, nunca encima de él.
-- **Seis modelos con filtro de validación**: por enfermedad y modo compiten LogReg,
+- **Ocho modelos con filtro de validación**: por enfermedad y modo compiten LogReg,
   LightGBM y RandomForest con validación cruzada **anidada**, y solo puede ganar quien
   respeta el sentido clínico de cada variable para todas las personas del train (más
   edad, IMC o presión no pueden bajar el riesgo; más HDL no puede subirlo) y ordena
   bien cada subgrupo de sexo y edad. RandomForest no puede llevar restricciones y no
-  pasa en ningún modo. AUC de test: 0,80-0,84 según enfermedad y modo.
+  pasa en ningún modo. AUC de test: 0,78-0,84 según enfermedad y modo.
 - **Cuando los datos no dan señal, se dice**: en datos de un solo momento quien ya
   está tratado tiene la presión o el colesterol controlados, y quien enferma deja de
   fumar. Las restricciones impiden aprender la relación al revés, el efecto queda en
@@ -106,7 +107,7 @@ las probabilidades (calibración isotónica con curva de fiabilidad).
   probabilidad— y el what-if sombrea en la curva el tramo sin respaldo.
 - **Capa de datos agnóstica al motor** (SQLAlchemy): SQLite en dev, Postgres en
   producción cambiando solo `DATABASE_URL`.
-- **503 tests de pytest** sobre los invariantes delicados: signos clínicos de los
+- **607 tests de pytest** sobre los invariantes delicados: signos clínicos de los
   modelos servidos, que `/metricas` publique lo que la API hace, calibración, capa
   clínica, avisos, laboratorio sintético y auth del admin.
 
@@ -133,7 +134,7 @@ Monorepo con dos componentes:
 └──────────────────┘        agregada        └───────────────────────────┘
 
   pipeline offline:  NHANES 2017-2023 → dataset limpio por enfermedad → reparto
-  + bake-off anidado con filtro de validación → 6 modelos + calibradores → sintético CTGAN
+  + bake-off anidado con filtro de validación → 8 modelos + calibradores → sintético CTGAN
 ```
 
 ## Páginas
@@ -144,7 +145,7 @@ Monorepo con dos componentes:
 | `/simulacion` | El simulador: formulario → riesgo + SHAP + capa clínica + what-if |
 | `/metricas` | Por enfermedad y modo: leaderboard con el filtro de validación, calibración, bandas y reporte por clase |
 | `/proyecto` | Case study: historia de los datos, modelos, laboratorio sintético, stack |
-| `/educacion` | Enciclopedia breve de las tres enfermedades |
+| `/educacion` | Enciclopedia breve de las cuatro enfermedades |
 | `/aviso` | Aviso legal / disclaimer |
 | `/admin` | Dashboard de uso (dev-only, por URL directa + token; sin link en la UI) |
 
@@ -163,7 +164,7 @@ python app.py                     # http://localhost:8000
 ```powershell
 npm install
 npm run dev              # Vite dev server (http://localhost:5173)
-npm test                 # 45 tests de Vitest (~2 s)
+npm test                 # 53 tests de Vitest (~2 s)
 ```
 
 El frontend lee `VITE_API_URL` (por defecto `http://localhost:8000`). El panel
@@ -172,7 +173,7 @@ admin requiere definir la variable de entorno `ADMIN_TOKEN` en el backend.
 **Tests del backend:**
 ```powershell
 pip install -r requirements-dev.txt
-python -m pytest         # 503 tests (BD temporal, no toca la de dev)
+python -m pytest         # 607 tests (BD temporal, no toca la de dev)
 ```
 
 **CI:** cada push y pull request a `main` corre en GitHub Actions la suite de pytest

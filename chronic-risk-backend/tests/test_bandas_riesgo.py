@@ -7,11 +7,14 @@ dejaba en "bajo" al 80% de los diabeticos reales del test.
 
 "Bajo" es quedar por debajo de la media de los datos de entrenamiento y "alto", al
 menos el doble, con los tercios como tope. Con los datos v2 (NHANES 2017-2023, enfermedad
-total) diabetes (19%) y cardiovascular (13%) usan la media y el doble; hipertension
-(44%) conserva los tercios. Los dos modos de una enfermedad comparten los cortes. La
+total) diabetes (19%), cardiovascular (13%) y renal (19%) usan la media y el doble;
+hipertension (44%) conserva los tercios. Los dos modos de una enfermedad comparten los cortes. La
 banda es una LECTURA de la probabilidad: no la modifica.
 """
 import pytest
+
+import modos as M
+
 
 # Perfiles del modo simplificado. Llevan los cuatro diagnosticos: cada modelo lee los
 # suyos (el de la propia enfermedad no es variable) y la API ignora el resto.
@@ -35,7 +38,8 @@ def _predict(client, disease, payload, modo=None):
 
 # ---------- los cortes ----------
 
-@pytest.mark.parametrize("disease,prevalencia", [("diabetes", 0.189), ("cardiovascular", 0.128)])
+@pytest.mark.parametrize("disease,prevalencia", [("diabetes", 0.189), ("cardiovascular", 0.128),
+                                                 ("renal", 0.188)])
 def test_las_enfermedades_poco_frecuentes_usan_la_media_y_el_doble(client, app_module, disease, prevalencia):
     cortes = client.get(f"/config/{disease}").get_json()["risk_bands"]
     real = app_module.PREVALENCE[disease]
@@ -57,7 +61,7 @@ def test_sin_prevalencia_quedan_los_tercios(app_module, monkeypatch):
         "low_below": 0.33, "high_from": 0.66, "prevalence": None, "relative_to_prevalence": False}
 
 
-@pytest.mark.parametrize("disease", ["diabetes", "hipertension", "cardiovascular"])
+@pytest.mark.parametrize("disease", list(M.ENFERMEDADES))
 def test_los_dos_modos_comparten_los_cortes(client, disease):
     simple = client.get(f"/config/{disease}?mode=simplificado").get_json()["risk_bands"]
     assert client.get(f"/config/{disease}?mode=completo").get_json()["risk_bands"] == simple
@@ -74,7 +78,7 @@ def test_los_limites_de_cada_banda(app_module):
 
 # ---------- lo que se ve en el simulador ----------
 
-@pytest.mark.parametrize("disease", ["diabetes", "hipertension", "cardiovascular"])
+@pytest.mark.parametrize("disease", list(M.ENFERMEDADES))
 def test_una_persona_sana_queda_en_bajo_y_un_perfil_cargado_en_alto(client, disease):
     assert _predict(client, disease, SANA_25)["risk_band"] == "low"
     assert _predict(client, disease, HOMBRE_68)["risk_band"] == "high"
@@ -83,7 +87,7 @@ def test_una_persona_sana_queda_en_bajo_y_un_perfil_cargado_en_alto(client, dise
 # ---------- contrato ----------
 
 @pytest.mark.parametrize("modo", ["simplificado", "completo"])
-@pytest.mark.parametrize("disease", ["diabetes", "hipertension", "cardiovascular"])
+@pytest.mark.parametrize("disease", list(M.ENFERMEDADES))
 def test_predict_devuelve_la_banda_y_sus_cortes(client, app_module, disease, modo):
     payload = HOMBRE_68 if modo == "simplificado" else {
         **HOMBRE_68, "bmi": 35.9, "waist_circumference": 118, "ap_hi": 142, "ap_lo": 88,

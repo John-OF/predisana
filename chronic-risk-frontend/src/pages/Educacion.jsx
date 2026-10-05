@@ -1,5 +1,5 @@
 import { Container, Row, Col, Card, Badge, Tab, Nav, ListGroup } from 'react-bootstrap';
-import { Droplet, HeartPulse, Heart, GraphDownArrow, Cpu, ExclamationOctagon, ExclamationTriangle } from 'react-bootstrap-icons';
+import { Droplet, HeartPulse, Heart, Funnel, GraphDownArrow, Cpu, ExclamationOctagon, ExclamationTriangle } from 'react-bootstrap-icons';
 
 // `variables_ia` describe los modelos servidos (v2: simplificado y completo), no la
 // medicina en general: el orden sale de la media de |SHAP| sobre el test real.
@@ -56,6 +56,23 @@ const INFO_ENFERMEDADES = {
         ],
         sintomas: ["Dolor u opresión en el pecho (Angina)", "Falta de aire", "Entumecimiento en extremidades", "Palpitaciones"],
         tratamiento: "Prevención primaria (estilo de vida) y secundaria (fármacos como estatinas, aspirina, cirugías)."
+    },
+    renal: {
+        titulo: "Enfermedad Renal Crónica",
+        color: "success",
+        definicion: "Daño en los riñones o pérdida de su capacidad de filtrar la sangre que dura más de 3 meses. Se detecta con dos análisis sencillos: el filtrado glomerular (eGFR, en sangre) por debajo de 60 o la albúmina en orina desde 30 mg/g.",
+        mortalidad: "Causa más de un millón de muertes al año en el mundo y multiplica el riesgo de infarto e ictus.",
+        poblacion: "Afecta a más del 10% de los adultos del mundo y casi nadie lo sabe: en estos datos, solo el 19% de quienes la tienen estaba diagnosticado.",
+        organos: ["Riñones", "Corazón y vasos", "Huesos", "Sangre (Anemia)"],
+        variables_ia: "Lo que más pesa es la edad, seguida de tener la presión alta y la diabetes, sus dos primeras causas. En el modo completo cuentan además la HbA1c y la presión sistólica medida. El filtrado glomerular y la albúmina en orina no entran en el modelo: definen la enfermedad, así que se interpretan aparte con los umbrales de KDIGO. El colesterol alto diagnosticado no cambia la estimación: quien lo tiene suele tomar estatinas, y en estos datos no da señal.",
+        factores: [
+            "Diabetes (primera causa).",
+            "Hipertensión arterial (segunda causa).",
+            "Enfermedad cardiovascular y obesidad.",
+            "Edad avanzada y antecedentes familiares."
+        ],
+        sintomas: ["Generalmente asintomática hasta fases avanzadas.", "Hinchazón de piernas y tobillos.", "Cansancio y falta de apetito.", "Orina espumosa."],
+        tratamiento: "No tiene cura, pero se puede frenar: controlar la presión y la glucosa, fármacos que protegen el riñón y evitar los que lo dañan. En la fase final, diálisis o trasplante."
     }
 };
 
@@ -84,6 +101,9 @@ const Educacion = () => {
                                 </Nav.Item>
                                 <Nav.Item>
                                     <Nav.Link eventKey="cardiovascular"><Heart className="me-2" />Cardiovascular</Nav.Link>
+                                </Nav.Item>
+                                <Nav.Item>
+                                    <Nav.Link eventKey="renal"><Funnel className="me-2" />Renal</Nav.Link>
                                 </Nav.Item>
                             </Nav>
                         </Col>

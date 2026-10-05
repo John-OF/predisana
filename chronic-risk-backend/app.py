@@ -179,11 +179,22 @@ def _paths(clave: str) -> Dict[str, str]:
         ("pipeline", "pkl"), ("calibrator", "pkl"), ("features", "json"), ("metrics", "json"))}
 
 
-# Datos que se interpretan con las guias (ADA, ACC/AHA) en la capa clinica. Cuando
-# definen la enfermedad (HbA1c y glucosa en diabetes, presion en hipertension) no entran
-# al modelo: con ellos el modelo solo reaprenderia el umbral diagnostico. Se pueden
-# aportar en los dos modos, y en el completo el formulario los pide.
-ENTRADAS_CLINICAS = ("blood_glucose_level", "hba1c_level", "ap_hi", "ap_lo")
+# Datos que se interpretan con las guias (ADA, ACC/AHA, KDIGO) en la capa clinica.
+# Cuando definen la enfermedad (HbA1c y glucosa en diabetes, presion en hipertension,
+# filtrado y albumina en la renal) no entran al modelo: con ellos el modelo solo
+# reaprenderia el umbral diagnostico. Se pueden aportar en los dos modos, y en el
+# completo el formulario los pide.
+ENTRADAS_CLINICAS = ("blood_glucose_level", "hba1c_level", "ap_hi", "ap_lo", "egfr",
+                     "albumin_creatinine_ratio")
+# Las que el formulario ofrece como opcionales en cualquier enfermedad. La funcion
+# renal, solo donde la define (o donde es variable del modelo): en el simplificado de
+# diabetes un filtrado glomerular seria un campo mas que casi nadie conoce.
+CLINICAS_DE_SIEMPRE = ("blood_glucose_level", "hba1c_level", "ap_hi", "ap_lo")
+
+
+def _clinicas_del_formulario(disease: str, feats: List[str]) -> List[str]:
+    return [c for c in ENTRADAS_CLINICAS if c not in feats
+            and (c in CLINICAS_DE_SIEMPRE or c in M.DEFINITORIAS[disease])]
 
 # Limites FISICOS de cada dato de entrada: lo que se acepta, no lo que el modelo vio
 # (eso es SUPPORT, AUD-16, y solo avisa). Fuera de aqui no hay paciente posible
@@ -566,16 +577,26 @@ def _vacio(val) -> bool:
 #   - Presión arterial: ACC/AHA 2017 Hypertension Guideline. Desde la v2 cuenta
 #     tambien la diastolica: el objetivo de hipertension es >= 140/90, y con solo la
 #     sistolica un 132/95 salia como grado 1.
+#   - Función renal: KDIGO 2024 (filtrado glomerular G1-G5, albuminuria A1-A3). Una
+#     sola medición no basta para el diagnóstico: tiene que mantenerse 3 meses.
 _NIVELES_PRESION = (
     ("presion_elevada", "presión elevada"),
     ("hipertension_grado_1", "hipertensión grado 1"),
     ("hipertension_grado_2", "hipertensión grado 2"),
     ("crisis_hipertensiva", "crisis hipertensiva"),
 )
+# (por debajo de, estadio, descripción): los estadios con filtrado < 60.
+_ESTADIOS_FILTRADO = (
+    (15, "G5", "fallo renal"),
+    (30, "G4", "disminución grave"),
+    (45, "G3b", "disminución moderada a grave"),
+    (60, "G3a", "disminución leve a moderada"),
+)
 
 
 def compute_clinical_flags(glucose_mgdl: float, hba1c: float, systolic: float,
-                           diastolic: float = 0.0) -> List[Dict[str, Any]]:
+                           diastolic: float = 0.0, egfr: float = 0.0,
+                           albumin_creatinine: float = 0.0) -> List[Dict[str, Any]]:
     flags: List[Dict[str, Any]] = []
 
     # --- Glucosa plasmática en ayunas (ADA) ---
@@ -614,6 +635,23 @@ def compute_clinical_flags(glucose_mgdl: float, hba1c: float, systolic: float,
                       "category": categoria, "source": "ACC/AHA",
                       "detail": f"Presión {lectura}: {nombre}."})
 
+    # --- Función renal (KDIGO): filtrado < 60 o albuminuria >= 30 mg/g ---
+    if 0 < egfr < 60:
+        estadio, nombre = next((e, n) for tope, e, n in _ESTADIOS_FILTRADO if egfr < tope)
+        flags.append({"indicator": "egfr", "value": egfr, "category": f"filtrado_{estadio}",
+                      "source": "KDIGO",
+                      "detail": (f"Filtrado glomerular de {egfr:g} mL/min/1,73 m²: estadio "
+                                 f"{estadio} ({nombre}). Por debajo de 60 es criterio de "
+                                 f"enfermedad renal crónica si se mantiene 3 meses.")})
+    if albumin_creatinine >= 30:
+        categoria, nombre = (("A3", "gravemente aumentada") if albumin_creatinine > 300
+                             else ("A2", "moderadamente aumentada"))
+        flags.append({"indicator": "albuminuria", "value": albumin_creatinine,
+                      "category": f"albuminuria_{categoria}", "source": "KDIGO",
+                      "detail": (f"Albúmina/creatinina en orina de {albumin_creatinine:g} mg/g: "
+                                 f"albuminuria {nombre} ({categoria}). Desde 30 es criterio de "
+                                 f"enfermedad renal crónica si se mantiene 3 meses.")})
+
     return flags
 
 
@@ -637,17 +675,25 @@ def _enumerar(cosas: List[str]) -> str:
 
 
 def _marcada(datos: Dict[str, Any], f: str) -> bool:
-    """Una variable sin efecto 'cuenta' si el usuario la dio; una categoria del tabaco,
-    solo si es la que marco."""
+    """Una variable sin efecto 'cuenta' si el usuario la dio; una de si/no (una categoria
+    del tabaco, un diagnostico), solo si la marco: el colesterol alto de la renal llega
+    siempre, tambien con un "no", y avisar entonces de que no se refleja no tiene sentido."""
     crudo = _safe_get(datos, f)
     if _vacio(crudo):
         return False
-    if f.startswith("smoking_history_"):
+    if _input_limits(f) == _BINARIAS:
         try:
             return _to_float(f, crudo) == 1
         except InvalidPayload:
             return False
     return True
+
+
+# Diagnosticos previos (si/no) que pueden quedarse sin efecto, como el colesterol alto
+# en la renal: quien lo tiene diagnosticado suele estar tratado (estatinas).
+_DIAGNOSTICOS = {"hypertension": "hipertensión", "diabetes": "diabetes",
+                 "high_cholesterol": "colesterol alto",
+                 "heart_disease": "una enfermedad cardiovascular"}
 
 
 def compute_sin_efecto_flags(clave: str, datos: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -663,7 +709,17 @@ def compute_sin_efecto_flags(clave: str, datos: Dict[str, Any]) -> List[Dict[str
                        "suele dejar de fumar, y el modelo no encuentra señal en el sentido clínico, "
                        "así que no le da peso."),
         })
-    resto = [f for f in marcadas if f not in tabaco]
+    diagnosticos = [f for f in marcadas if f in _DIAGNOSTICOS]
+    if diagnosticos:
+        flags.append({
+            "indicator": "sin_efecto", "value": diagnosticos, "category": "no_reflejado_en_el_modelo",
+            "source": "modelo",
+            "detail": (f"Indicaste un diagnóstico de {_enumerar([_DIAGNOSTICOS[f] for f in diagnosticos])}. "
+                       f"Es un factor de riesgo, pero esta estimación no lo refleja: en los datos de "
+                       f"entrenamiento quien ya está diagnosticado suele estar en tratamiento, y el "
+                       f"modelo no encuentra señal en el sentido clínico, así que no le da peso."),
+        })
+    resto = [f for f in marcadas if f not in tabaco and f not in diagnosticos]
     if resto:
         texto = _enumerar([_NOMBRES.get(f, f) for f in resto])
         plural = len(resto) > 1
@@ -1074,7 +1130,7 @@ def get_config(disease: str):
             if e not in entradas:
                 entradas.append(e)
     # Opcionales que no son del modelo pero si de la capa clinica.
-    clinicas = [c for c in ENTRADAS_CLINICAS if c not in feats]
+    clinicas = _clinicas_del_formulario(disease, feats)
     ranges = {f: _input_limits(f) for f in dict.fromkeys(entradas + feats + clinicas)
               if f not in M.CATEGORICAS and _input_limits(f)}
 
@@ -1155,7 +1211,8 @@ def predict(disease: str):
     pred_class = 1 if raw_prob >= 0.5 else 0
 
     clinical_flags = compute_clinical_flags(clinico["blood_glucose_level"], clinico["hba1c_level"],
-                                            clinico["ap_hi"], clinico["ap_lo"])
+                                            clinico["ap_hi"], clinico["ap_lo"], clinico["egfr"],
+                                            clinico["albumin_creatinine_ratio"])
     clinical_flags += compute_sin_efecto_flags(clave, datos)
     clinical_note = " ".join(f["detail"] for f in clinical_flags) or \
         "Sin indicadores clínicos por encima de umbrales de referencia."
@@ -1202,7 +1259,7 @@ def predict(disease: str):
         "explain_note": ("La probabilidad mostrada es la salida del modelo calibrada (isotónica "
                          "centrada); `raw_model_probability` es la salida cruda, la que explican los "
                          "valores SHAP. Estima la enfermedad total: diagnosticada o detectada por "
-                         "análisis o medición. Los indicadores clínicos (ADA/ACC-AHA) y los avisos "
+                         "análisis o medición. Los indicadores clínicos (ADA, ACC/AHA, KDIGO) y los avisos "
                          "de cobertura de datos (`support_warnings`) se muestran aparte como "
                          "referencia y NO modifican la probabilidad."),
     })

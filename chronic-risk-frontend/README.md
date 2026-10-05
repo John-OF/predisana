@@ -50,7 +50,7 @@ npm run dev       # Vite dev server con HMR (http://localhost:5173)
 npm run build     # build de producción en dist/
 npm run preview   # sirve el build localmente para probarlo
 npm run lint      # ESLint sobre todo el proyecto
-npm test          # Vitest (45 tests, ~2 s)
+npm test          # Vitest (53 tests, ~2 s)
 npm run test:watch  # los mismos, en modo watch
 ```
 
@@ -59,7 +59,7 @@ npm run test:watch  # los mismos, en modo watch
 
 ## Tests
 
-**45 tests con Vitest + Testing Library** (`npm test`), sobre las cosas del front que
+**53 tests con Vitest + Testing Library** (`npm test`), sobre las cosas del front que
 tienen lógica de verdad:
 
 - **`ErrorBoundary`** — que un fallo de render muestre una salida en vez de dejar la
@@ -81,7 +81,9 @@ tienen lógica de verdad:
   migrar hipertensión a NHANES: cambia el esquema y algo se pinta como
   `waist_circumference` en la ficha o en la barra de SHAP. Solo los one-hot heredan la
   etiqueta de su grupo (`gender_Male` → "Sexo"): con un prefijo cualquiera,
-  `bmi_autodeclarado` pasaba el test por la etiqueta de `bmi`. Y donde se pinta una
+  `bmi_autodeclarado` pasaba el test por la etiqueta de `bmi`. Exige también que cada
+  enfermedad servida tenga nombre y aparezca en las páginas que declaran su lista a mano
+  (simulador, métricas, proyecto y educación). Y donde se pinta una
   columna one-hot suelta (métricas, laboratorio, admin), `getFeatureLabel` la lee como
   grupo y opción («Tabaquismo: Exfumador») en vez de `smoking_history_former`.
 - **`AvisoSoporte`** — los avisos de cuánto fiarse del resultado, con la forma exacta
@@ -224,9 +226,11 @@ chronic-risk-frontend/
   que un fallo de una página no se lleve por delante la navegación. Su
   `key={pathname}` lo resetea al navegar; remontarlo no vuelve a pedir los chunks
   (`React.lazy` cachea el módulo ya resuelto), así que no deshace el code-splitting.
-- **Las 3 enfermedades** (`diabetes`, `hipertension`, `cardiovascular`) son un set
-  cerrado declarado en `DISEASES` dentro de `Simulacion.jsx` (y `Metricas.jsx` /
-  `Proyecto.jsx`). Si se añade una nueva al backend, hay que añadirla aquí también.
+- **Las 4 enfermedades** (`diabetes`, `hipertension`, `cardiovascular`, `renal`) son un
+  set cerrado declarado en `DISEASES` dentro de `Simulacion.jsx` (y `Metricas.jsx` /
+  `Proyecto.jsx`, más su ficha en `Educacion.jsx`). Si se añade una nueva al backend, hay
+  que añadirla aquí también: el contrato de etiquetas lo comprueba contra los modelos
+  servidos, así que una enfermedad que falte en una página tumba un test.
 - **`Simulacion.jsx`** es la página más compleja: consume `/config`, `/predict`,
   `/synthetic` y `/whatif`, usa como min/max de los inputs los límites que sirve
   `/config.ranges` (los mismos con los que valida el API; `FIELD_HINTS`, en

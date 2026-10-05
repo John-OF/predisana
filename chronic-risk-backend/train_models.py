@@ -242,7 +242,9 @@ def entrenar(enfermedad, modo, tr, te, rapido):
         "objetivo": {"diabetes": "diagnosticada, HbA1c >= 6,5% o glucosa en ayunas >= 126 mg/dL",
                      "hipertension": "diagnosticada, >= 140/90 mmHg medida o medicacion",
                      "cardiovascular": "cardiopatia coronaria, angina, infarto, insuficiencia "
-                                       "cardiaca o ictus autorreportados"}[enfermedad],
+                                       "cardiaca o ictus autorreportados",
+                     "renal": "diagnosticada, filtrado glomerular < 60 o albumina/creatinina "
+                              "en orina >= 30 mg/g"}[enfermedad],
         "n_train": int(len(y)), "n_test": int(len(yte)), "prevalencia": prevalencia,
         "best_model": ganador_fila["model"], "cv_auc": ganador_fila["cv_auc_mean"],
         # Variables que el modelo servido no usa (las restricciones las dejaron en cero):

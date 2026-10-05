@@ -78,9 +78,29 @@ def test_cardiovascular_completo_no_usa_presion_colesterol_ni_hba1c(app_module, 
         assert imp[f] <= 1e-12, f
 
 
+# ---------- renal ----------
+
+def test_renal_pesa_la_edad_luego_la_presion_alta_y_la_diabetes(importancia):
+    assert list(importancia["renal_simplificado"].index[:3]) == ["age", "hypertension", "diabetes"]
+
+
+def test_renal_completo_suma_la_hba1c_y_la_sistolica(importancia):
+    arriba = set(importancia["renal_completo"].index[:4])
+    assert {"age", "hypertension", "hba1c_level", "ap_hi"} == arriba
+
+
+def test_renal_el_colesterol_alto_no_cambia_la_estimacion(app_module, importancia):
+    for modo in M.MODOS:
+        assert "high_cholesterol" in app_module.SIN_EFECTO[f"renal_{modo}"]
+        assert importancia[f"renal_{modo}"]["high_cholesterol"] <= 1e-12
+
+
 # ---------- lo que define la enfermedad no entra en el modelo ----------
 
-def test_ni_la_hba1c_y_la_glucosa_en_diabetes_ni_la_presion_en_hipertension(app_module):
+def test_lo_que_define_cada_enfermedad_no_entra_en_su_modelo(app_module):
+    """La HbA1c y la glucosa en diabetes, la presion en hipertension, el filtrado y la
+    albumina en orina en la renal."""
     for modo in M.MODOS:
         assert not {"hba1c_level", "blood_glucose_level"} & set(app_module.FEATURES[f"diabetes_{modo}"])
         assert not {"ap_hi", "ap_lo"} & set(app_module.FEATURES[f"hipertension_{modo}"])
+        assert not {"egfr", "albumin_creatinine_ratio"} & set(app_module.FEATURES[f"renal_{modo}"])

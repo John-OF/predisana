@@ -1,5 +1,6 @@
 # Tests del panel admin (A3): auth por token, logueo de predicciones con
 # session_id, stats agregadas y export CSV. Corre contra la BD temporal.
+import modos as M
 
 
 # ---------- auth ----------
@@ -67,7 +68,7 @@ def test_admin_stats_agrega_coherente(client, admin_headers):
     assert s["distinct_sessions"] >= 1
     por_enfermedad = {b["disease"]: b for b in s["by_disease"]}
     # Solo enfermedades servidas (nunca 'obesidad' u otras retiradas).
-    assert set(por_enfermedad) == {"diabetes", "hipertension", "cardiovascular"}
+    assert set(por_enfermedad) == set(M.ENFERMEDADES)
     # El histograma de cada enfermedad debe sumar exactamente su conteo.
     for d, fila in por_enfermedad.items():
         assert sum(s["prob_histogram"][d]) == fila["count"]
