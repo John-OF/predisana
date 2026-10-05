@@ -4,8 +4,8 @@ import {
   ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip,
   ReferenceLine, ResponsiveContainer, Legend,
 } from 'recharts';
-import { getMetrics } from '../services/api';
-import { getLabel } from '../utils/translations';
+import { getMetrics, MODOS, MODO_POR_DEFECTO } from '../services/api';
+import { getLabel, getFeatureLabel, grupoOneHot } from '../utils/translations';
 import { riskBand, bandNote } from '../utils/riskBand';
 
 const DISEASES = ['diabetes', 'hipertension', 'cardiovascular'];
@@ -19,29 +19,36 @@ const MODEL_LABELS = {
 };
 const prettyModel = (m) => MODEL_LABELS[m] || (m ? String(m) : '—');
 const pct = (x, d = 1) => (x == null ? '—' : `${(x * 100).toFixed(d)}%`);
+const AUC_MIN_SUBGRUPO = 0.55;  // el del filtro de train_models.py
+
+// Por qué un candidato no pasa el filtro, de lo peor a lo menos malo y con las etiquetas
+// de la UI: `motivos` lo guarda el entrenamiento con la clave de cada variable.
+const motivosDe = (row) => {
+  if (!row.violaciones_signo && !row.auc_subgrupos_cv) return row.motivos || [];
+  const signos = Object.entries(row.violaciones_signo || {})
+    .filter(([, v]) => v > 0)
+    .sort((a, b) => b[1] - a[1])
+    .map(([f, v]) => `${getFeatureLabel(f)} al revés en el ${pct(v)}`);
+  const subgrupos = Object.entries(row.auc_subgrupos_cv || {})
+    .filter(([, v]) => v != null && v < AUC_MIN_SUBGRUPO)
+    .map(([g, v]) => `AUC ${g.replace(/_/g, ' ')} ${v.toFixed(2)}`);
+  return [...signos, ...subgrupos];
+};
 
 const Metricas = () => {
   const [selectedDisease, setSelectedDisease] = useState('diabetes');
-  // Diabetes tiene un modelo HÍBRIDO: la variante con glucosa se pide como
-  // 'diabetes_glucosa'. Para el resto de enfermedades el toggle no aplica.
-  const [showGlucose, setShowGlucose] = useState(false);
+  // Dos modelos por enfermedad (v2): simplificado y completo.
+  const [selectedMode, setSelectedMode] = useState(MODO_POR_DEFECTO);
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-
-  const metricsKey = selectedDisease === 'diabetes' && showGlucose ? 'diabetes_glucosa' : selectedDisease;
-
-  const selectDisease = (d) => {
-    setShowGlucose(false);      // el toggle de glucosa solo vive en diabetes
-    setSelectedDisease(d);
-  };
 
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       setError(null);
       try {
-        const { data } = await getMetrics(metricsKey);
+        const { data } = await getMetrics(selectedDisease, selectedMode);
         setMetrics(data);
       } catch (err) {
         console.error(err);
@@ -51,7 +58,7 @@ const Metricas = () => {
       }
     };
     fetchData();
-  }, [metricsKey]);
+  }, [selectedDisease, selectedMode]);
 
   const leaderboard = metrics?.leaderboard || [];
   const bestModel = metrics?.best_model;
@@ -72,30 +79,34 @@ const Metricas = () => {
       <Nav variant="tabs" className="mb-4">
         {DISEASES.map(d => (
           <Nav.Item key={d}>
-            <Nav.Link active={selectedDisease === d} onClick={() => selectDisease(d)} className="text-capitalize px-4">
+            <Nav.Link active={selectedDisease === d} onClick={() => setSelectedDisease(d)} className="text-capitalize px-4">
               {getLabel(d)}
             </Nav.Link>
           </Nav.Item>
         ))}
       </Nav>
 
-      {selectedDisease === 'diabetes' && (
-        <div className="mb-4">
-          <p className="text-soft small mb-2">
-            La diabetes usa un modelo <strong>híbrido</strong>: uno con solo datos que cualquiera
-            puede responder, y una variante que añade la <strong>glucosa sérica</strong> (opcional)
-            cuando la persona la conoce. Compara ambos:
+      <div className="mb-4">
+        <p className="text-soft small mb-2">
+          Cada enfermedad tiene dos modelos: el <strong>simplificado</strong>, con lo que cualquiera
+          sabe de sí mismo (peso y talla autodeclarados, tabaco, diagnósticos previos), y el{' '}
+          <strong>completo</strong>, que añade medidas y análisis. Los dos salen de NHANES 2017-2023
+          y estiman la enfermedad total: diagnosticada o detectada por análisis o medición.
+        </p>
+        <ButtonGroup size="sm">
+          {MODOS.map(m => (
+            <Button key={m} variant={selectedMode === m ? 'primary' : 'outline-primary'} onClick={() => setSelectedMode(m)}>
+              {getLabel(m)}
+            </Button>
+          ))}
+        </ButtonGroup>
+        {metrics?.objetivo && (
+          <p className="text-faint small mt-2 mb-0">
+            Objetivo: {metrics.objetivo}. {metrics.n_train?.toLocaleString('es')} personas de entrenamiento,{' '}
+            {metrics.n_test?.toLocaleString('es')} de test.
           </p>
-          <ButtonGroup size="sm">
-            <Button variant={!showGlucose ? 'primary' : 'outline-primary'} onClick={() => setShowGlucose(false)}>
-              Sin glucosa · respondible
-            </Button>
-            <Button variant={showGlucose ? 'primary' : 'outline-primary'} onClick={() => setShowGlucose(true)}>
-              Con glucosa · híbrido
-            </Button>
-          </ButtonGroup>
-        </div>
-      )}
+        )}
+      </div>
 
       {loading && <div className="text-center py-5"><Spinner animation="border" variant="primary" /></div>}
       {error && <Alert variant="danger">{error}</Alert>}
@@ -120,9 +131,9 @@ const Metricas = () => {
             </Col>
             <Col sm={6} lg={3}>
               <div className="ps-kpi">
-                <div className="k-lbl">Exactitud</div>
-                <div className="k-val">{report ? pct(report.accuracy) : '—'}</div>
-                <div className="k-sub">accuracy global</div>
+                <div className="k-lbl">AUC con pesos NHANES</div>
+                <div className="k-val">{metrics.auc_test_ponderado != null ? metrics.auc_test_ponderado.toFixed(3) : '—'}</div>
+                <div className="k-sub">representativo de adultos de EE. UU.</div>
               </div>
             </Col>
             <Col sm={6} lg={3}>
@@ -136,21 +147,28 @@ const Metricas = () => {
 
           {/* Leaderboard */}
           <h3 style={{ fontSize: '1.3rem', marginBottom: '14px' }}>Leaderboard de algoritmos</h3>
-          <p className="text-soft small mb-3">Selección por AUC en validación cruzada (5-fold) sobre el conjunto de entrenamiento.</p>
-          <div className="table-responsive mb-5">
+          <p className="text-soft small mb-3">
+            Cada algoritmo se ajusta con validación cruzada anidada (la búsqueda de parámetros se
+            repite dentro de cada pliegue, así el AUC no está inflado). Y solo puede ganar quien pasa
+            el <strong>filtro de validación</strong>: ninguna variable puede mover el riesgo de
+            nadie al revés de su sentido clínico (más edad, IMC o presión no pueden bajarlo), y
+            tiene que discriminar también por sexo y por edad.
+          </p>
+          <div className="table-responsive mb-3">
             <Table className="align-middle">
               <thead>
                 <tr>
                   <th>Modelo</th>
-                  <th>AUC (CV)</th>
-                  <th>± Desv.</th>
-                  <th style={{ width: '32%' }}>Comparativa</th>
+                  <th>AUC (CV anidada)</th>
+                  <th>Filtro</th>
+                  <th style={{ width: '28%' }}>Comparativa</th>
                 </tr>
               </thead>
               <tbody>
                 {leaderboard.map((row) => {
                   const isWinner = row.model === bestModel;
                   const w = Math.round(((row.cv_auc_mean || 0) / maxAuc) * 100);
+                  const motivos = motivosDe(row);
                   return (
                     <tr key={row.model} className={isWinner ? 'winner' : ''}>
                       <td>
@@ -158,7 +176,13 @@ const Metricas = () => {
                         {isWinner && <span className="ps-medal">GANADOR</span>}
                       </td>
                       <td className="num">{(row.cv_auc_mean ?? 0).toFixed(4)}</td>
-                      <td className="num text-faint">±{(row.cv_auc_std ?? 0).toFixed(4)}</td>
+                      <td className="small">
+                        {row.pasa_filtro !== false
+                          ? <span className="text-success">Pasa</span>
+                          : <span className="text-danger" title={motivos.join('; ')}>
+                              No pasa: {motivos.slice(0, 2).join('; ')}{motivos.length > 2 ? '…' : ''}
+                            </span>}
+                      </td>
                       <td>
                         <div className="ps-mini-bar" style={{ width: `${w}%`, opacity: isWinner ? 1 : 0.5 }} />
                       </td>
@@ -168,6 +192,14 @@ const Metricas = () => {
               </tbody>
             </Table>
           </div>
+          {(metrics.sin_efecto || []).length > 0 && (
+            <Alert variant="secondary" className="small mb-5">
+              Las restricciones dejan sin efecto en este modelo: {metrics.sin_efecto.map(f => getFeatureLabel(f)).join(', ')}.
+              En datos de un solo momento, quien ya está diagnosticado suele estar en tratamiento (o
+              ha dejado de fumar) y no hay señal en el sentido clínico. El simulador lo avisa.
+            </Alert>
+          )}
+          {!(metrics.sin_efecto || []).length && <div className="mb-5" />}
 
           {/* Curva de calibración (fiabilidad) */}
           {calib && (
@@ -301,7 +333,15 @@ const Metricas = () => {
 
               <div className="mt-4">
                 <h5 style={{ fontSize: '1.05rem' }}>Variables del modelo</h5>
-                <p className="text-soft small mb-0">{metrics.features.map(f => getLabel(f)).join(', ')}.</p>
+                <p className="text-soft small mb-0">
+                  {[...new Set(metrics.features.map(f => getLabel(grupoOneHot(f) ?? f)))].join(', ')}.
+                </p>
+                {(metrics.definitorias || []).length > 0 && (
+                  <p className="text-faint small mt-2 mb-0">
+                    No entran en el modelo porque definen la enfermedad: {metrics.definitorias.map(f => getLabel(f)).join(', ')}.
+                    Si se aportan, las interpreta la guía (ADA, ACC/AHA).
+                  </p>
+                )}
               </div>
             </>
           )}

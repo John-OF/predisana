@@ -1,175 +1,49 @@
 # train_models.py
-# Stack multi-modelo con seleccion por validacion cruzada (A5).
-# Por cada enfermedad se entrenan varios modelos, se elige el mejor por AUC en
-# cross-validation y se persiste el ganador. El score de CADA modelo se guarda en
-# _metrics.json como insumo para el leaderboard de /metricas.
+# Entrenamiento (v2, revision 2026-10). Por cada enfermedad y modo compiten LogReg,
+# LightGBM y RandomForest, cada uno con sus hiperparametros ajustados por validacion
+# cruzada ANIDADA (la busqueda se repite dentro de cada pliegue exterior, asi que el
+# AUC con el que se comparan no esta inflado por haber elegido los parametros sobre
+# los mismos datos). Y solo puede ganar quien pasa el FILTRO DE VALIDACION:
+#   - signos clinicos: subir una variable con sentido +1 (edad, IMC, presion...) no
+#     puede bajar el riesgo de nadie del train, ni subirlo una con sentido -1 (HDL,
+#     eGFR). En la v1 esto se descubria despues (el peso de hipertension, el tabaco de
+#     cardiovascular); ahora es un requisito para ganar.
+#   - subgrupos: AUC >= 0,55 por sexo y por tramo de edad, para que no gane un
+#     modelo que solo ordena bien por edad.
+# El ganador se calibra con la isotonica centrada (fit_calibrator) sobre sus
+# predicciones out-of-fold y se evalua UNA vez en el test, tambien con los pesos
+# muestrales de NHANES (representativo de los adultos de EE. UU.).
 #
-# DIABETES NO SE ENTRENA AQUI: su modelo vivo es el HIBRIDO NHANES (variantes
-# con/sin glucosa + calibradores) que entrena train_nhanes_diabetes.py, el cual
-# reusa build_models/CV_FOLDS/SEED de este modulo. Correr este script no debe
-# pisar models/diabetes_*.
-import os, json
+# Escribe data_curated/<enfermedad>/ (el reparto) y models/.
 import argparse
+import json
+import os
+import time
+
 import numpy as np
 import pandas as pd
-
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
+from joblib import dump
+from lightgbm import LGBMClassifier
+from sklearn.base import clone
+from sklearn.calibration import calibration_curve
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.isotonic import IsotonicRegression
-from sklearn.calibration import calibration_curve
-from sklearn.metrics import classification_report, roc_auc_score, brier_score_loss
-from sklearn.model_selection import (
-    train_test_split, StratifiedKFold, cross_val_score, cross_val_predict,
-)
-from joblib import dump
+from sklearn.metrics import brier_score_loss, classification_report, roc_auc_score
+from sklearn.model_selection import (GridSearchCV, RandomizedSearchCV, StratifiedKFold,
+                                     cross_val_predict, train_test_split)
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 
-from lightgbm import LGBMClassifier
-
+import modos as M
 from monotonic_logreg import MonotonicLogisticRegression
 from risk_banding import band_report
 
-PROCESSED_DIR = "data_processed"
-CURATED_DIR = "data_curated"
-MODELS_DIR = "models"
-os.makedirs(MODELS_DIR, exist_ok=True)
-
-# Diabetes fuera a proposito: la entrena train_nhanes_diabetes.py (ver cabecera).
-DATASETS = ["hipertension", "cardiovascular"]
-
-# Features descartadas por baja "respondibilidad" (decision de alcance 2026-06-04).
-# El simulador es educativo y de autoevaluacion: prioriza inputs que una persona
-# comun puede responder (N1 autorreporte: edad, sexo, peso, talla, habitos;
-# N2 medicion casera/farmacia: presion, cintura) y descarta las que exigen
-# laboratorio (extraccion de sangre + orden medica). Las columnas siguen en los
-# CSV (utiles para el case-study/diccionario); solo se excluyen del MODELO.
-# Costo medido por ablation (CV AUC, mismo protocolo que abajo):
-#   - hipertension: fuera los 7 labs (juntos pesaban ~9% de importancia).
-#       0.955 -> 0.946, practicamente gratis. Quedan inputs 100% respondibles.
-#   - cardiovascular: nada que quitar; colesterol/glucosa ya son ordinales
-#       ("te dijeron que lo tienes alto"), no valores de laboratorio.
-# (Diabetes definia aqui "hba1c_level"; su seleccion de features vive ahora en
-#  train_nhanes_diabetes.py: SELF_REPORT / GLUCOSA, con HbA1c excluida.)
-DROP_NON_RESPONDABLE = {
-    # hipertension ya no trae labs: desde la migracion a NHANES (AUD-1) el dataset
-    # nace solo con variables autorreportadas/antropometricas.
-    "hipertension": [],
-    "cardiovascular": [],
-}
-
-# Restricciones de monotonia para LightGBM (2026-07-05).
-# Motivo: el dataset de diabetes trae la glucosa CUANTIZADA a un puñado de valores
-# discretos y uno de ellos (158) quedo con 0% de positivos por como se construyo la
-# fuente. LightGBM, al ser de arboles, MEMORIZABA ese pozo y devolvia riesgo ~0.02
-# para glucosa 157-158 mientras sus vecinos (155, 159) daban ~0.58. Forzar monotonia
-# creciente elimina el pozo de raiz y hace que el modelo respete la fisiologia:
-# a mas glucosa/edad/IMC/presion, el riesgo NUNCA puede bajar. Coste de AUC minimo.
-# Solo se listan features cuyo signo clinico es INEQUIVOCO; las de signo ambiguo
-# (sexo, tabaquismo en diabetes/hipertension) se dejan libres (0). Aplica a LightGBM
-# y a la LogReg (MonotonicLogisticRegression); RandomForest de sklearn no soporta
-# monotone_constraints.
-# OJO: la entrada "diabetes" se QUEDA aunque diabetes no este en DATASETS —
-# train_nhanes_diabetes.py llama build_models("diabetes", features) y depende de
-# este vector para la monotonia de ambas variantes del hibrido.
-#
-# Habitos de cardiovascular (revision 2026-10). Se dejaban libres y el modelo aprendia
-# que FUMAR y BEBER protegen: sobre el test real, marcar "fumo" bajaba la probabilidad
-# en el 59% de los casos (-2,6 puntos de media) y "bebo", en el 75% (-4,1). No es
-# fisiologia, es el dataset: son autorreportados y ahi los fumadores enferman menos
-# (47,4% frente a 50,0%), igual que los que beben (47,7% frente a 49,8%). Un simulador
-# de riesgo no puede premiar el tabaco, asi que `smoke` y `alco` no pueden BAJAR el
-# riesgo y `active` no puede SUBIRLO. Donde los datos no dan senal en el sentido
-# clinico, la restriccion deja el efecto en cero: es lo que ya pasaba con `gluc`, y
-# lo que paso con fumar y beber (app.py lo avisa en la capa clinica). El sedentarismo
-# si pesa: +4,0 puntos de media. Coste medido: AUC de CV 0,7996 -> 0,7993 y de test
-# 0,7943 -> 0,7936; LightGBM sigue ganando el bake-off (LogReg 0,7921).
-#
-# Peso en hipertension (revision 2026-10). La LogReg no recibia estas restricciones:
-# se daba por hecho que "ya es monotona por construccion", y lo es, pero en el sentido
-# que diga el dato. Gano el bake-off con el peso en -0,0167 por kg: a igual IMC y
-# cintura, mas peso es mas talla, y el modelo lo premiaba. Un hombre de 50 con IMC 30
-# y cintura 100 daba 26,7% con 70 kg y 13,0% con 100 kg, y el SHAP ponia el peso en
-# "lo reduce" al 63% de la gente con obesidad del test. Ahora la LogReg tambien las
-# respeta (monotonic_logreg.py) y el peso queda en cero: su efecto llega por el IMC y
-# la cintura. Coste medido: AUC de CV 0,8181 -> 0,8172 y de test 0,8037 -> 0,8027; la
-# LogReg sigue ganando el bake-off (LightGBM 0,8124).
-MONOTONIC_INCREASING = {
-    "diabetes": ["blood_glucose_level", "hba1c_level", "age", "bmi",
-                 "hypertension", "heart_disease"],
-    "hipertension": ["age", "bmi", "weight", "waist_circumference",
-                     "diabetes", "heart_disease", "high_cholesterol"],
-    "cardiovascular": ["age", "bmi", "ap_hi", "ap_lo", "cholesterol", "gluc",
-                       "smoke", "alco"],
-}
-MONOTONIC_DECREASING = {
-    "cardiovascular": ["active"],
-}
-
-
-def _monotone_vector(disease: str, features):
-    """Vector de restricciones {-1,0,1} alineado al orden de `features` para LightGBM
-    y la LogReg. +1 = la prediccion no puede decrecer al crecer esa feature; -1 = no
-    puede crecer; 0 = sin restriccion.
-    El StandardScaler(with_mean=False) divide por una desviacion positiva, asi que
-    preserva la direccion: monotonia en la feature escalada == monotonia en la cruda."""
-    inc = set(MONOTONIC_INCREASING.get(disease, []))
-    dec = set(MONOTONIC_DECREASING.get(disease, []))
-    return [1 if f in inc else -1 if f in dec else 0 for f in features]
-
-# Validacion cruzada para la seleccion de modelo
-CV_FOLDS = 5
+DATA = "data_processed"
+CURATED = "data_curated"
+MODELS = "models"
 SEED = 42
-
-
-def get_features_for_disease(name: str, df: pd.DataFrame):
-    """
-    Las features son las columnas del dataset propio de la enfermedad, menos el
-    target y menos las descartadas por respondibilidad (DROP_NON_RESPONDABLE).
-    Con los esquemas por-enfermedad (B1) ya no hay columnas de leakage que
-    recortar: cada dataset trae solo features legitimas para SU target (p.ej.
-    diabetes conserva hypertension/heart_disease como comorbilidades y viceversa).
-    Tras la migracion de hipertension a NHANES (AUD-1) ya no queda nada que
-    recortar: ninguno de los dos datasets propios trae columnas de laboratorio.
-    OJO con el historico: la version vieja de hipertension SI usaba la presion
-    medida como feature, sobre un target que era una formula del autor del CSV.
-    """
-    drop = set(DROP_NON_RESPONDABLE.get(name, []))
-    return [c for c in df.columns if c != "target" and c not in drop]
-
-
-def build_models(disease: str = None, features=None) -> dict:
-    """Registro de modelos candidatos. Todos comparten la misma interfaz de
-    Pipeline con los pasos 'scaler' + 'clf' (nombres load-bearing para el SHAP
-    de app.py). El StandardScaler(with_mean=False) es inocuo para los arboles.
-
-    Si se pasan `disease` + `features`, el LightGBM y la LogReg reciben el vector de
-    monotonia de esa enfermedad (ver MONOTONIC_INCREASING); sin ellos quedan sin
-    restringir."""
-    lgbm_kwargs = dict(
-        n_estimators=400, class_weight="balanced",
-        random_state=SEED, n_jobs=-1, verbose=-1)
-    restricciones = None
-    if disease is not None and features is not None:
-        restricciones = _monotone_vector(disease, features)
-        lgbm_kwargs["monotone_constraints"] = restricciones
-
-    return {
-        "logreg": Pipeline([
-            ("scaler", StandardScaler(with_mean=False)),
-            ("clf", MonotonicLogisticRegression(
-                restricciones, max_iter=2000, class_weight="balanced")),
-        ]),
-        "random_forest": Pipeline([
-            ("scaler", StandardScaler(with_mean=False)),
-            ("clf", RandomForestClassifier(
-                n_estimators=200, class_weight="balanced",
-                n_jobs=-1, random_state=SEED)),
-        ]),
-        "lightgbm": Pipeline([
-            ("scaler", StandardScaler(with_mean=False)),
-            ("clf", LGBMClassifier(**lgbm_kwargs)),
-        ]),
-    }
+AUC_MIN_SUBGRUPO = 0.55
+TRAMOS_EDAD = ((18, 39), (40, 59), (60, 80))
 
 
 def _isotonica(x, y) -> IsotonicRegression:
@@ -219,178 +93,200 @@ def fit_calibrator(oof_proba, y) -> IsotonicRegression:
     return _isotonica(centros, niveles)
 
 
-def load_split_or_fallback(name: str):
-    """Usa train/test de data_curated si existen; si no, hace split desde data_processed."""
-    curated_train = os.path.join(CURATED_DIR, name, f"{name}_train.csv")
-    curated_test  = os.path.join(CURATED_DIR, name, f"{name}_test.csv")
-    processed_all = os.path.join(PROCESSED_DIR, f"{name}_dataset.csv")
-
-    if os.path.exists(curated_train) and os.path.exists(curated_test):
-        print(f"   (Cargando datos curados desde {CURATED_DIR})")
-        train_df = pd.read_csv(curated_train, low_memory=False)
-        test_df  = pd.read_csv(curated_test,  low_memory=False)
-    else:
-        print(f"   (Usando fallback: split directo de {processed_all})")
-        df = pd.read_csv(processed_all, low_memory=False)
-        train_df, test_df = train_test_split(
-            df, test_size=0.2, random_state=SEED, stratify=df["target"]
-        )
-    return train_df, test_df
+def repartir(enfermedad):
+    """Un solo reparto por enfermedad (estratificado por objetivo y ciclo) que comparten
+    los dos modos: cada uno se queda con las filas que tienen todas sus variables."""
+    d = pd.read_csv(os.path.join(DATA, f"{enfermedad}_dataset.csv"))
+    estrato = d["target"].astype(str) + "_" + d["ciclo"]
+    tr, te = train_test_split(d, test_size=0.2, random_state=SEED, stratify=estrato)
+    out = os.path.join(CURATED, enfermedad)
+    os.makedirs(out, exist_ok=True)
+    tr.to_csv(os.path.join(out, f"{enfermedad}_train.csv"), index=False)
+    te.to_csv(os.path.join(out, f"{enfermedad}_test.csv"), index=False)
+    return tr.reset_index(drop=True), te.reset_index(drop=True)
 
 
-def _sanitize(df: pd.DataFrame, features) -> pd.DataFrame:
-    """Convierte features a numerico (textos -> NaN -> 0) y normaliza el target."""
-    df = df.copy()
-    for col in features:
-        if col not in df.columns:
-            df[col] = 0
-        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
-    df["target"] = pd.to_numeric(df["target"], errors="coerce").fillna(0).astype(int)
-    return df
+def matriz(d, enfermedad, modo):
+    feats = M.features(enfermedad, modo)
+    X = pd.DataFrame({f: d[M.columna(modo, f)] for f in feats})
+    ok = X.notna().all(axis=1).values
+    peso = d["peso_entrevista" if modo == "simplificado" else "peso_examen"].values
+    return X.values[ok].astype(float), d["target"].values[ok], d[ok].reset_index(drop=True), peso[ok]
 
 
-def train_one(name: str):
-    print(f"\n=== Entrenando {name} ===")
-    train_df, test_df = load_split_or_fallback(name)
+def candidatos(enfermedad, modo, rapido):
+    sentidos = M.sentidos(enfermedad, modo)
 
-    features = get_features_for_disease(name, train_df)
-    print(f"   {len(features)} features: {features}")
+    def pipe(clf):
+        return Pipeline([("prep", M.LogColumnas(M.columnas_log(enfermedad, modo))),
+                         ("scaler", StandardScaler(with_mean=False)), ("clf", clf)])
 
-    train_df = _sanitize(train_df, features)
-    test_df  = _sanitize(test_df, features)
-
-    X_train = train_df[features].values
-    y_train = train_df["target"].values
-    X_test  = test_df[features].values
-    y_test  = test_df["target"].values
-
-    # ---- Bake-off por cross-validation (AUC) ----
-    cv = StratifiedKFold(n_splits=CV_FOLDS, shuffle=True, random_state=SEED)
-    leaderboard = []
-    best_name, best_pipe, best_cv = None, None, -1.0
-
-    for model_name, pipe in build_models(name, features).items():
-        try:
-            scores = cross_val_score(pipe, X_train, y_train, cv=cv, scoring="roc_auc", n_jobs=-1)
-            mean_auc, std_auc = float(scores.mean()), float(scores.std())
-            print(f"   - {model_name:14s} CV AUC = {mean_auc:.4f} (+/- {std_auc:.4f})")
-        except Exception as e:
-            print(f"   - {model_name:14s} FALLO en CV: {type(e).__name__}: {e}")
-            continue
-
-        leaderboard.append({
-            "model": model_name,
-            "cv_auc_mean": mean_auc,
-            "cv_auc_std": std_auc,
-        })
-        if mean_auc > best_cv:
-            best_cv, best_name, best_pipe = mean_auc, model_name, pipe
-
-    if best_pipe is None:
-        print(f"   ! No se pudo entrenar ningun modelo para {name}.")
-        return
-
-    leaderboard.sort(key=lambda r: r["cv_auc_mean"], reverse=True)
-    print(f"   => Ganador: {best_name} (CV AUC {best_cv:.4f})")
-
-    # ---- Reentrenar el ganador sobre todo el train y evaluar en test ----
-    best_pipe.fit(X_train, y_train)
-
-    y_proba_test = best_pipe.predict_proba(X_test)[:, 1]
-    y_pred_test = (y_proba_test >= 0.5).astype(int)
-    auc_test = float(roc_auc_score(y_test, y_proba_test))
-    report_test = classification_report(y_test, y_pred_test, output_dict=True, zero_division=0)
-
-    y_proba_train = best_pipe.predict_proba(X_train)[:, 1]
-    y_pred_train = (y_proba_train >= 0.5).astype(int)
-    auc_train = float(roc_auc_score(y_train, y_proba_train))
-    report_train = classification_report(y_train, y_pred_train, output_dict=True, zero_division=0)
-
-    # ---- Calibracion de probabilidades (isotonica) ----
-    # El AUC solo mide el ORDEN de los scores, no que "0.30" signifique "30% de
-    # los casos asi son positivos". Sobre datos con features cuantizadas (p.ej. la
-    # glucosa de diabetes) el predict_proba crudo puede estar mal calibrado.
-    # Ajustamos una isotonica sobre predicciones OUT-OF-FOLD del train (sin
-    # leakage) y la persistimos aparte; app.py la aplica tras predict_proba. Es un
-    # mapeo MONOTONO -> preserva el AUC y la monotonia clinica del fix de glucosa.
-    calibration = None
-    # Que hace cada banda del simulador (bajo / moderado / alto) sobre el test. Se lee
-    # sobre la probabilidad que se SIRVE: la calibrada, o la cruda si no hay calibrador.
-    prevalencia = float(train_df["target"].mean())
-    bands = band_report(y_test, y_proba_test, prevalencia)
-    try:
-        oof_proba = cross_val_predict(
-            best_pipe, X_train, y_train, cv=cv, method="predict_proba", n_jobs=-1
-        )[:, 1]
-        calibrator = fit_calibrator(oof_proba, y_train)
-
-        cal_test = calibrator.predict(y_proba_test)
-        bands = band_report(y_test, cal_test, prevalencia)
-        n_bins = 10
-        frac_raw, mean_raw = calibration_curve(y_test, y_proba_test, n_bins=n_bins, strategy="quantile")
-        frac_cal, mean_cal = calibration_curve(y_test, cal_test,     n_bins=n_bins, strategy="quantile")
-        calibration = {
-            "method": "isotonic",
-            "n_bins": n_bins,
-            "strategy": "quantile",
-            "brier_raw": float(brier_score_loss(y_test, y_proba_test)),
-            "brier_calibrated": float(brier_score_loss(y_test, cal_test)),
-            "raw_curve": [{"mean_pred": float(mp), "frac_pos": float(fp)}
-                          for mp, fp in zip(mean_raw, frac_raw)],
-            "calibrated_curve": [{"mean_pred": float(mp), "frac_pos": float(fp)}
-                                 for mp, fp in zip(mean_cal, frac_cal)],
-        }
-        dump(calibrator, os.path.join(MODELS_DIR, f"{name}_calibrator.pkl"))
-        print(f"   Calibracion isotonica: Brier {calibration['brier_raw']:.4f} -> "
-              f"{calibration['brier_calibrated']:.4f}")
-    except Exception as e:
-        print(f"   ! Calibracion fallo para {name}: {type(e).__name__}: {e}")
-
-    # ---- Persistir ganador + features + metricas ----
-    dump(best_pipe, os.path.join(MODELS_DIR, f"{name}_pipeline.pkl"))
-
-    meta = {
-        "dataset": name,
-        "features": features,
-        "best_model": best_name,
-        "cv_auc": best_cv,
-        "leaderboard": leaderboard,
-        # Claves backward-compatible que consume el frontend actual (Metricas.jsx)
-        "auc": auc_test,
-        "report": report_test,
-        # Detalle train/test
-        "auc_test": auc_test,
-        "auc_train": auc_train,
-        "report_test": report_test,
-        "report_train": report_train,
-        # Calibracion (curva de fiabilidad raw vs calibrado + Brier) para /metricas
-        "calibration": calibration,
-        # Cortes de las bandas del simulador y como reparten a la gente del test
-        "bands": bands,
+    lgbm = {"clf__n_estimators": [100, 300, 600], "clf__learning_rate": [0.02, 0.05, 0.1],
+            "clf__num_leaves": [7, 15, 31], "clf__min_child_samples": [20, 50, 100],
+            "clf__reg_lambda": [0.0, 1.0, 5.0]}
+    return {
+        "logreg": (pipe(MonotonicLogisticRegression(sentidos, class_weight="balanced", max_iter=3000)),
+                   {"clf__C": [0.1, 1.0] if rapido else [0.01, 0.1, 1.0, 10.0]}, None),
+        "lightgbm": (pipe(LGBMClassifier(monotone_constraints=sentidos, class_weight="balanced",
+                                         random_state=SEED, n_jobs=1, verbose=-1)),
+                     lgbm, 3 if rapido else 12),
+        "random_forest": (pipe(RandomForestClassifier(n_estimators=100 if rapido else 200,
+                                                      class_weight="balanced",
+                                                      random_state=SEED, n_jobs=1)),
+                          {"clf__max_depth": [6, 10, None], "clf__min_samples_leaf": [5, 20, 50]},
+                          2 if rapido else None),
     }
-    with open(os.path.join(MODELS_DIR, f"{name}_metrics.json"), "w", encoding="utf-8") as f:
-        json.dump(meta, f, indent=2, ensure_ascii=False)
-    with open(os.path.join(MODELS_DIR, f"{name}_features.json"), "w", encoding="utf-8") as f:
-        json.dump(features, f, ensure_ascii=False)
 
-    print(f"{name}: best={best_name} | AUC_Test={auc_test:.3f} | AUC_Train={auc_train:.3f} | guardado.")
+
+def buscador(pipe, grid, n_iter, pliegues):
+    cv = StratifiedKFold(pliegues, shuffle=True, random_state=SEED)
+    if n_iter:
+        return RandomizedSearchCV(pipe, grid, n_iter=n_iter, scoring="roc_auc", cv=cv,
+                                  random_state=SEED, n_jobs=-1)
+    return GridSearchCV(pipe, grid, scoring="roc_auc", cv=cv, n_jobs=-1)
+
+
+def oof_anidado(pipe, grid, n_iter, X, y, exterior, interior):
+    """Predicciones out-of-fold con la busqueda de parametros DENTRO de cada pliegue."""
+    oof = np.zeros(len(y))
+    for tr, va in StratifiedKFold(exterior, shuffle=True, random_state=SEED).split(X, y):
+        b = buscador(pipe, grid, n_iter, interior).fit(X[tr], y[tr])
+        oof[va] = b.predict_proba(X[va])[:, 1]
+    return oof
+
+
+def auc_subgrupos(y, p, filas):
+    out = {"hombres": filas["gender_Male"].values == 1, "mujeres": filas["gender_Female"].values == 1}
+    for lo, hi in TRAMOS_EDAD:
+        out[f"edad_{lo}_{hi}"] = filas["age"].between(lo, hi).values
+    return {k: (round(float(roc_auc_score(y[m], p[m])), 4) if len(set(y[m])) == 2 else None)
+            for k, m in out.items()}
+
+
+def efectos(modelo, X, enfermedad, modo):
+    """Que hace mover UNA variable (binarias: de 0 a 1; continuas: + 1 DE) a cada
+    persona del train. Devuelve la fraccion a la que le mueve el riesgo al reves de su
+    sentido clinico, y las variables que no mueven a nadie: las que las restricciones
+    dejaron en cero porque los datos no dan senal en el sentido clinico."""
+    base = modelo.predict_proba(X)[:, 1]
+    al_reves, sin_efecto = {}, []
+    for j, (f, s) in enumerate(zip(M.features(enfermedad, modo), M.sentidos(enfermedad, modo))):
+        X2 = X.copy()
+        if set(np.unique(X[:, j])) <= {0.0, 1.0}:
+            X0 = X.copy()
+            X0[:, j], X2[:, j] = 0.0, 1.0
+            cambio = modelo.predict_proba(X2)[:, 1] - modelo.predict_proba(X0)[:, 1]
+        else:
+            X2[:, j] = X[:, j] + X[:, j].std()
+            cambio = modelo.predict_proba(X2)[:, 1] - base
+        # El sexo no cuenta: de sus dos columnas complementarias el arbol usa una y la
+        # otra sale "sin efecto" aunque el sexo si pese. El tabaco si cuenta: sus dos
+        # columnas van contra "nunca", asi que un cero es un cero de verdad.
+        if np.abs(cambio).max() <= 1e-12 and not f.startswith("gender_"):
+            sin_efecto.append(f)
+        if s != 0:
+            al_reves[f] = round(float((s * cambio < -1e-9).mean()), 4)
+    return al_reves, sin_efecto
+
+
+def curva(y, p):
+    frac, media = calibration_curve(y, p, n_bins=10, strategy="quantile")
+    return [{"mean_pred": float(a), "frac_pos": float(b)} for a, b in zip(media, frac)]
+
+
+def entrenar(enfermedad, modo, tr, te, rapido):
+    t0 = time.time()
+    X, y, filas, _ = matriz(tr, enfermedad, modo)
+    Xte, yte, filas_te, wte = matriz(te, enfermedad, modo)
+    exterior, interior = (3, 2) if rapido else (5, 3)
+    print(f"\n=== {enfermedad} / {modo}: train {len(y)} ({y.mean():.1%}), test {len(yte)} ===")
+
+    tabla = []
+    for nombre, (pipe, grid, n_iter) in candidatos(enfermedad, modo, rapido).items():
+        oof = oof_anidado(pipe, grid, n_iter, X, y, exterior, interior)
+        final = buscador(pipe, grid, n_iter, interior).fit(X, y)
+        signos, sin_efecto = efectos(final.best_estimator_, X, enfermedad, modo)
+        subgrupos = auc_subgrupos(y, oof, filas)
+        motivos = [f"{f} al reves en el {v:.1%}" for f, v in signos.items() if v > 0]
+        motivos += [f"AUC {k} {v}" for k, v in subgrupos.items() if v is not None and v < AUC_MIN_SUBGRUPO]
+        fila = {"model": nombre, "cv_auc_mean": float(roc_auc_score(y, oof)),
+                "best_params": {k.replace("clf__", ""): v for k, v in final.best_params_.items()},
+                "violaciones_signo": signos, "sin_efecto": sin_efecto,
+                "auc_subgrupos_cv": subgrupos, "pasa_filtro": not motivos, "motivos": motivos}
+        tabla.append((fila, final.best_estimator_))
+        estado = "pasa" if not motivos else "NO pasa: " + "; ".join(motivos)
+        print(f"   - {nombre:13s} AUC anidado {fila['cv_auc_mean']:.4f} | {estado}")
+
+    validos = [(f, m) for f, m in tabla if f["pasa_filtro"]]
+    if not validos:
+        raise SystemExit(f"{enfermedad}/{modo}: ningun candidato pasa el filtro de validacion")
+    ganador_fila, ganador = max(validos, key=lambda t: t[0]["cv_auc_mean"])
+
+    # Calibracion sobre el OOF del ganador con sus parametros finales.
+    cv = StratifiedKFold(exterior, shuffle=True, random_state=SEED)
+    oof = cross_val_predict(clone(ganador), X, y, cv=cv, method="predict_proba", n_jobs=-1)[:, 1]
+    calibrador = fit_calibrator(oof, y)
+
+    crudo = ganador.predict_proba(Xte)[:, 1]
+    cal = calibrador.predict(crudo)
+    prevalencia = float(y.mean())
+    # Las bandas son de la enfermedad, no del modo: la API corta los dos modos con la
+    # prevalencia de todo el train (app.risk_bands). Con la de las filas del modo,
+    # /metricas publicaba en cardiovascular completo 11,9% / 23,8% y servia 12,8% / 25,6%.
+    prevalencia_enfermedad = float(tr["target"].mean())
+    reporte = classification_report(yte, (crudo >= 0.5).astype(int), output_dict=True, zero_division=0)
+    meta = {
+        "dataset": f"nhanes_v2_{enfermedad}", "version": 2, "modo": modo,
+        "features": M.features(enfermedad, modo),
+        "definitorias": list(M.DEFINITORIAS[enfermedad]),
+        "objetivo": {"diabetes": "diagnosticada, HbA1c >= 6,5% o glucosa en ayunas >= 126 mg/dL",
+                     "hipertension": "diagnosticada, >= 140/90 mmHg medida o medicacion",
+                     "cardiovascular": "cardiopatia coronaria, angina, infarto, insuficiencia "
+                                       "cardiaca o ictus autorreportados"}[enfermedad],
+        "n_train": int(len(y)), "n_test": int(len(yte)), "prevalencia": prevalencia,
+        "best_model": ganador_fila["model"], "cv_auc": ganador_fila["cv_auc_mean"],
+        # Variables que el modelo servido no usa (las restricciones las dejaron en cero):
+        # si el usuario las marca, la capa clinica tiene que decirlo.
+        "sin_efecto": ganador_fila["sin_efecto"],
+        "leaderboard": sorted((f for f, _ in tabla), key=lambda f: -f["cv_auc_mean"]),
+        "auc": float(roc_auc_score(yte, crudo)), "auc_test": float(roc_auc_score(yte, crudo)),
+        "auc_test_ponderado": float(roc_auc_score(yte, crudo, sample_weight=wte)),
+        "auc_train": float(roc_auc_score(y, ganador.predict_proba(X)[:, 1])),
+        "report": reporte, "report_test": reporte,
+        "subgrupos_test": auc_subgrupos(yte, crudo, filas_te),
+        "calibration": {
+            "method": "isotonic", "n_bins": 10, "strategy": "quantile",
+            "brier_raw": float(brier_score_loss(yte, crudo)),
+            "brier_calibrated": float(brier_score_loss(yte, cal)),
+            "brier_calibrated_ponderado": float(brier_score_loss(yte, cal, sample_weight=wte)),
+            "raw_curve": curva(yte, crudo), "calibrated_curve": curva(yte, cal),
+        },
+        "bands": band_report(yte, cal, prevalencia_enfermedad),
+    }
+    os.makedirs(MODELS, exist_ok=True)
+    clave = f"{enfermedad}_{modo}"
+    dump(ganador, os.path.join(MODELS, f"{clave}_pipeline.pkl"))
+    dump(calibrador, os.path.join(MODELS, f"{clave}_calibrator.pkl"))
+    with open(os.path.join(MODELS, f"{clave}_features.json"), "w", encoding="utf-8") as f:
+        json.dump(meta["features"], f, ensure_ascii=False)
+    with open(os.path.join(MODELS, f"{clave}_metrics.json"), "w", encoding="utf-8") as f:
+        json.dump(meta, f, indent=2, ensure_ascii=False)
+    c = meta["calibration"]
+    print(f"   => {meta['best_model']} | AUC test {meta['auc_test']:.4f} (ponderado {meta['auc_test_ponderado']:.4f})"
+          f" | Brier {c['brier_raw']:.4f} -> {c['brier_calibrated']:.4f}"
+          f" | sin efecto: {meta['sin_efecto'] or 'ninguna'} | {time.time() - t0:.0f} s")
 
 
 def main():
-    # --only, igual que en curate_and_synthesize.py y build_quality_reports.py: si
-    # solo cambio el split de una enfermedad, no hay por que re-serializar la otra.
-    parser = argparse.ArgumentParser(description="Entrenamiento por enfermedad")
-    parser.add_argument("--only", type=str, default="",
-                        help="Lista separada por comas de datasets a entrenar")
+    parser = argparse.ArgumentParser(description="Entrenamiento por enfermedad y modo")
+    parser.add_argument("--only", default="", help="enfermedades separadas por comas")
+    parser.add_argument("--rapido", action="store_true", help="rejillas y pliegues minimos (depurar)")
     args = parser.parse_args()
-
-    targets = DATASETS if not args.only else [s.strip() for s in args.only.split(",") if s.strip()]
-    desconocidos = [t for t in targets if t not in DATASETS]
-    if desconocidos:
-        raise SystemExit(f"Datasets no soportados por este script: {desconocidos}. "
-                         f"Disponibles: {DATASETS} (diabetes va en train_nhanes_diabetes.py)")
-    for name in targets:
-        train_one(name)
+    enfermedades = [e.strip() for e in args.only.split(",") if e.strip()] or list(M.ENFERMEDADES)
+    for enfermedad in enfermedades:
+        tr, te = repartir(enfermedad)
+        for modo in M.MODOS:
+            entrenar(enfermedad, modo, tr, te, args.rapido)
 
 
 if __name__ == "__main__":

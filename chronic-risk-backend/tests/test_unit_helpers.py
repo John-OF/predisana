@@ -2,40 +2,40 @@
 import pytest
 
 
-# ---------- alias glucose <-> blood_glucose_level (plumbing, no regla clinica) ----------
+# ---------- claves de modelo: enfermedad y modo ----------
 
-def test_alias_glucose_se_refleja(app_module):
-    p = app_module._normalize_glucose_alias({"glucose": 120})
-    assert p["blood_glucose_level"] == 120
+def test_clave_y_partes_son_inversas(app_module):
+    for disease in app_module.ENFERMEDADES:
+        for modo in app_module.MODOS:
+            assert app_module._partes(app_module._clave(disease, modo)) == (disease, modo)
 
-def test_alias_blood_glucose_se_refleja(app_module):
-    p = app_module._normalize_glucose_alias({"blood_glucose_level": 130})
-    assert p["glucose"] == 130
-
-def test_alias_no_pisa_si_llegan_ambas(app_module):
-    p = app_module._normalize_glucose_alias({"glucose": 100, "blood_glucose_level": 200})
-    assert p["glucose"] == 100 and p["blood_glucose_level"] == 200
-
-def test_alias_payload_vacio(app_module):
-    assert app_module._normalize_glucose_alias({}) == {}
+def test_hay_un_modelo_por_enfermedad_y_modo(app_module):
+    assert sorted(app_module.CLAVES) == sorted(app_module.MODELS)
+    assert len(app_module.CLAVES) == 6
 
 
-# ---------- ruteo del modelo hibrido de diabetes ----------
+# ---------- el IMC del simplificado sale del peso y la talla ----------
 
-def test_ruteo_con_glucosa_valida(app_module):
-    assert app_module._resolve_model_key("diabetes", {"blood_glucose_level": 150}) == "diabetes_glucosa"
+def test_derivar_calcula_el_imc(app_module):
+    datos, dado = app_module._derivar("simplificado", {"weight": 64, "height": 160})
+    assert datos["bmi"] == 25.0 and dado is False
 
-def test_ruteo_sin_glucosa(app_module):
-    assert app_module._resolve_model_key("diabetes", {"age": 40}) == "diabetes"
+def test_derivar_respeta_un_imc_dado(app_module):
+    datos, dado = app_module._derivar("simplificado", {"weight": 64, "height": 160, "bmi": 30})
+    assert datos["bmi"] == 30 and dado is True
 
-def test_ruteo_glucosa_cero_no_activa_variante(app_module):
-    assert app_module._resolve_model_key("diabetes", {"blood_glucose_level": 0}) == "diabetes"
+def test_derivar_no_toca_el_completo(app_module):
+    """El completo pide el IMC medido: el peso y la talla no lo calculan."""
+    datos, _ = app_module._derivar("completo", {"weight": 64, "height": 160})
+    assert "bmi" not in datos
 
-def test_ruteo_glucosa_invalida_cae_al_base(app_module):
-    assert app_module._resolve_model_key("diabetes", {"blood_glucose_level": "abc"}) == "diabetes"
+def test_derivar_sin_talla_no_inventa_nada(app_module):
+    datos, _ = app_module._derivar("simplificado", {"weight": 64})
+    assert "bmi" not in datos
 
-def test_ruteo_otras_enfermedades_ignora_glucosa(app_module):
-    assert app_module._resolve_model_key("hipertension", {"blood_glucose_level": 150}) == "hipertension"
+def test_derivar_rechaza_un_imc_imposible(app_module):
+    with pytest.raises(app_module.InvalidPayload, match="IMC"):
+        app_module._derivar("simplificado", {"weight": 250, "height": 120})
 
 
 # ---------- capa clinica ADA / ACC-AHA (separada del modelo) ----------
@@ -88,3 +88,23 @@ def test_safe_get_case_insensitive(app_module):
 
 def test_safe_get_ausente(app_module):
     assert app_module._safe_get({"age": 40}, "bmi") is None
+
+
+# ---------- presion: manda la mas alta de las dos (v2) ----------
+
+@pytest.mark.parametrize("sistolica,diastolica,categoria", [
+    (132, 95, "hipertension_grado_2"),   # el objetivo de hipertension es >= 140/90
+    (118, 85, "hipertension_grado_1"),
+    (0, 92, "hipertension_grado_2"),     # solo la diastolica
+    (125, 70, "presion_elevada"),
+    (115, 75, None),
+])
+def test_flags_presion_con_la_diastolica(app_module, sistolica, diastolica, categoria):
+    flags = app_module.compute_clinical_flags(0, 0, sistolica, diastolica)
+    cats = [f["category"] for f in flags if f["indicator"] == "blood_pressure"]
+    assert cats == ([categoria] if categoria else [])
+
+
+def test_enumerar_en_castellano(app_module):
+    assert app_module._enumerar(["a"]) == "a"
+    assert app_module._enumerar(["a", "b", "c"]) == "a, b y c"

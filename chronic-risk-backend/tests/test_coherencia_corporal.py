@@ -1,128 +1,126 @@
-"""Auditoria 2026-08 — coherencia weight / bmi / waist_circumference en hipertension.
+"""Coherencia entre campos (auditoria 2026-08; revision 2026-10).
 
-Hipertension pide weight, bmi y waist_circumference como 3 campos SUELTOS (sin
-altura, sin validacion cruzada). En los datos reales estan fuertemente
-correlacionados (r~0.89-0.90); el LogReg ganador del bake-off aprendio, por
-colinealidad, un coeficiente NEGATIVO para 'weight' (el unico signo invertido
-entre las features con direccion clinica inequivoca): a igual bmi/cintura, MAS
-peso puede dar MENOS riesgo. Con datos que covarian de forma realista el modelo
-predice bien; el sintoma solo aparece con combinaciones incoherentes que antes
-pasaban sin aviso porque cada campo, por separado, cae dentro de su rango.
+Combinaciones que no pueden ser de una misma persona aunque cada dato caiga en su
+rango: una cintura que no cuadra con el IMC, una diastolica igual o mayor que la
+sistolica, o un IMC que con ese peso implica una talla imposible. La v1 de hipertension
+pedia peso, IMC y cintura como campos sueltos y su LogReg aprendio, por colinealidad,
+un coeficiente NEGATIVO para el peso. Desde la v2 las reglas (coherence.py) miran los
+campos que llegan, no la enfermedad, porque cada modo pide variables distintas.
 
 Igual que la capa clinica (A4) y el soporte de datos (AUD-16), esto NO toca la
 probabilidad: solo agrega un aviso mas a support_warnings.
 """
+import numpy as np
+import pandas as pd
 import pytest
 
-HTA = {
-    "age": 45, "bmi": 25, "weight": 75, "waist_circumference": 85,
-    "diabetes": 0, "heart_disease": 0, "high_cholesterol": 0,
-    "gender_Male": 1, "gender_Female": 0,
+import coherence
+import modos as M
+
+COMPLETO = {
+    "age": 45, "bmi": 25, "waist_circumference": 85, "ap_hi": 120, "ap_lo": 80,
+    "total_cholesterol": 190, "hdl_cholesterol": 55, "hba1c_level": 5.4, "egfr": 95,
+    "albumin_creatinine_ratio": 8, "diabetes": 0, "hypertension": 0, "heart_disease": 0,
+    "high_cholesterol": 0, "gender_Male": 1, "gender_Female": 0,
     "smoking_history_never": 1, "smoking_history_current": 0, "smoking_history_former": 0,
 }
 
 
-def _predict(client, **cambios):
-    return client.post("/predict/hipertension", json={**HTA, **cambios}).get_json()
+def _completo(client, disease="diabetes", **cambios):
+    r = client.post(f"/predict/{disease}?mode=completo", json={**COMPLETO, **cambios})
+    assert r.status_code == 200, r.get_json()
+    return r.get_json()
 
 
-def _avisos(resp, level=None):
-    ws = resp["support_warnings"]
-    return [a for a in ws if level is None or a["level"] == level]
+def _avisos(resp, level="incoherente"):
+    return [a for a in resp["support_warnings"] if a["level"] == level]
+
+
+# ---------- las reglas ----------
+
+def test_las_reglas_solo_juzgan_lo_que_llega():
+    assert coherence.incoherencias({}) == []
+    assert coherence.incoherencias({"bmi": 19}) == []
+    assert coherence.incoherencias({"ap_hi": 120, "ap_lo": 80, "bmi": 25, "waist_circumference": 85}) == []
 
 
 def test_combinacion_coherente_no_avisa(client):
-    """bmi=25, weight=75, waist=85 implican una altura (~1.73m) plausible."""
-    r = _predict(client)
-    assert _avisos(r, "incoherente") == []
+    assert _avisos(_completo(client)) == []
 
 
 def test_cintura_enorme_con_imc_bajo_avisa(client):
     """El caso que motivo el chequeo: cintura enorme + IMC bajo es casi imposible."""
-    r = _predict(client, bmi=19, waist_circumference=115, weight=55)
-    incoherentes = _avisos(r, "incoherente")
-    assert any(a["feature"] == "waist_circumference" for a in incoherentes)
-    assert "incoherente" in r["support_note"] or "no cuadran" in r["support_note"]
-
-
-def test_imc_alto_con_cintura_pequena_avisa(client):
-    r = _predict(client, bmi=42, waist_circumference=70, weight=110)
-    incoherentes = _avisos(r, "incoherente")
-    assert any(a["feature"] == "waist_circumference" for a in incoherentes)
-
-
-def test_peso_e_imc_implican_altura_absurda(client):
-    """weight=180 con bmi=25 implica ~2.68m de altura: fuera de rango humano plausible."""
-    r = _predict(client, weight=180, bmi=25, waist_circumference=85)
-    incoherentes = _avisos(r, "incoherente")
-    assert any(a["feature"] == "weight" for a in incoherentes)
-
-
-def test_el_aviso_no_toca_la_probabilidad(client, app_module, monkeypatch):
-    """Mismo invariante que la capa clinica y AUD-16: informar sin alterar el numero.
-    El MISMO payload incoherente, con el chequeo activo y con el chequeo apagado,
-    tiene que dar exactamente la misma probabilidad (calibrada y cruda)."""
-    incoherente = dict(bmi=19, waist_circumference=115, weight=55)
-    con_aviso = _predict(client, **incoherente)
-    assert _avisos(con_aviso, "incoherente")
-
-    monkeypatch.setattr(app_module, "_check_coherencia_corporal", lambda *a: [])
-    sin_aviso = _predict(client, **incoherente)
-    assert _avisos(sin_aviso, "incoherente") == []
-
-    assert con_aviso["probability"] == sin_aviso["probability"]
-    assert con_aviso["raw_model_probability"] == sin_aviso["raw_model_probability"]
-
-
-def test_campo_ausente_no_dispara_el_check(client, perfil_diabetes):
-    """Sin weight/bmi/waist (otra enfermedad) el check ni se evalua."""
-    r = client.post("/predict/diabetes", json=perfil_diabetes).get_json()
-    assert _avisos(r, "incoherente") == []
-
-
-def test_solo_aplica_a_hipertension(client):
-    """cardiovascular tiene 'bmi' pero no weight/waist_circumference: no debe reventar
-    ni generar avisos de coherencia corporal."""
-    cardio = {
-        "age": 50, "bmi": 45, "ap_hi": 120, "ap_lo": 80, "cholesterol": 1, "gluc": 1,
-        "smoke": 0, "alco": 0, "active": 1, "gender_Female": 1, "gender_Male": 0,
-    }
-    r = client.post("/predict/cardiovascular", json=cardio).get_json()
-    assert _avisos(r, "incoherente") == []
-
-
-# ---------- cardiovascular: sistolica y diastolica (revision 2026-10) ----------
-# Nada impedia mandar la presion al reves (100/120): cada valor cae en su rango y el
-# modelo devolvia un numero como si nada. Quedo anotado en la auditoria de 2026-08 sin
-# corregir; ahora avisa igual que el peso y la cintura.
-
-CARDIO = {
-    "age": 50, "bmi": 26, "ap_hi": 120, "ap_lo": 80, "cholesterol": 1, "gluc": 1,
-    "smoke": 0, "alco": 0, "active": 1, "gender_Female": 1, "gender_Male": 0,
-}
-
-
-def _cardio(client, **cambios):
-    return client.post("/predict/cardiovascular", json={**CARDIO, **cambios}).get_json()
-
-
-@pytest.mark.parametrize("ap_hi,ap_lo", [(100, 120), (110, 110)])
-def test_diastolica_igual_o_mayor_que_la_sistolica_avisa(client, ap_hi, ap_lo):
-    r = _cardio(client, ap_hi=ap_hi, ap_lo=ap_lo)
-    incoherentes = _avisos(r, "incoherente")
-    assert [a["feature"] for a in incoherentes] == ["ap_lo"]
-    assert "intercambiadas" in incoherentes[0]["detail"]
+    r = _completo(client, bmi=19, waist_circumference=115)
+    assert [a["feature"] for a in _avisos(r)] == ["waist_circumference"]
     assert "no es coherente" in r["support_note"]
 
 
+def test_imc_alto_con_cintura_pequena_avisa(client):
+    r = _completo(client, bmi=42, waist_circumference=70)
+    assert [a["feature"] for a in _avisos(r)] == ["waist_circumference"]
+
+
+# ---------- peso, talla e IMC ----------
+
+def test_en_el_simplificado_peso_y_talla_cuadran_por_construccion(client, perfil_diabetes):
+    """El IMC sale del peso y la talla: no hay talla implicita que juzgar."""
+    r = client.post("/predict/diabetes", json=perfil_diabetes).get_json()
+    assert _avisos(r) == []
+
+
+def test_un_imc_dado_a_mano_que_no_cuadra_con_el_peso_avisa(client, perfil_diabetes):
+    """180 kg con un IMC de 25 implican ~2,68 m de talla."""
+    payload = {**perfil_diabetes, "bmi": 25, "weight": 180}
+    r = client.post("/predict/diabetes", json=payload).get_json()
+    assert [a["feature"] for a in _avisos(r)] == ["weight"]
+
+
+def test_en_el_completo_el_peso_no_se_juzga(client):
+    """El completo no pide el peso: si llega, no es dato del modo."""
+    assert _avisos(_completo(client, weight=40, bmi=30)) == []   # 1,15 m implicitos
+
+
+def test_la_ficha_real_que_manda_el_laboratorio_no_avisa(client):
+    """El laboratorio evalua en el completo la ficha entera, con el peso DECLARADO y el
+    IMC MEDIDO de la misma persona. Cruzar dos mediciones distintas le daba a gente
+    real una talla implicita de menos de 1,30 m (9 de cada 9.500)."""
+    tr = pd.read_csv("data_curated/diabetes/diabetes_train.csv")[M.columnas_laboratorio("diabetes")]
+    tr = tr.dropna()
+    ficha = tr[np.sqrt(tr["weight"] / tr["bmi"]) < 1.30].iloc[0].to_dict()
+    r = client.post("/predict/diabetes?mode=completo", json=ficha)
+    assert r.status_code == 200, r.get_json()
+    assert _avisos(r.get_json()) == []
+
+
+# ---------- presion: sistolica y diastolica (revision 2026-10) ----------
+# Nada impedia mandar la presion al reves (100/120): cada valor cae en su rango y el
+# modelo devolvia un numero como si nada.
+
+@pytest.mark.parametrize("ap_hi,ap_lo", [(100, 120), (110, 110)])
+@pytest.mark.parametrize("disease", ["cardiovascular", "hipertension"])
+def test_diastolica_igual_o_mayor_que_la_sistolica_avisa(client, disease, ap_hi, ap_lo):
+    """En hipertension la presion no entra al modelo, pero la lee la guia: tambien hay
+    que avisar si llega al reves."""
+    r = _completo(client, disease, ap_hi=ap_hi, ap_lo=ap_lo)
+    incoherentes = _avisos(r)
+    assert [a["feature"] for a in incoherentes] == ["ap_lo"]
+    assert "intercambiadas" in incoherentes[0]["detail"]
+
+
 def test_una_presion_normal_no_avisa(client):
-    assert _avisos(_cardio(client), "incoherente") == []
-    assert _avisos(_cardio(client, ap_hi=90, ap_lo=85), "incoherente") == []
+    assert _avisos(_completo(client, "cardiovascular", ap_hi=90, ap_lo=85)) == []
 
 
-def test_el_aviso_de_presion_tampoco_toca_la_probabilidad(client, app_module, monkeypatch):
-    con_aviso = _cardio(client, ap_hi=100, ap_lo=120)
-    monkeypatch.setattr(app_module, "_check_coherencia_corporal", lambda *a: [])
-    sin_aviso = _cardio(client, ap_hi=100, ap_lo=120)
-    assert _avisos(con_aviso, "incoherente") and not _avisos(sin_aviso, "incoherente")
+# ---------- el aviso no toca el numero ----------
+
+@pytest.mark.parametrize("cambios", [
+    {"bmi": 19, "waist_circumference": 115}, {"ap_hi": 100, "ap_lo": 120}])
+def test_el_aviso_no_toca_la_probabilidad(client, app_module, monkeypatch, cambios):
+    """Mismo invariante que la capa clinica y AUD-16: el MISMO payload incoherente, con
+    el chequeo activo y apagado, da exactamente la misma probabilidad."""
+    con_aviso = _completo(client, **cambios)
+    monkeypatch.setattr(app_module, "_check_coherencia", lambda *a: [])
+    sin_aviso = _completo(client, **cambios)
+    assert _avisos(con_aviso) and not _avisos(sin_aviso)
     assert con_aviso["probability"] == sin_aviso["probability"]
+    assert con_aviso["raw_model_probability"] == sin_aviso["raw_model_probability"]

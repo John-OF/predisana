@@ -50,7 +50,7 @@ npm run dev       # Vite dev server con HMR (http://localhost:5173)
 npm run build     # build de producción en dist/
 npm run preview   # sirve el build localmente para probarlo
 npm run lint      # ESLint sobre todo el proyecto
-npm test          # Vitest (32 tests, ~2 s)
+npm test          # Vitest (45 tests, ~2 s)
 npm run test:watch  # los mismos, en modo watch
 ```
 
@@ -59,7 +59,7 @@ npm run test:watch  # los mismos, en modo watch
 
 ## Tests
 
-**32 tests con Vitest + Testing Library** (`npm test`), sobre las cosas del front que
+**45 tests con Vitest + Testing Library** (`npm test`), sobre las cosas del front que
 tienen lógica de verdad:
 
 - **`ErrorBoundary`** — que un fallo de render muestre una salida en vez de dejar la
@@ -71,12 +71,19 @@ tienen lógica de verdad:
   uno por petición, la analítica del admin contaría una sesión por click), que
   sobreviva al saneo del backend (`[A-Za-z0-9_-]`, 64 chars, AUD-8) y que haya
   fallback sin `crypto.randomUUID`. Más que `predictRisk` mande la cabecera
-  `X-Session-Id` y que `evaluateSyntheticCase` marque al paciente del laboratorio con
-  `?source=synthetic`, para que no cuente como una simulación.
-- **Contrato de etiquetas** — lee los `*_features.json` del **backend** y exige que
-  ninguna feature servida llegue a la UI sin etiqueta en español. Es el fallo
-  silencioso que apareció al migrar hipertensión a NHANES: cambia el esquema y algo
-  se pinta como `waist_circumference` en la ficha o en la barra de SHAP.
+  `X-Session-Id` y el modo (el simplificado si no se pide otro), y que
+  `evaluateSyntheticCase` evalúe al paciente del laboratorio con el modelo completo y
+  lo marque con `?source=synthetic`, para que no cuente como una simulación.
+- **Contrato de etiquetas** — lee los `*_features.json` del **backend** (los seis
+  modelos de la v2) y la cabecera de los sintéticos (las columnas de las fichas del
+  laboratorio, que traen más que los modelos, como el IMC autodeclarado) y exige que
+  nada llegue a la UI sin etiqueta en español. Es el fallo silencioso que apareció al
+  migrar hipertensión a NHANES: cambia el esquema y algo se pinta como
+  `waist_circumference` en la ficha o en la barra de SHAP. Solo los one-hot heredan la
+  etiqueta de su grupo (`gender_Male` → "Sexo"): con un prefijo cualquiera,
+  `bmi_autodeclarado` pasaba el test por la etiqueta de `bmi`. Y donde se pinta una
+  columna one-hot suelta (métricas, laboratorio, admin), `getFeatureLabel` la lee como
+  grupo y opción («Tabaquismo: Exfumador») en vez de `smoking_history_former`.
 - **`AvisoSoporte`** — los avisos de cuánto fiarse del resultado, con la forma exacta
   que devuelve `/predict`. No todos traen `trained_range`: el nivel `incoherente`
   (peso, IMC y cintura que no cuadran entre sí, o una presión invertida) solo trae `detail`, y la primera
@@ -85,9 +92,14 @@ tienen lógica de verdad:
   "nunca vio casos así": los vio, registrados como 80.
 - **`riskBand`** — que el front pinte la banda bajo / moderado / alto que decide el
   backend (`risk_band` en `/predict`) y no la recalcule por tercios: los cortes van
-  por enfermedad, porque en diabetes (13,6% de media) un 31,8% salía como "Riesgo
-  bajo". Sin ese campo cae a los tercios de siempre. Más la frase que explica de
+  por enfermedad, porque en la v1 de diabetes (13,6% de media) un 31,8% salía como
+  "Riesgo bajo". Sin ese campo cae a los tercios de siempre. Más la frase que explica de
   dónde salen los cortes (`bandNote`).
+- **Paso de cada campo** (`fieldHints`) — que el paso de cada input admita los
+  decimales del dato real, leyendo las fichas del sintético del backend. «Caso virtual»
+  carga una en el formulario, y con la v2 la presión (media de tres lecturas: 101,4),
+  la talla (172,7), el eGFR y la albúmina llegaban con más decimales que el paso: el
+  navegador marcaba el campo como inválido y bloqueaba el envío sin decir nada.
 
 Configuración en `vite.config.js` (los tests reusan los mismos alias y plugins que el
 build) y arranque común en `src/test/setup.js`.
@@ -117,8 +129,8 @@ El archivo `vercel.json` ya está configurado para servir la SPA con rewrites a
 |------------------|------------------|-------------|
 | `/`              | `Home`           | Hero, propuesta de valor y metodología en 3 pasos. |
 | `/educacion`     | `Educacion`      | Enciclopedia breve de las 3 enfermedades crónicas. |
-| `/simulacion`    | `Simulacion`     | La página principal: formulario clínico → riesgo + SHAP + capa clínica + what-if. |
-| `/metricas`      | `Metricas`       | Leaderboard de algoritmos, curva de calibración y reporte por clase. En diabetes, toggle con/sin glucosa. |
+| `/simulacion`    | `Simulacion`     | La página principal: formulario del modo simplificado o completo → riesgo + SHAP + capa clínica + what-if. |
+| `/metricas`      | `Metricas`       | Por enfermedad y modo: leaderboard con el filtro de validación, AUC (también ponderado), calibración, bandas y reporte por clase. |
 | `/proyecto`      | `Proyecto`       | Case study: historia de los datos, panorámica de modelos y laboratorio sintético (4 demos). |
 | `/aviso`         | `Aviso`          | Aviso legal / disclaimer médico. |
 | `/admin`         | `Admin`          | Dashboard de uso **dev-only**: sin link en la navbar, se accede por URL directa + token (`ADMIN_TOKEN` del backend). |
@@ -131,19 +143,23 @@ Cliente axios con base URL = `VITE_API_URL`. Expone:
 
 **Núcleo del simulador**
 - `checkHealth()` → `GET /health`
-- `getConfig(disease)` → `GET /config/<disease>` (features + opcionales + límites aceptados + `clinical_inputs` + `topcoded`)
-- `getMetrics(disease)` → `GET /metrics/<disease>` (acepta también la variante `diabetes_glucosa`)
-- `predictRisk(disease, payload)` → `POST /predict/<disease>` — envía el header
+Cada enfermedad tiene dos modelos (v2) y las llamadas llevan `?mode=simplificado|completo`
+(`MODOS`, `MODO_POR_DEFECTO = 'simplificado'`):
+
+- `getConfig(disease, mode)` → `GET /config/<disease>` (campos del formulario, derivados, opcionales, límites aceptados, `not_used`, `topcoded`, bandas)
+- `getMetrics(disease, mode)` → `GET /metrics/<disease>`
+- `predictRisk(disease, payload, mode)` → `POST /predict/<disease>` — envía el header
   `X-Session-Id` con un **UUID anónimo** persistido en `localStorage`
   (`getSessionId()`), que agrupa simulaciones sin identificar a nadie.
-- `getWhatIf(disease, {base, feature, min, max, steps})` → `POST /whatif/<disease>`
-  (curva contrafactual; el backend NO la registra en BD). En hipertensión, peso e IMC
+- `getWhatIf(disease, {base, feature, min, max, steps, mode})` → `POST /whatif/<disease>`
+  (curva contrafactual; el backend NO la registra en BD). En el simplificado, peso e IMC
   se barren a talla fija: la respuesta trae `coupled` y el panel lo explica bajo la curva.
 
 **Laboratorio sintético (página Proyecto)**
 - `getSyntheticCase(disease)` → `GET /synthetic/<disease>`
-- `evaluateSyntheticCase(disease, payload)` → `POST /predict/<disease>?source=synthetic`
-  (el paciente sintético por el modelo; el backend NO lo registra en la BD)
+- `evaluateSyntheticCase(disease, payload, mode = 'completo')` → `POST /predict/<disease>?source=synthetic`
+  (la ficha entera por el modelo completo, el que lee todas sus variables; el backend
+  NO la registra en la BD)
 - `getSampleCase(disease, source)` → `GET /sample/<disease>?source=real|synthetic`
 - `getDistribution(disease, feature, bins)` → `GET /distribution/<disease>`
 - `getSyntheticQuality(disease)` → `GET /synthetic_quality/<disease>`
@@ -185,6 +201,8 @@ chronic-risk-frontend/
     ├── test/
     │   └── setup.js             # arranque común de Vitest
     └── utils/
+        ├── fieldHints.js        # ayuda y paso de cada campo del simulador
+        ├── riskBand.js          # banda bajo/moderado/alto que decide el backend
         └── translations.js      # etiquetas en español (LABELS_ES, getLabel)
 ```
 
@@ -211,12 +229,15 @@ chronic-risk-frontend/
   `Proyecto.jsx`). Si se añade una nueva al backend, hay que añadirla aquí también.
 - **`Simulacion.jsx`** es la página más compleja: consume `/config`, `/predict`,
   `/synthetic` y `/whatif`, usa como min/max de los inputs los límites que sirve
-  `/config.ranges` (los mismos con los que valida el API; `FIELD_HINTS` solo guarda
-  la ayuda y el paso de cada campo),
+  `/config.ranges` (los mismos con los que valida el API; `FIELD_HINTS`, en
+  `src/utils/fieldHints.js`, solo guarda la ayuda y el paso de cada campo),
   renderiza el top-5 SHAP como barras de recharts y pinta la capa clínica
-  (`clinical_flags`) aparte. En diabetes, la **glucosa es un campo opcional**: si
-  el usuario la aporta, el backend sirve la variante híbrida más precisa y la UI
-  lo indica con un badge.
+  (`clinical_flags`) aparte. Arriba se elige el **modo**: el simplificado pide lo que
+  cualquiera sabe de sí mismo (con el peso y la talla, el backend calcula el IMC); el
+  completo, además, las mediciones y analíticas del personal sanitario. Lo que define
+  la enfermedad (HbA1c y glucosa en diabetes, presión en hipertensión) y lo que el
+  modelo no usa (`not_used`) va en un bloque aparte marcado como opcional: no cambia
+  la estimación, lo interpreta la guía.
 - La respuesta de `/predict` distingue `probability` (calibrada con isotónica)
   de `raw_model_probability` (salida cruda del modelo, que es la que explica
   SHAP). La calibración es un reescalado monótono: no cambia el ranking.

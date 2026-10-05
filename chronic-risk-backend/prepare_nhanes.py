@@ -2,12 +2,13 @@
 # Ingesta NHANES v2: dos ciclos (2017-2020 prepandemia, "P_", y 2021-2023, "_L"), las
 # tres enfermedades y las variables de los dos modos (simplificado y completo).
 # Sustituye a prepare_nhanes_diabetes.py, prepare_nhanes_hipertension.py y al CSV de
-# Kaggle de cardiovascular (prepare_datasets.py). Escribe data_processed/v2/.
+# Kaggle de cardiovascular (prepare_datasets.py). Escribe data_processed/.
 #
 # Lo que cambia respecto a la v1 (auditoria de datos, revision 2026-10):
 # - Dos ciclos en vez de uno: de ~6.000 adultos por enfermedad a 13.000-16.000.
-# - Objetivo = enfermedad TOTAL, no "alguna vez se lo dijeron": el 18-21% de la
-#   diabetes y un 10-12% de los adultos con presion >=140/90 no lo sabian.
+# - Objetivo = enfermedad TOTAL, no "alguna vez se lo dijeron": segun el ciclo, el
+#   22-24% de quienes tienen diabetes y el 15-17% de quienes tienen hipertension no
+#   estaban diagnosticados.
 #     diabetes:      diagnosticada, HbA1c >= 6,5% o glucosa en ayunas >= 126 mg/dL (ADA)
 #     hipertension:  diagnosticada, >= 140/90 mmHg medida o medicacion (OMS/ESC)
 #     cardiovascular: cardiopatia coronaria, angina, infarto, insuficiencia cardiaca o
@@ -17,7 +18,8 @@
 # - La glucosa es la de AYUNAS (LBXGLU). La v1 usaba la del perfil bioquimico
 #   (LBXSGL), con y sin ayuno mezclados, y la app la leia con umbrales de ayunas.
 # - El modo simplificado usa el peso y la talla AUTODECLARADOS (WHQ): es lo que el
-#   usuario va a escribir, y la gente se quita IMC (-0,8 de media, -2 con obesidad).
+#   usuario va a escribir, y la gente se quita IMC (-0,8 de media, -1,5 con obesidad y
+#   -2,3 con un IMC de 40 o mas).
 # - Fuera las embarazadas (peso, IMC y presion no comparables), y los "no sabe" /
 #   "se niega" son dato faltante, no un "no".
 # - Sin actividad fisica: el cuestionario cambio entre ciclos y no hay forma honesta
@@ -32,7 +34,7 @@ import numpy as np
 import pandas as pd
 
 RAW = os.path.join("data_raw", "nhanes")
-OUT_DIR = os.path.join("data_processed", "v2")
+OUT_DIR = "data_processed"
 
 # Duracion de cada ciclo: al combinarlos, el peso muestral se reparte en proporcion.
 CICLOS = {
@@ -116,6 +118,8 @@ def _ciclo(ciclo):
     peso = _sin_codigos(df["WHD020"], 7777, 9999) * 0.45359237
     imc = peso / (talla / 100) ** 2
     plausible = talla.between(120, 230) & peso.between(30, 300) & imc.between(12, 90)
+    out["weight"] = peso.where(plausible).round(1)       # lo que escribe el usuario
+    out["height"] = talla.where(plausible).round(1)
     out["bmi_autodeclarado"] = imc.where(plausible).round(1)
 
     # ---- Completo: lo que mide el personal sanitario
@@ -149,18 +153,19 @@ def _ciclo(ciclo):
 DATASETS = {
     "diabetes": ["age", "gender_Male", "gender_Female", "smoking_history_never",
                  "smoking_history_current", "smoking_history_former",
-                 "hypertension", "high_cholesterol", "heart_disease", "bmi_autodeclarado",
+                 "hypertension", "high_cholesterol", "heart_disease", "weight", "height", "bmi_autodeclarado",
                  "bmi", "waist_circumference", "ap_hi", "ap_lo", "total_cholesterol",
                  "hdl_cholesterol", "egfr", "albumin_creatinine_ratio",
                  "hba1c_level", "blood_glucose_level"],
     "hipertension": ["age", "gender_Male", "gender_Female", "smoking_history_never",
                      "smoking_history_current", "smoking_history_former",
-                     "diabetes", "high_cholesterol", "heart_disease", "bmi_autodeclarado",
+                     "diabetes", "high_cholesterol", "heart_disease", "weight", "height", "bmi_autodeclarado",
                      "bmi", "waist_circumference", "total_cholesterol", "hdl_cholesterol",
                      "hba1c_level", "egfr", "albumin_creatinine_ratio", "ap_hi", "ap_lo"],
     "cardiovascular": ["age", "gender_Male", "gender_Female", "smoking_history_never",
                        "smoking_history_current", "smoking_history_former",
-                       "diabetes", "hypertension", "high_cholesterol", "bmi_autodeclarado",
+                       "diabetes", "hypertension", "high_cholesterol", "weight", "height",
+                       "bmi_autodeclarado",
                        "bmi", "waist_circumference", "ap_hi", "ap_lo", "total_cholesterol",
                        "hdl_cholesterol", "hba1c_level", "egfr", "albumin_creatinine_ratio"],
 }

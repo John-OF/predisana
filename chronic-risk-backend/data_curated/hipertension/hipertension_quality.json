@@ -1,158 +1,197 @@
 {
   "n_used": 2000,
-  "overall": 0.9498,
-  "column_shapes": 0.9655,
-  "column_pair_trends": 0.9341,
+  "overall": 0.9149,
+  "column_shapes": 0.9171,
+  "column_pair_trends": 0.9128,
   "per_column": [
     {
-      "column": "heart_disease",
-      "score": 0.999
-    },
-    {
-      "column": "diabetes",
-      "score": 0.996
+      "column": "gender_Female",
+      "score": 0.994
     },
     {
       "column": "gender_Male",
       "score": 0.994
     },
     {
-      "column": "gender_Female",
+      "column": "smoking_history_current",
       "score": 0.994
+    },
+    {
+      "column": "heart_disease",
+      "score": 0.991
     },
     {
       "column": "smoking_history_never",
-      "score": 0.994
+      "score": 0.99
     },
     {
-      "column": "high_cholesterol",
-      "score": 0.993
+      "column": "diabetes",
+      "score": 0.988
     },
     {
       "column": "smoking_history_former",
-      "score": 0.989
+      "score": 0.984
     },
     {
-      "column": "smoking_history_current",
-      "score": 0.985
-    },
-    {
-      "column": "bmi",
-      "score": 0.932
-    },
-    {
-      "column": "weight",
-      "score": 0.921
+      "column": "high_cholesterol",
+      "score": 0.971
     },
     {
       "column": "age",
-      "score": 0.917
+      "score": 0.944
+    },
+    {
+      "column": "ap_hi",
+      "score": 0.922
+    },
+    {
+      "column": "hba1c_level",
+      "score": 0.918
+    },
+    {
+      "column": "ap_lo",
+      "score": 0.918
+    },
+    {
+      "column": "egfr",
+      "score": 0.889
+    },
+    {
+      "column": "hdl_cholesterol",
+      "score": 0.879
+    },
+    {
+      "column": "total_cholesterol",
+      "score": 0.878
+    },
+    {
+      "column": "bmi",
+      "score": 0.876
+    },
+    {
+      "column": "bmi_autodeclarado",
+      "score": 0.862
     },
     {
       "column": "waist_circumference",
-      "score": 0.872
+      "score": 0.841
+    },
+    {
+      "column": "albumin_creatinine_ratio",
+      "score": 0.829
+    },
+    {
+      "column": "weight",
+      "score": 0.821
+    },
+    {
+      "column": "height",
+      "score": 0.775
     }
   ],
   "tstr": {
-    "n_train_real": 4798,
-    "n_train_synth": 4798,
-    "n_test_real": 1200,
+    "n_train_real": 9535,
+    "n_train_synth": 9535,
+    "n_test_real": 2352,
     "features": [
       "age",
+      "gender_Female",
+      "gender_Male",
+      "smoking_history_current",
+      "smoking_history_former",
       "bmi",
-      "weight",
       "waist_circumference",
       "diabetes",
-      "heart_disease",
       "high_cholesterol",
-      "gender_Male",
-      "gender_Female",
-      "smoking_history_never",
-      "smoking_history_current",
-      "smoking_history_former"
+      "heart_disease",
+      "total_cholesterol",
+      "hdl_cholesterol",
+      "hba1c_level",
+      "egfr",
+      "albumin_creatinine_ratio"
     ],
     "models": [
       {
         "model": "logreg",
-        "trtr_auc": 0.8037,
-        "tstr_auc": 0.8002,
-        "ratio": 0.996
+        "trtr_auc": 0.8215,
+        "tstr_auc": 0.8106,
+        "ratio": 0.987
       },
       {
         "model": "random_forest",
-        "trtr_auc": 0.7948,
-        "tstr_auc": 0.7923,
-        "ratio": 0.997
+        "trtr_auc": 0.8235,
+        "tstr_auc": 0.8032,
+        "ratio": 0.975
       }
     ]
   },
   "privacy": {
-    "median_synthetic": 0.3426,
-    "median_real_test": 0.2769,
-    "ratio": 1.237,
+    "median_synthetic": 1.6717,
+    "median_real_test": 1.3763,
+    "ratio": 1.215,
     "share_near_zero_synthetic": 0.0,
     "share_near_zero_real_test": 0.0,
     "exact_copies": 0,
     "exact_copies_real_test": 0,
-    "n_synthetic": 4798,
-    "n_real_test": 1200
+    "n_synthetic": 9535,
+    "n_real_test": 2352
   },
   "corr": {
     "features": [
       "age",
       "bmi",
-      "weight",
-      "waist_circumference"
+      "waist_circumference",
+      "ap_hi"
     ],
     "real": [
       [
         1.0,
-        0.04,
-        -0.02,
-        0.21
+        0.01,
+        0.2,
+        0.41
       ],
       [
-        0.04,
+        0.01,
         1.0,
         0.89,
-        0.9
+        -0.0
       ],
       [
-        -0.02,
+        0.2,
         0.89,
         1.0,
-        0.9
+        0.09
       ],
       [
-        0.21,
-        0.9,
-        0.9,
+        0.41,
+        -0.0,
+        0.09,
         1.0
       ]
     ],
     "synthetic": [
       [
         1.0,
-        0.24,
-        0.18,
-        0.26
+        -0.17,
+        -0.0,
+        0.4
       ],
       [
-        0.24,
+        -0.17,
         1.0,
-        0.92,
-        0.94
+        0.88,
+        -0.1
       ],
       [
-        0.18,
-        0.92,
+        -0.0,
+        0.88,
         1.0,
-        0.92
+        0.02
       ],
       [
-        0.26,
-        0.94,
-        0.92,
+        0.4,
+        -0.1,
+        0.02,
         1.0
       ]
     ]

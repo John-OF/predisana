@@ -1,4 +1,7 @@
 # curate_and_synthesize.py
+# Datos sinteticos del laboratorio (CTGAN). Desde la v2 el reparto train/test lo hace
+# train_models.py (uno por enfermedad, estratificado por objetivo y ciclo); aqui solo
+# se sintetiza a partir de ese train.
 import os
 import math
 import random
@@ -8,13 +11,12 @@ import pandas as pd
 from typing import Tuple, List, Dict
 
 import coherence
+import modos as M
 
 # --------- RUTAS ---------
-PROCESSED_DIR = "data_processed"
 CURATED_DIR = "data_curated"
 
-DATASETS = ["diabetes", "hipertension", "cardiovascular"]
-FILENAME = "{name}_dataset.csv"  # dentro de data_processed
+DATASETS = list(M.ENFERMEDADES)
 
 # --------- IMPORTS CON FALLBACK (SDV) ---------
 SDV_AVAILABLE = True
@@ -47,11 +49,6 @@ def _is_binary(s: pd.Series) -> bool:
         return set(v).issubset({0, 1})
     return False
 
-def stratified_split(df: pd.DataFrame, test_size: float, seed: int) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    from sklearn.model_selection import train_test_split
-    y = df["target"]
-    return train_test_split(df, test_size=test_size, random_state=seed, stratify=y)
-
 def _detect_categorical_columns(df: pd.DataFrame) -> List[str]:
     cats = []
     for c in df.columns:
@@ -79,12 +76,10 @@ BATCH_SIZE_CTGAN = 500  # el default de SDV; si se cambia alli, cambiarlo aqui
 # a 0.135 sin cambiar nada. Regla practica: no afinar sobre diferencias <0.05, son
 # ruido del GAN. 30k pasos cuesta el doble de tiempo y no da nada por encima de eso.
 #
-# Cardiovascular se queda en 5500 (donde ya estaba, 55k filas dan 109 pasos por epoca):
-# su unica corrida a 15k pasos puntuo peor en SDMetrics (0.924 -> 0.893) desviando las
-# marginales categoricas (hombres 0.350 real -> 0.485). Es UNA observacion y el ruido
-# de arriba impide afirmar que mas entrenamiento le perjudique; simplemente no hay
-# motivo para cambiar el artefacto que mejor puntua. Solo mover esto con medicion.
-PASOS_POR_DATASET = {"cardiovascular": 5500}
+# La v1 dejaba cardiovascular en 5500 pasos: era el dataset de Kaggle (55k filas) y su
+# unica corrida a 15k puntuo peor. Desde la v2 las tres enfermedades salen de NHANES,
+# con tamanos parecidos, asi que todas usan los 15k. Solo mover esto con medicion.
+PASOS_POR_DATASET: Dict[str, int] = {}
 
 
 def _epocas_para(n_filas: int, pasos_objetivo: int) -> int:
@@ -321,30 +316,36 @@ def _informe_marginales(real_df: pd.DataFrame, synth_df: pd.DataFrame,
 # de 115 cm de cintura (en el real, 0 y 1).
 # Lo que funciona es no pedirle al GAN esa relacion: se le da UNA de las dos variables
 # y lo que le falta a la otra para quedar explicada por ella, y se recompone al volver.
-#   - El peso no es una variable libre: es IMC x talla^2. El GAN modela la TALLA, que
-#     casi no depende del IMC, y el peso se deriva.
-#   - La cintura: el GAN modela el RESIDUO de una recta sobre el IMC ajustada en el
-#     train real.
+#   - El peso no es una variable libre: es IMC x talla^2. Desde la v2 el peso y la
+#     talla son los AUTODECLARADOS, asi que el GAN modela la talla y el IMC
+#     autodeclarado, y el peso se deriva de los dos (la v1 derivaba el peso medido
+#     de la talla y el IMC medido).
+#   - La cintura y el IMC autodeclarado: el GAN modela el RESIDUO de una recta sobre
+#     el IMC medido ajustada en el train real.
+#   - La diastolica, igual, sobre la sistolica (v2): el GAN dejaba su correlacion en
+#     0,30 (real 0,61). La v1 no la tocaba porque la presion de Kaggle iba en multiplos
+#     de 10 (97% del real) y un residuo continuo habria destruido ese patron; la de
+#     NHANES es la media de tres lecturas, con un decimal (multiplos de 10: 3,5%).
+#     Con el residuo, diabetes sale 0,62; hipertension y cardiovascular, 0,43-0,45,
+#     porque el GAN aprende una relacion entre el residuo y la sistolica (-0,15 y
+#     -0,20) que en el real es cero. Queda abierto.
 # HONESTIDAD: asi la correlacion de esos pares viene dada en buena parte por
 # construccion (la recta, o la formula del IMC), no aprendida por el GAN. Lo que el
 # GAN sigue teniendo que aprender es todo lo demas: la talla, el residuo, y como se
 # relacionan con el resto de columnas y con el target.
-# NO se reparametrizan:
-#   - Cardiovascular: su presion va en multiplos de 10 (97% del real) y un residuo
-#     continuo destruiria ese patron, que es peor que el mal que se arregla.
-#   - La glucosa de diabetes (sobre HbA1c). Se probo: su residuo se dispersa 6 veces
-#     mas con la HbA1c alta que con la normal y el GAN lo aprende parejo, asi que con
-#     la recta lineal el 1,7% de las filas quedaba clavado en 40 mg/dL. En log eso
-#     desaparece, pero en las dos variantes bajaba la parte de diabeticos entre quienes
-#     tienen glucosa >= 126 (39-48% frente a 56-68% sin residuo; real 72%) y solo subia
-#     el numero de la correlacion (0,67-0,71 frente a 0,36-0,52; real 0,83).
-#     Ojo al medir: con el mismo codigo, la forma de la glucosa varia entre corridas
-#     del GAN de 0,80 a 0,96 (SDMetrics); una corrida sola no compara variantes.
-COLUMNA_TALLA = "__talla_m__"
+# La glucosa ya no se sintetiza (v2): solo define el objetivo y no sale en las fichas.
+# En la v1 se probo su residuo sobre la HbA1c y empeoraba la relacion con el target
+# (el 1,7% de las filas quedaba clavado en 40 mg/dL con la recta lineal).
+# Ojo al medir: con el mismo codigo, una metrica de forma puede variar entre corridas
+# del GAN de 0,80 a 0,96 (SDMetrics); una corrida sola no compara variantes.
 PREFIJO_RESIDUO = "__residuo__"
 # dependiente -> base. Solo se aplica si el dataset trae las dos columnas.
 RESIDUOS_SOBRE = {
     "waist_circumference": "bmi",
+    # v2: el IMC autodeclarado y el medido son casi el mismo dato (la gente se quita
+    # algo de IMC, mas cuanto mas tiene). El GAN modela lo que se quita, no los dos.
+    "bmi_autodeclarado": "bmi",
+    "ap_lo": "ap_hi",
 }
 
 
@@ -353,9 +354,8 @@ def _al_espacio_del_gan(df: pd.DataFrame) -> Tuple[pd.DataFrame, List[dict]]:
     real de cada columna derivada va en el plan: al recomponerla se topa ahi, igual
     que SDV topa las columnas que si modela."""
     out, plan = df.copy(), []
-    if {"weight", "bmi"} <= set(out.columns):
-        plan.append({"tipo": "talla", "lo": float(out["weight"].min()), "hi": float(out["weight"].max())})
-        out[COLUMNA_TALLA] = np.sqrt(out["weight"] / out["bmi"])
+    if {"weight", "height", "bmi_autodeclarado"} <= set(out.columns):
+        plan.append({"tipo": "peso", "lo": float(out["weight"].min()), "hi": float(out["weight"].max())})
         out = out.drop(columns=["weight"])
     for dep, base in RESIDUOS_SOBRE.items():
         if dep in out.columns and base in out.columns:
@@ -369,12 +369,13 @@ def _al_espacio_del_gan(df: pd.DataFrame) -> Tuple[pd.DataFrame, List[dict]]:
 
 
 def _del_espacio_del_gan(muestra: pd.DataFrame, plan: List[dict]) -> pd.DataFrame:
-    """Inversa de `_al_espacio_del_gan`: recompone el peso y la cintura."""
+    """Inversa de `_al_espacio_del_gan`: recompone los residuos y despues el peso, que
+    necesita el IMC autodeclarado ya recompuesto (el plan se deshace al reves)."""
     out = muestra.copy()
     for paso in reversed(plan):
-        if paso["tipo"] == "talla":
-            out["weight"] = (out["bmi"] * out[COLUMNA_TALLA] ** 2).clip(paso["lo"], paso["hi"])
-            out = out.drop(columns=[COLUMNA_TALLA])
+        if paso["tipo"] == "peso":
+            peso = out["bmi_autodeclarado"] * (out["height"] / 100) ** 2
+            out["weight"] = peso.clip(paso["lo"], paso["hi"])
         else:
             dep, residuo = paso["dep"], PREFIJO_RESIDUO + paso["dep"]
             recta = paso["ordenada"] + paso["pendiente"] * out[paso["base"]]
@@ -416,15 +417,17 @@ def _redondear_como_el_real(muestra: pd.DataFrame, real_df: pd.DataFrame) -> pd.
 
 
 # --------- FILAS QUE NO PUEDEN SER DE UNA PERSONA ---------
-def _descartar_incoherentes(name: str, pool_df: pd.DataFrame) -> pd.DataFrame:
+def _descartar_incoherentes(pool_df: pd.DataFrame) -> pd.DataFrame:
     """Quita del pool las filas que el propio simulador marcaria como `incoherente`
     (coherence.py, la misma regla que /predict): una diastolica por encima de la
     sistolica, o una cintura que no cuadra con el IMC. Solo descarta, no corrige."""
-    campos = coherence.CAMPOS.get(name)
-    if not campos or not set(campos) <= set(pool_df.columns):
+    # Sin el peso: es el autodeclarado, que se deriva del IMC autodeclarado y la talla
+    # (cuadra por construccion), y compararlo con el IMC medido mezclaria dos mediciones.
+    campos = [c for c in coherence.CAMPOS if c in pool_df.columns and c != "weight"]
+    if not campos:
         return pool_df
-    malas = pool_df[list(campos)].apply(
-        lambda fila: bool(coherence.incoherencias(name, fila.to_dict())), axis=1)
+    malas = pool_df[campos].apply(
+        lambda fila: bool(coherence.incoherencias(fila.to_dict())), axis=1)
     if malas.any():
         print(f"   {int(malas.sum())} filas incoherentes descartadas del pool "
               f"({malas.mean() * 100:.2f}%)")
@@ -539,28 +542,17 @@ def fit_and_sample_sdv(train_df, model, synth_multiplier, seed, epochs, max_trai
     return muestra[orden + [c for c in muestra.columns if c not in orden]]
 
 # --------- PROCESO PRINCIPAL ---------
-def process_one_dataset(name, test_size, seed, model, synth_multiplier, balance, epochs, max_train_rows,
+def process_one_dataset(name, seed, model, synth_multiplier, balance, epochs, max_train_rows,
                         pasos_objetivo, match_marginales=True, oversample=4.0):
-    src = os.path.join(PROCESSED_DIR, FILENAME.format(name=name))
-    if not os.path.exists(src):
-        print(f"No existe {src}, se omite.")
-        return
-    df = pd.read_csv(src, low_memory=False)
-
-    # AUD-12: sin esto, las filas repetidas caian a ambos lados del split (219 en
-    # cardiovascular, 22 en hipertension) y el test quedaba optimista: el modelo
-    # ya habia visto esa fila exacta en entrenamiento.
-    antes = len(df)
-    df = df.drop_duplicates().reset_index(drop=True)
-    if len(df) < antes:
-        print(f"{name}: {antes - len(df)} filas duplicadas descartadas antes del split")
-
     out_dir = os.path.join(CURATED_DIR, name)
-    ensure_dir(out_dir)
-
-    train_df, test_df = stratified_split(df, test_size, seed)
-    train_df.to_csv(os.path.join(out_dir, f"{name}_train.csv"), index=False)
-    test_df.to_csv(os.path.join(out_dir, f"{name}_test.csv"), index=False)
+    src = os.path.join(out_dir, f"{name}_train.csv")
+    if not os.path.exists(src):
+        print(f"No existe {src} (lo escribe train_models.py), se omite.")
+        return
+    # Casos completos, como los que ve el GAN: si no, las marginales que se ajustan
+    # despues serian las de otra poblacion (la v2 trae laboratorio con huecos).
+    train_df = pd.read_csv(src, low_memory=False)[M.columnas_laboratorio(name)].dropna()
+    train_df = train_df.reset_index(drop=True)
 
     try:
         synth_df = fit_and_sample_sdv(train_df, model, synth_multiplier, seed, epochs, max_train_rows,
@@ -574,7 +566,7 @@ def process_one_dataset(name, test_size, seed, model, synth_multiplier, balance,
             if n > 0:
                 synth_df = pd.concat([ones.sample(n, random_state=seed), zeros.sample(n, random_state=seed)], ignore_index=True)
         grupos = _detect_onehot_groups(train_df)
-        synth_df = _descartar_incoherentes(name, synth_df)
+        synth_df = _descartar_incoherentes(synth_df)
 
         # AUD-24: del pool grande se eligen las filas que reproducen la composicion
         # categorica real. Se hace ANTES de balancear para no pelearse con ese flag.
@@ -599,13 +591,12 @@ def process_one_dataset(name, test_size, seed, model, synth_multiplier, balance,
 
         synth_path = os.path.join(out_dir, f"{name}_synthetic_{model.lower()}_x{synth_multiplier:g}_seed{seed}.csv")
         synth_df.to_csv(synth_path, index=False)
-        print(f"{name}: split + sintético ({model}, x{synth_multiplier}) guardado en {out_dir}")
+        print(f"{name}: sintético ({model}, x{synth_multiplier}) guardado en {out_dir}")
     except Exception as e:
         print(f"{name}: no se generó sintético ({type(e).__name__}: {e})")
 
 def main():
-    parser = argparse.ArgumentParser(description="Curación, split y síntesis (GAN) por dataset")
-    parser.add_argument("--test_size", type=float, default=0.2)
+    parser = argparse.ArgumentParser(description="Síntesis (GAN) por dataset, sobre el train de train_models.py")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--model", type=str, default="ctgan", choices=["ctgan", "tvae"])
     parser.add_argument("--synth_multiplier", type=float, default=1.0)
@@ -624,11 +615,11 @@ def main():
     args = parser.parse_args()
 
     ensure_dir(CURATED_DIR)
-    print(f"== Curación con test_size={args.test_size}, seed={args.seed}, model={args.model}, synth_multiplier={args.synth_multiplier}, balance={args.balance} ==")
+    print(f"== Síntesis con seed={args.seed}, model={args.model}, synth_multiplier={args.synth_multiplier}, balance={args.balance} ==")
 
     targets = DATASETS if not args.only else [s.strip() for s in args.only.split(",") if s.strip()]
     for name in targets:
-        process_one_dataset(name, args.test_size, args.seed, args.model, args.synth_multiplier,
+        process_one_dataset(name, args.seed, args.model, args.synth_multiplier,
                             args.balance, args.epochs, args.max_train_rows, args.steps,
                             match_marginales=not args.no_match_marginals,
                             oversample=args.oversample)

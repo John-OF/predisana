@@ -52,12 +52,13 @@ def admin_headers():
     return {"X-Admin-Token": TEST_ADMIN_TOKEN}
 
 
-# Perfil base RESPONDIBLE de diabetes (sin glucosa), compartido entre tests.
+# Perfil del modo simplificado de diabetes (el modo por defecto): peso y talla en vez
+# del IMC (92 kg y 172 cm dan un IMC de 31,1), compartido entre tests.
 @pytest.fixture()
 def perfil_diabetes():
     return {
-        "age": 55, "bmi": 31, "hypertension": 1, "heart_disease": 0,
-        "gender_Male": 1, "gender_Female": 0,
+        "age": 55, "weight": 92, "height": 172, "hypertension": 1, "high_cholesterol": 0,
+        "heart_disease": 0, "gender_Male": 1, "gender_Female": 0,
         "smoking_history_never": 1, "smoking_history_current": 0,
         "smoking_history_former": 0,
     }

@@ -1,9 +1,9 @@
-# Tests de los endpoints publicos de solo lectura: health, metrics (incl. la
-# variante hibrida), config y el laboratorio sintetico (synthetic/sample/
-# distribution/synthetic_quality).
+# Tests de los endpoints publicos de solo lectura: health, metrics y config por modo,
+# y el laboratorio sintetico (synthetic/sample/distribution/synthetic_quality).
 import pytest
 
 DISEASES = ["diabetes", "hipertension", "cardiovascular"]
+MODOS = ["simplificado", "completo"]
 
 
 def test_health(client):
@@ -12,48 +12,58 @@ def test_health(client):
 
 # ---------- /metrics ----------
 
+@pytest.mark.parametrize("modo", MODOS)
 @pytest.mark.parametrize("disease", DISEASES)
-def test_metrics_por_enfermedad(client, disease):
-    r = client.get(f"/metrics/{disease}")
+def test_metrics_por_enfermedad_y_modo(client, disease, modo):
+    r = client.get(f"/metrics/{disease}?mode={modo}")
     assert r.status_code == 200
     m = r.get_json()
+    assert m["modo"] == modo
     assert 0.5 < (m.get("auc") or m.get("auc_test")) <= 1.0
     assert m["leaderboard"], "leaderboard vacio"
     # La curva de fiabilidad que dibuja Metricas.jsx.
     assert "brier_calibrated" in m["calibration"]
 
-def test_metrics_sirve_variante_glucosa(client):
-    """El toggle de /metricas pide la variante hibrida por su clave extra."""
-    r = client.get("/metrics/diabetes_glucosa")
-    assert r.status_code == 200
-    m = r.get_json()
-    assert "blood_glucose_level" in m["features"]
+def test_metrics_sin_modo_es_el_simplificado(client):
+    assert client.get("/metrics/diabetes").get_json()["modo"] == "simplificado"
 
 def test_metrics_enfermedad_desconocida(client):
     assert client.get("/metrics/obesidad").status_code == 404
 
+def test_modo_desconocido_es_400(client):
+    for ruta in ("/metrics/diabetes", "/config/diabetes"):
+        assert client.get(f"{ruta}?mode=avanzado").status_code == 400
+
 
 # ---------- /config ----------
 
-def test_config_diabetes_glucosa_es_opcional(client):
-    """Contrato del hibrido: la glucosa NO es feature del modelo base pero SI
-    se ofrece como opcional (asi la pinta el simulador)."""
-    r = client.get("/config/diabetes")
-    assert r.status_code == 200
-    c = r.get_json()
-    assert "blood_glucose_level" not in c["features"]
-    assert "blood_glucose_level" in c["optional_features"]
-    assert c["categoricals"]["gender"], "sin opciones de genero"
+def test_config_simplificado_pide_peso_y_talla_no_el_imc(client):
+    """El simplificado se entrena con el IMC que sale del peso y la talla declarados:
+    el formulario pide esos dos y la API calcula el IMC."""
+    c = client.get("/config/diabetes?mode=simplificado").get_json()
+    assert "bmi" in c["features"] and "bmi" not in c["inputs"]
+    assert {"weight", "height"} <= set(c["inputs"])
+    assert c["derived"] == {"bmi": ["weight", "height"]}
+    assert c["categoricals"]["smoking_history"] == ["current", "former", "never"]
 
-def test_config_hipertension_ofrece_la_presion_como_opcional(client):
-    """AUD-1: la presion NO es feature del modelo (seria un umbral disfrazado),
-    pero se ofrece como dato opcional para la capa clinica ACC/AHA."""
-    c = client.get("/config/hipertension").get_json()
-    assert "blood_pressure" not in c["features"]
-    assert c["optional_features"] == ["blood_pressure"]
+def test_config_completo_pide_el_imc_medido(client):
+    c = client.get("/config/diabetes?mode=completo").get_json()
+    assert "bmi" in c["inputs"] and c["derived"] == {}
+    assert {"waist_circumference", "egfr", "albumin_creatinine_ratio"} <= set(c["inputs"])
 
-def test_config_cardiovascular_sin_opcionales(client):
-    assert client.get("/config/cardiovascular").get_json()["optional_features"] == []
+@pytest.mark.parametrize("disease,definitorias", [
+    ("diabetes", ["hba1c_level", "blood_glucose_level"]), ("hipertension", ["ap_hi", "ap_lo"])])
+def test_lo_que_define_la_enfermedad_se_pide_pero_no_entra_al_modelo(client, disease, definitorias):
+    """Se pide en el completo, pero lo interpreta la guia: con ello el modelo solo
+    reaprenderia el umbral diagnostico."""
+    c = client.get(f"/config/{disease}?mode=completo").get_json()
+    assert c["defining_inputs"] == definitorias
+    assert not set(definitorias) & set(c["features"])
+    assert set(definitorias) <= set(c["optional_features"])
+
+def test_config_avisa_de_lo_que_el_modelo_no_usa(client):
+    c = client.get("/config/cardiovascular?mode=completo").get_json()
+    assert {"ap_hi", "total_cholesterol"} <= set(c["not_used"])
 
 
 # ---------- laboratorio sintetico ----------
@@ -73,7 +83,7 @@ def test_sample_real(client):
     assert r.get_json()["_source_type"] == "real"
 
 def test_distribution_comparada(client):
-    r = client.get("/distribution/diabetes?feature=blood_glucose_level")
+    r = client.get("/distribution/diabetes?feature=hba1c_level")
     assert r.status_code == 200
     d = r.get_json()
     assert d["bins"], "sin bins"

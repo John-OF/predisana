@@ -67,8 +67,19 @@ describe('predictRisk', () => {
     expect(ruta).toBe('/predict/diabetes');
     expect(cuerpo).toEqual({ age: 40 });
     expect(config.headers['X-Session-Id']).toBe(api.getSessionId());
-    // Una simulacion del usuario se registra: no lleva la marca de sintetico.
-    expect(config.params).toBeUndefined();
+    // Una simulacion del usuario se registra: no lleva la marca de sintetico. Sin modo,
+    // el simplificado.
+    expect(config.params).toEqual({ mode: 'simplificado' });
+  });
+
+  it('manda el modo pedido', async () => {
+    const api = await importarApi();
+    const espia = vi.fn().mockResolvedValue({ data: {} });
+    api.default.post = espia;
+
+    await api.predictRisk('hipertension', { age: 40 }, 'completo');
+
+    expect(espia.mock.calls[0][2].params).toEqual({ mode: 'completo' });
   });
 });
 
@@ -85,6 +96,7 @@ describe('evaluateSyntheticCase', () => {
     const [ruta, cuerpo, config] = espia.mock.calls[0];
     expect(ruta).toBe('/predict/cardiovascular');
     expect(cuerpo).toEqual({ age: 50 });
-    expect(config.params).toEqual({ source: 'synthetic' });
+    // Por el modelo completo, el que lee todas las variables de la ficha.
+    expect(config.params).toEqual({ source: 'synthetic', mode: 'completo' });
   });
 });

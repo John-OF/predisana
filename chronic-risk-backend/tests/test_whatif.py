@@ -1,199 +1,139 @@
-# Tests de /whatif: curva contrafactual, monotonia fina, ruteo y no-logueo en BD.
+# Tests de /whatif (v2): curva contrafactual por modo, el peso del simplificado a talla
+# fija, que solo se barra lo que el modelo usa, validaciones y no-logueo en BD.
 import pytest
 
+ENFERMEDADES = ["diabetes", "hipertension", "cardiovascular"]
 
-def _whatif(client, disease, body):
-    return client.post(f"/whatif/{disease}", json=body)
-
-
-def test_curva_glucosa_monotona(client, perfil_diabetes):
-    """Barrido fino de glucosa: la curva calibrada Y la cruda deben ser
-    no-decrecientes (protege el fix del 'pozo de glucosa', commit 7a6f86b)."""
-    r = _whatif(client, "diabetes", {
-        "base": perfil_diabetes, "feature": "blood_glucose_level",
-        "min": 70, "max": 300, "steps": 40,
-    })
-    assert r.status_code == 200
-    d = r.get_json()
-    assert d["variant"] == "glucosa"
-    curva = d["curve"]
-    assert len(curva) == 40
-    for antes, despues in zip(curva, curva[1:]):
-        assert despues["probability"] >= antes["probability"] - 1e-9
-        assert despues["raw_probability"] >= antes["raw_probability"] - 1e-9
-
-
-def test_whatif_no_loguea_en_bd(client, app_module, perfil_diabetes):
-    """El what-if es exploratorio: NO debe ensuciar la analitica del admin."""
-    with app_module.SessionLocal() as s:
-        antes = s.query(app_module.Prediction).count()
-    r = _whatif(client, "diabetes", {
-        "base": perfil_diabetes, "feature": "bmi", "min": 20, "max": 40, "steps": 10,
-    })
-    assert r.status_code == 200
-    with app_module.SessionLocal() as s:
-        despues = s.query(app_module.Prediction).count()
-    assert despues == antes
-
-
-def test_whatif_sin_glucosa_usa_modelo_base(client, perfil_diabetes):
-    r = _whatif(client, "diabetes", {
-        "base": perfil_diabetes, "feature": "age", "min": 20, "max": 80, "steps": 5,
-    })
-    assert r.status_code == 200
-    assert r.get_json()["variant"] == "base"
-
-
-def test_whatif_validaciones(client, perfil_diabetes):
-    # Falta 'feature'
-    assert _whatif(client, "diabetes", {"base": perfil_diabetes, "min": 0, "max": 1}).status_code == 400
-    # max <= min
-    assert _whatif(client, "diabetes", {
-        "base": perfil_diabetes, "feature": "bmi", "min": 40, "max": 20,
-    }).status_code == 400
-    # Enfermedad desconocida
-    assert _whatif(client, "obesidad", {
-        "base": {}, "feature": "bmi", "min": 20, "max": 40,
-    }).status_code == 404
-
-
-# ---------- hipertension: peso e IMC se barren a talla fija (revision 2026-10) ----------
-# Barrer el peso con el IMC quieto es barrer la ESTATURA, y con el coeficiente negativo
-# de weight la curva bajaba: 59% a 45 kg, 27% a 140 kg. Ahora la talla del caso base
-# (peso / IMC = talla^2) se queda fija y el otro campo sigue al que se barre.
-
-# 90 kg con IMC 30 -> talla^2 = 3.0 m2 exactos (1,73 m).
-HTA = {
-    "age": 55, "bmi": 30, "weight": 90, "waist_circumference": 104,
-    "diabetes": 0, "heart_disease": 0, "high_cholesterol": 1,
-    "gender_Male": 1, "gender_Female": 0,
+# 160 cm: talla^2 = 2,56 m2 exactos, asi el IMC acoplado sale redondo.
+BASE = {
+    "age": 55, "weight": 80, "height": 160, "diabetes": 0, "hypertension": 0,
+    "heart_disease": 0, "high_cholesterol": 1, "gender_Male": 1, "gender_Female": 0,
+    "smoking_history_never": 1, "smoking_history_current": 0, "smoking_history_former": 0,
+}
+COMPLETO = {
+    "age": 55, "bmi": 31, "waist_circumference": 104, "ap_hi": 135, "ap_lo": 85,
+    "total_cholesterol": 210, "hdl_cholesterol": 45, "hba1c_level": 5.8, "egfr": 85,
+    "albumin_creatinine_ratio": 20, "diabetes": 0, "hypertension": 0, "heart_disease": 0,
+    "high_cholesterol": 1, "gender_Male": 1, "gender_Female": 0,
     "smoking_history_never": 1, "smoking_history_current": 0, "smoking_history_former": 0,
 }
 
 
-def _curva_hta(client, feature, vmin, vmax, steps, base=HTA):
-    r = _whatif(client, "hipertension", {
-        "base": base, "feature": feature, "min": vmin, "max": vmax, "steps": steps,
-    })
+def _whatif(client, disease, body, modo=None):
+    ruta = f"/whatif/{disease}" + (f"?mode={modo}" if modo else "")
+    return client.post(ruta, json=body)
+
+
+def _curva(client, disease, feature, vmin, vmax, steps, base=BASE, modo=None):
+    r = _whatif(client, disease, {"base": base, "feature": feature, "min": vmin, "max": vmax,
+                                  "steps": steps}, modo)
     assert r.status_code == 200, r.get_json()
     return r.get_json()
 
 
-def test_mas_peso_no_baja_el_riesgo_de_hipertension(client):
-    d = _curva_hta(client, "weight", 45, 140, 20)
-    curva = d["curve"]
+def _no_baja(curva):
     for antes, despues in zip(curva, curva[1:]):
         assert despues["probability"] >= antes["probability"] - 1e-9
         assert despues["raw_probability"] >= antes["raw_probability"] - 1e-9
-    assert curva[-1]["probability"] > curva[0]["probability"]
 
 
-def test_el_peso_arrastra_al_imc_a_la_talla_del_caso_base(client):
-    d = _curva_hta(client, "weight", 60, 120, 4)
-    assert d["coupled"] == {"feature": "bmi", "height_m": 1.73}
+def test_whatif_no_loguea_en_bd(client, app_module):
+    """El what-if es exploratorio: NO debe ensuciar la analitica del admin."""
+    with app_module.SessionLocal() as s:
+        antes = s.query(app_module.Prediction).count()
+    _curva(client, "diabetes", "age", 20, 80, 10)
+    with app_module.SessionLocal() as s:
+        assert s.query(app_module.Prediction).count() == antes
+
+
+def test_whatif_validaciones(client):
+    assert _whatif(client, "diabetes", {"base": BASE, "min": 0, "max": 1}).status_code == 400
+    assert _whatif(client, "diabetes", {"base": BASE, "feature": "age", "min": 40, "max": 20}).status_code == 400
+    assert _whatif(client, "obesidad", {"base": {}, "feature": "age", "min": 20, "max": 40}).status_code == 404
+    assert _whatif(client, "diabetes", {"base": BASE, "feature": "age", "min": 20, "max": 40},
+                   modo="experto").status_code == 400
+
+
+# ---------- el peso del simplificado se barre a talla fija (revision 2026-10) ----------
+# Barrer el peso con el IMC quieto es barrer la ESTATURA: en la v1 la curva de
+# hipertension bajaba (59% a 45 kg, 27% a 140 kg). En el simplificado el IMC sale del
+# peso y la talla, asi que la talla del caso base se queda fija y el IMC sigue al peso.
+
+@pytest.mark.parametrize("disease", ENFERMEDADES)
+def test_mas_peso_no_baja_el_riesgo(client, disease):
+    d = _curva(client, disease, "weight", 45, 140, 20)
+    _no_baja(d["curve"])
+    assert d["curve"][-1]["probability"] > d["curve"][0]["probability"]
+
+
+def test_el_peso_mueve_el_imc_a_la_talla_del_caso_base(client):
+    d = _curva(client, "hipertension", "weight", 48, 96, 4)
+    assert d["coupled"] == {"feature": "bmi", "height_m": 1.6}
     assert [(p["value"], p["coupled_value"]) for p in d["curve"]] == [
-        (60, 20), (80, 26.67), (100, 33.33), (120, 40)]
+        (48, 18.75), (64, 25), (80, 31.25), (96, 37.5)]
 
 
-def test_cada_punto_es_la_prediccion_de_ese_peso_con_su_imc(client):
-    """La curva no inventa nada: es /predict con el peso barrido y el IMC que le toca."""
-    d = _curva_hta(client, "weight", 60, 120, 4)
+def test_cada_punto_es_la_prediccion_de_ese_peso(client):
+    """La curva no inventa nada: es /predict con el peso barrido y la misma talla."""
+    d = _curva(client, "hipertension", "weight", 48, 96, 4)
     for p in d["curve"]:
-        directo = client.post("/predict/hipertension", json={
-            **HTA, "weight": p["value"], "bmi": p["value"] / 3.0}).get_json()
+        directo = client.post("/predict/hipertension", json={**BASE, "weight": p["value"]}).get_json()
         assert p["raw_probability"] == pytest.approx(directo["raw_model_probability"], abs=1e-12)
         assert p["probability"] == pytest.approx(directo["probability"], abs=1e-12)
 
 
-def test_barrer_el_imc_arrastra_al_peso(client):
-    d = _curva_hta(client, "bmi", 20, 40, 5)
-    assert d["coupled"] == {"feature": "weight", "height_m": 1.73}
+def test_barrer_el_imc_mueve_el_peso(client):
+    d = _curva(client, "hipertension", "bmi", 20, 40, 5)
+    assert d["coupled"] == {"feature": "weight", "height_m": 1.6}
     assert [(p["value"], p["coupled_value"]) for p in d["curve"]] == [
-        (20, 60), (25, 75), (30, 90), (35, 105), (40, 120)]
-    for antes, despues in zip(d["curve"], d["curve"][1:]):
-        assert despues["probability"] >= antes["probability"] - 1e-9
+        (20, 51.2), (25, 64), (30, 76.8), (35, 89.6), (40, 102.4)]
+    _no_baja(d["curve"])
 
 
 def test_peso_e_imc_cuentan_la_misma_historia(client):
-    """La misma persona a 120 kg (IMC 40) da el mismo riesgo se llegue por el barrido
-    de peso o por el de IMC. Antes uno subia y el otro bajaba."""
-    por_peso = _curva_hta(client, "weight", 60, 120, 4)["curve"][-1]
-    por_imc = _curva_hta(client, "bmi", 20, 40, 5)["curve"][-1]
+    """La misma persona a 96 kg (IMC 37,5) da el mismo riesgo se llegue por el barrido
+    de peso o por el de IMC."""
+    por_peso = _curva(client, "hipertension", "weight", 48, 96, 4)["curve"][-1]
+    por_imc = _curva(client, "hipertension", "bmi", 25, 37.5, 3)["curve"][-1]
     assert por_peso["raw_probability"] == pytest.approx(por_imc["raw_probability"], abs=1e-12)
 
 
-def test_sin_peso_o_imc_en_el_caso_base_no_hay_acople(client):
-    """Sin los dos no hay talla que deducir: se barre la feature sola, como antes."""
-    base = {k: v for k, v in HTA.items() if k != "bmi"}
-    d = _curva_hta(client, "weight", 60, 120, 4, base=base)
-    assert d["coupled"] is None
-    assert all("coupled_value" not in p for p in d["curve"])
+def test_barrer_el_peso_sin_talla_es_400(client):
+    base = {k: v for k, v in BASE.items() if k != "height"}
+    r = _whatif(client, "hipertension", {"base": base, "feature": "weight", "min": 50, "max": 90})
+    assert r.status_code == 400 and "talla" in r.get_json()["error"]
 
 
-def test_el_valor_acoplado_se_topa_a_los_limites_fisicos(client):
-    """Talla de 2,20 m: a 45 kg el IMC derivado seria 9,3, por debajo del minimo que
+def test_el_imc_acoplado_se_topa_a_los_limites_fisicos(client):
+    """Talla de 2,30 m: a 45 kg el IMC derivado seria 8,5, por debajo del minimo que
     acepta la API (10). Un valor derivado no puede tumbar la curva con un 400."""
-    base = {**HTA, "weight": 60, "bmi": 12.4}
-    d = _curva_hta(client, "weight", 45, 140, 20, base=base)
+    d = _curva(client, "hipertension", "weight", 45, 140, 20, base={**BASE, "height": 230})
     assert min(p["coupled_value"] for p in d["curve"]) == 10
 
 
-def test_el_acople_es_solo_de_hipertension(client, perfil_diabetes):
-    """El resto de barridos (cintura y edad incluidas) siguen moviendo una sola."""
-    assert _curva_hta(client, "waist_circumference", 70, 130, 4)["coupled"] is None
-    assert _curva_hta(client, "age", 30, 70, 4)["coupled"] is None
-    r = _whatif(client, "diabetes", {
-        "base": perfil_diabetes, "feature": "bmi", "min": 20, "max": 40, "steps": 5,
-    })
-    assert r.get_json()["coupled"] is None
+# ---------- lo que se puede barrer ----------
+
+@pytest.mark.parametrize("disease,modo,feature", [
+    ("diabetes", "completo", "hba1c_level"),          # define la diabetes: la lee la guia
+    ("diabetes", None, "blood_glucose_level"),        # idem, y no es variable de ningun modelo
+    ("hipertension", "completo", "ap_hi"),            # define la hipertension
+    ("cardiovascular", "completo", "ap_hi"),          # sin efecto: las restricciones la anulan
+    ("diabetes", None, "waist_circumference"),        # solo existe en el completo
+])
+def test_solo_se_barre_lo_que_el_modelo_usa(client, disease, modo, feature):
+    base = COMPLETO if modo == "completo" else BASE
+    r = _whatif(client, disease, {"base": base, "feature": feature, "min": 100, "max": 200}, modo)
+    assert r.status_code == 400 and "recta" in r.get_json()["error"]
 
 
-# ---------- glucosa: dos nombres, y solo donde el modelo la usa (auditoria 2026-09) ----------
-# `glucose` y `blood_glucose_level` son la misma variable y antes se aceptaban siempre.
-# Hipertension y cardiovascular no la usan: la curva era una recta (9,5% y 22,5% de
-# punta a punta). Y en diabetes el alias `glucose` daba otra recta.
-
-CARDIO = {
-    "age": 50, "bmi": 26, "ap_hi": 120, "ap_lo": 80, "cholesterol": 1, "gluc": 1,
-    "smoke": 0, "alco": 0, "active": 1, "gender_Female": 1, "gender_Male": 0,
-}
-
-
-@pytest.mark.parametrize("alias", ["glucose", "blood_glucose_level"])
-@pytest.mark.parametrize("enfermedad,base", [("hipertension", HTA), ("cardiovascular", CARDIO)])
-def test_barrer_la_glucosa_en_un_modelo_que_no_la_usa_da_400(client, enfermedad, base, alias):
-    r = _whatif(client, enfermedad, {
-        "base": base, "feature": alias, "min": 70, "max": 300, "steps": 5,
-    })
-    assert r.status_code == 400
-    assert alias in r.get_json()["error"]
-
-
-@pytest.mark.parametrize("glucosa_en_base", [{}, {"blood_glucose_level": 100}, {"glucose": 100}])
-@pytest.mark.parametrize("alias", ["glucose", "blood_glucose_level"])
-def test_la_glucosa_de_diabetes_se_barre_con_cualquiera_de_sus_nombres(
-        client, perfil_diabetes, alias, glucosa_en_base):
-    """Con `glucose` y un caso base sin glucosa se servia el modelo sin glucosa (15,4%
-    fijo); si el base traia `blood_glucose_level`, el modelo leia ese valor fijo (4,2%)."""
-    r = _whatif(client, "diabetes", {
-        "base": {**perfil_diabetes, **glucosa_en_base}, "feature": alias,
-        "min": 70, "max": 300, "steps": 5,
-    })
-    assert r.status_code == 200
-    d = r.get_json()
-    assert d["variant"] == "glucosa"
-    assert d["feature"] == "blood_glucose_level"   # el nombre que lee el modelo
+def test_el_completo_barre_sus_medidas(client):
+    d = _curva(client, "diabetes", "albumin_creatinine_ratio", 0, 300, 13, base=COMPLETO, modo="completo")
+    assert d["mode"] == "completo" and d["coupled"] is None
+    _no_baja(d["curve"])
     assert d["supported_range"] is not None
-    assert d["curve"][-1]["probability"] > d["curve"][0]["probability"]
 
 
-def test_sin_la_variante_con_glucosa_barrer_la_glucosa_da_400(client, app_module,
-                                                              perfil_diabetes, monkeypatch):
-    """Sin la variante, diabetes cae en el modelo base, que no usa la glucosa: la curva
-    seria otra recta (/health ya marca ese deploy como degradado)."""
-    monkeypatch.delitem(app_module.MODELS, "diabetes_glucosa")
-    r = _whatif(client, "diabetes", {
-        "base": perfil_diabetes, "feature": "blood_glucose_level",
-        "min": 70, "max": 300, "steps": 5,
-    })
-    assert r.status_code == 400
+def test_la_edad_marca_el_tope_de_nhanes(client):
+    d = _curva(client, "diabetes", "age", 18, 90, 10)
+    assert d["topcoded_at"] == 80
+    assert d["supported_range"][1] == 80

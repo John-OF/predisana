@@ -6,15 +6,14 @@
 #   - curate_and_synthesize.py: descarta del pool del GAN las filas que el propio
 #     simulador marcaria. Un "caso virtual" no puede llegar con una talla de 0,94 m.
 #
-# Hipertension pide weight, bmi y waist_circumference como 3 campos SUELTOS (el
-# formulario no pide altura ni valida que cuadren entre si). En los datos reales los
-# tres estan fuertemente correlacionados (r~0.89-0.90); el LogReg ganador del bake-off
-# aprendio, por colinealidad, un coeficiente NEGATIVO para 'weight'. Con datos que
-# covarian de forma realista el modelo predice bien; el problema aparece con una
-# combinacion incoherente (cintura enorme con IMC bajo, o mucho peso a igual IMC y
-# cintura), donde el riesgo puede BAJAR al subir el peso.
-# Cardiovascular pide la sistolica y la diastolica por separado, y nada impedia
-# mandarlas al reves (auditoria 2026-08, corregido en la revision 2026-10).
+# Las reglas miran los campos que haya, no la enfermedad: cada modo pide variables
+# distintas (el simplificado, peso y talla; el completo, ademas cintura y presion).
+#   - Peso e IMC juntos implican una talla: si el IMC no sale de ese peso y esa talla
+#     (porque se mando el IMC a mano), tiene que dar una talla humana.
+#   - Cintura e IMC: la v1 pedia peso, IMC y cintura sueltos, y el modelo de
+#     hipertension aprendio con ellos un coeficiente NEGATIVO para el peso.
+#   - Presion: la diastolica no puede igualar ni superar a la sistolica (auditoria
+#     2026-08, corregido en la revision 2026-10).
 import math
 from typing import Any, Dict, List, Optional
 
@@ -24,11 +23,8 @@ CINTURA_IMC_BAJO_MIN_CINTURA = 100.0
 CINTURA_IMC_ALTO_MIN = 35.0
 CINTURA_IMC_ALTO_MAX_CINTURA = 80.0
 
-# Campos que mira cada enfermedad. Sin entrada aqui, no hay nada que comprobar.
-CAMPOS = {
-    "hipertension": ("weight", "bmi", "waist_circumference"),
-    "cardiovascular": ("ap_hi", "ap_lo"),
-}
+# Campos que miran las reglas. Los que falten no se juzgan.
+CAMPOS = ("weight", "bmi", "waist_circumference", "ap_hi", "ap_lo")
 
 
 def _corporales(weight, bmi, waist) -> List[Dict[str, Any]]:
@@ -42,10 +38,7 @@ def _corporales(weight, bmi, waist) -> List[Dict[str, Any]]:
                 "feature": "weight", "value": weight,
                 "detail": (f"El peso ({weight:g} kg) y el IMC ({bmi:g}) juntos implican una "
                            f"altura de ~{altura_implicita:.2f} m, fuera de un rango humano "
-                           f"plausible: como el modelo trata weight, bmi y "
-                           f"waist_circumference como campos independientes, esta "
-                           f"combinación no se detecta por rango individual pero es "
-                           f"una entrada incoherente."),
+                           f"plausible: revisa el peso, la talla o el IMC."),
             })
 
     if bmi is not None and waist is not None:
@@ -77,13 +70,9 @@ def _de_presion(ap_hi, ap_lo) -> List[Dict[str, Any]]:
     }]
 
 
-def incoherencias(disease: str, valores: Dict[str, Optional[float]]) -> List[Dict[str, Any]]:
+def incoherencias(valores: Dict[str, Optional[float]]) -> List[Dict[str, Any]]:
     """Una entrada {feature, value, detail} por cada combinacion incoherente.
-    `valores` trae los campos de CAMPOS[disease] ya numericos y positivos, o None si
-    faltan: sin los dos datos de una combinacion, esa combinacion no se juzga."""
-    if disease == "hipertension":
-        return _corporales(valores.get("weight"), valores.get("bmi"),
-                           valores.get("waist_circumference"))
-    if disease == "cardiovascular":
-        return _de_presion(valores.get("ap_hi"), valores.get("ap_lo"))
-    return []
+    `valores` trae los campos de CAMPOS ya numericos y positivos, o None si faltan:
+    sin los dos datos de una combinacion, esa combinacion no se juzga."""
+    return (_corporales(valores.get("weight"), valores.get("bmi"), valores.get("waist_circumference"))
+            + _de_presion(valores.get("ap_hi"), valores.get("ap_lo")))

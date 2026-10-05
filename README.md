@@ -17,33 +17,36 @@ las probabilidades (calibración isotónica con curva de fiabilidad).
 
 ## Qué hace
 
-- **Simulador de riesgo** por enfermedad, con formularios que solo piden datos
-  que una persona común puede responder (autorreporte y medición casera). En
-  diabetes la glucosa es **opcional**: sin ella se sirve un modelo de cribado; con
-  ella, una variante más precisa (modelo híbrido).
+- **Simulador de riesgo** por enfermedad, en **dos modos**: el *simplificado* pide
+  solo lo que cualquiera sabe de sí mismo (edad, sexo, tabaco, peso y talla,
+  diagnósticos previos); el *completo*, pensado como apoyo para personal sanitario,
+  suma mediciones y analíticas (cintura, presión, colesterol, HbA1c, función renal).
+  Lo que define la enfermedad (la HbA1c en diabetes, la presión en hipertensión) se
+  pide, pero lo interpreta la guía clínica, no el modelo.
 - **Explicación de cada resultado**: top-5 de variables por impacto SHAP, más una
   capa de interpretación clínica (umbrales ADA / ACC-AHA) presentada aparte, sin
   alterar la salida del modelo.
 - **Análisis "¿qué pasaría si...?"**: curva contrafactual de riesgo al variar una
-  sola variable (p. ej. cómo cambia el riesgo a lo largo del rango de glucosa).
+  sola variable (p. ej. cómo cambia el riesgo con el peso, a la misma talla).
 
-> 📸 **Captura de pantalla de:** el panel what-if — curva de riesgo al variar la
-> glucosa, con el marcador en el valor actual del usuario.
+> 📸 **Captura de pantalla de:** el panel what-if — curva de riesgo al variar el
+> peso, con el marcador en el valor actual del usuario.
 
-- **Métricas en vivo y honestas**: leaderboard del bake-off de algoritmos por
-  enfermedad (AUC de validación cruzada), reporte por clase, **diagrama de
-  fiabilidad** de la calibración y cómo reparten las **bandas del simulador** a la
-  gente real del test; en diabetes, comparación con/sin glucosa.
+- **Métricas en vivo y honestas**, por enfermedad y modo: leaderboard del bake-off
+  (AUC de validación cruzada anidada, y qué candidatos no pasaron el filtro de
+  validación y por qué), AUC de test también ponderado a la población, reporte por
+  clase, **diagrama de fiabilidad** de la calibración y cómo reparten las **bandas
+  del simulador** a la gente real del test.
 
 > 📸 **Captura de pantalla de:** la página de métricas — leaderboard de algoritmos
-> y curva de calibración, con el toggle "Sin glucosa / Con glucosa".
+> y curva de calibración, con el selector "Simplificado / Completo".
 
 - **Laboratorio de datos sintéticos** (case study en `/proyecto`): generación de
   pacientes ficticios con CTGAN, juego "¿real o sintético?", distribuciones
   comparadas y **tres preguntas distintas** sobre el sintético — *fidelidad*
   (SDMetrics + heatmaps de correlación), *utilidad* (TSTR: entrenar solo con
-  sintético y evaluar contra el test real, ratio 0.972-0.997) y *privacidad*
-  (distancia al registro real más cercano, 1.07-1.24x la del propio test real).
+  sintético y evaluar contra el test real, ratio 0,967-0,988) y *privacidad*
+  (distancia al registro real más cercano, 1,07-1,22x la del propio test real).
 
 > 📸 **Captura de pantalla de:** el laboratorio sintético — pestaña de
 > distribuciones real vs sintético (o el juego "¿real o sintético?").
@@ -58,53 +61,54 @@ las probabilidades (calibración isotónica con curva de fiabilidad).
 
 ## Decisiones técnicas destacables
 
-- **Datos reales por enfermedad** (sin frame maestro imputado): diabetes e
-  hipertensión se entrenan con **NHANES 2021-2023** (encuesta real de los CDC);
-  cardiovascular con el dataset público de Kaggle.
-- **Auditoría de la señal, no solo del AUC**: el dataset previo de hipertensión se
-  descartó al comprobar que su target era una fórmula del autor del CSV y no un
-  desenlace clínico — el modelo la reaprendía y devolvía relaciones invertidas
-  (100% de riesgo a los 25 años). Migrado a NHANES, el AUC baja de 0.95 a **0.80**
-  y las relaciones son las clínicas: el riesgo crece con la edad y el IMC.
-- **Modelo híbrido de diabetes**: variante self-report (LogReg, AUC 0.81, en el
-  rango de los scores de cribado tipo FINDRISC) y variante con glucosa (LightGBM
-  con restricción de monotonía, AUC 0.90). El backend rutea según lo que el
-  usuario aporte.
-- **Selección de modelos por CV**: por enfermedad compiten LogReg / RandomForest /
-  LightGBM; se sirve el ganador y se publica el leaderboard completo.
+- **Datos reales, revisados antes de entrenar**: las tres enfermedades salen de
+  **NHANES 2017-2023** (la encuesta de salud de los CDC, dos ciclos, 14 000-17 000
+  adultos por enfermedad). La v1 mezclaba NHANES con un CSV de Kaggle para
+  cardiovascular, donde los fumadores enfermaban menos y el modelo aprendía que fumar
+  protege; antes aún se había descartado un dataset de hipertensión cuyo target era
+  una fórmula del autor del CSV (el modelo daba 100% de riesgo a los 25 años).
+- **Enfermedad total, no solo diagnosticada**: el 22-24% de quienes tienen diabetes y
+  el 15-17% de quienes tienen hipertensión no estaban diagnosticados. El objetivo los
+  cuenta (HbA1c, glucosa en ayunas, presión medida), así que el modelo estima tener la
+  enfermedad, no que te la hayan diagnosticado.
+- **Lo que define la enfermedad no entra al modelo**: con la HbA1c dentro, un modelo
+  de diabetes solo reaprende el umbral diagnóstico. Esos datos se piden en el modo
+  completo y los lee la capa clínica (ADA / ACC-AHA), que se devuelve como
+  `clinical_flags` junto al número del modelo, nunca encima de él.
+- **Seis modelos con filtro de validación**: por enfermedad y modo compiten LogReg,
+  LightGBM y RandomForest con validación cruzada **anidada**, y solo puede ganar quien
+  respeta el sentido clínico de cada variable para todas las personas del train (más
+  edad, IMC o presión no pueden bajar el riesgo; más HDL no puede subirlo) y ordena
+  bien cada subgrupo de sexo y edad. RandomForest no puede llevar restricciones y no
+  pasa en ningún modo. AUC de test: 0,80-0,84 según enfermedad y modo.
+- **Cuando los datos no dan señal, se dice**: en datos de un solo momento quien ya
+  está tratado tiene la presión o el colesterol controlados, y quien enferma deja de
+  fumar. Las restricciones impiden aprender la relación al revés, el efecto queda en
+  cero, y si el usuario aporta esa variable la capa clínica le avisa de que esta
+  estimación no la refleja.
 - **Probabilidades calibradas**: isotónica centrada out-of-fold por modelo (Brier de
-  diabetes 0.187 → 0.100; la variante con glucosa 0.111 → 0.071), sin escalones
-  extremos: ningún resultado vale 0% ni 100%, porque ningún grupo de personas del
-  entrenamiento permite afirmar certeza. Tampoco hay mesetas: la curva une con rectas
-  el centro de cada escalón, así que el what-if ya no sube a saltos. La API devuelve
-  la probabilidad calibrada y la cruda, y SHAP explica la cruda — todo etiquetado.
+  cardiovascular simplificado 0,185 → 0,094), sin escalones extremos: ningún resultado
+  vale 0% ni 100%, porque ningún grupo de personas del entrenamiento permite afirmar
+  certeza. Tampoco hay mesetas: la curva une con rectas el centro de cada escalón, así
+  que el what-if no sube a saltos. La API devuelve la probabilidad calibrada y la
+  cruda, y SHAP explica la cruda — todo etiquetado.
 - **Bandas de riesgo por enfermedad**: "bajo" es quedar por debajo de la media de
-  los datos y "alto", al menos el doble, con los tercios (33% / 66%) como tope. En
-  diabetes, con un 13,6% de prevalencia, los tercios daban "Riesgo bajo" a una
-  glucosa de 250 y dejaban en "bajo" al 80% de los diabéticos reales del test.
-- **Capa clínica desacoplada**: los umbrales diagnósticos (ADA / ACC-AHA) se
-  devuelven como `clinical_flags` junto al número del modelo, nunca encima de él.
-- **Un modelo que no premia el tabaco**: en el dataset cardiovascular los fumadores
-  enferman menos (hábitos autorreportados) y el modelo aprendía que fumar y beber
-  protegen. Con restricciones de monotonía ya no pueden bajar el riesgo; como los
-  datos no dan señal en el sentido clínico su efecto queda en cero, y la capa
-  clínica se lo dice a quien los marca. Coste: AUC de test 0.7943 → 0.7936.
-- **Más peso no baja el riesgo**: en hipertensión, con el mismo IMC y la misma
-  cintura, más peso es más estatura, y la LogReg aprendía que eso protege: un
-  hombre de 50 años con IMC 30 daba 26,7% con 70 kg y 13,0% con 100 kg, y SHAP
-  marcaba el peso como protector a casi 2 de cada 3 personas con obesidad. Las
-  restricciones de monotonía, que solo llegaban a LightGBM, ahora se aplican
-  también a la LogReg: el peso actúa a través del IMC y la cintura. Coste: AUC de test
-  0.8037 → 0.8027.
-- **Aviso de cobertura de datos**: un modelo da un número igual de firme para una
-  edad que vio 5000 veces que para una que no vio nunca (cardiovascular se entrenó
-  con 29.7-64.9 años y el formulario acepta 18-100). `/predict` marca esas entradas
-  en `support_warnings` —sin tocar la probabilidad— y el what-if sombrea en la curva
-  el tramo sin respaldo.
+  los datos y "alto", al menos el doble, con los tercios (33% / 66%) como tope. Con
+  tercios fijos, en la v1 una glucosa de 250 salía como "Riesgo bajo" en diabetes.
+- **Más peso no baja el riesgo**: en la v1, con el mismo IMC y la misma cintura, más
+  peso era más estatura, y la LogReg de hipertensión aprendía que eso protege. La v2
+  no le da el peso a ningún modelo (el simplificado calcula el IMC con el peso y la
+  talla) y el what-if barre el peso a talla fija.
+- **Aviso de cobertura y de coherencia**: un modelo da un número igual de firme para
+  una edad que vio miles de veces que para una que no vio nunca. `/predict` marca esas
+  entradas, y las combinaciones que no pueden ser de una persona (una cintura que no
+  cuadra con el IMC, una presión invertida), en `support_warnings` —sin tocar la
+  probabilidad— y el what-if sombrea en la curva el tramo sin respaldo.
 - **Capa de datos agnóstica al motor** (SQLAlchemy): SQLite en dev, Postgres en
   producción cambiando solo `DATABASE_URL`.
-- **337 tests de pytest** sobre los invariantes delicados: ruteo híbrido, alias de
-  features, monotonía riesgo↔glucosa, calibración, capa clínica y auth del admin.
+- **503 tests de pytest** sobre los invariantes delicados: signos clínicos de los
+  modelos servidos, que `/metricas` publique lo que la API hace, calibración, capa
+  clínica, avisos, laboratorio sintético y auth del admin.
 
 ## Arquitectura
 
@@ -128,8 +132,8 @@ Monorepo con dos componentes:
 │  (dev-only)      │ ◀───── analítica ───── │  SQLite dev / Postgres    │
 └──────────────────┘        agregada        └───────────────────────────┘
 
-  pipeline offline:  fuentes públicas (NHANES/Kaggle) → dataset limpio
-  por enfermedad → split + sintético CTGAN → bake-off por CV → modelos + calibradores
+  pipeline offline:  NHANES 2017-2023 → dataset limpio por enfermedad → reparto
+  + bake-off anidado con filtro de validación → 6 modelos + calibradores → sintético CTGAN
 ```
 
 ## Páginas
@@ -138,7 +142,7 @@ Monorepo con dos componentes:
 |---|---|
 | `/` | Portada: propuesta de valor y metodología en 3 pasos |
 | `/simulacion` | El simulador: formulario → riesgo + SHAP + capa clínica + what-if |
-| `/metricas` | Leaderboard por enfermedad, calibración y reporte por clase |
+| `/metricas` | Por enfermedad y modo: leaderboard con el filtro de validación, calibración, bandas y reporte por clase |
 | `/proyecto` | Case study: historia de los datos, modelos, laboratorio sintético, stack |
 | `/educacion` | Enciclopedia breve de las tres enfermedades |
 | `/aviso` | Aviso legal / disclaimer |
@@ -159,7 +163,7 @@ python app.py                     # http://localhost:8000
 ```powershell
 npm install
 npm run dev              # Vite dev server (http://localhost:5173)
-npm test                 # 32 tests de Vitest (~2 s)
+npm test                 # 45 tests de Vitest (~2 s)
 ```
 
 El frontend lee `VITE_API_URL` (por defecto `http://localhost:8000`). El panel
@@ -168,7 +172,7 @@ admin requiere definir la variable de entorno `ADMIN_TOKEN` en el backend.
 **Tests del backend:**
 ```powershell
 pip install -r requirements-dev.txt
-python -m pytest         # 337 tests, ~8 s (BD temporal, no toca la de dev)
+python -m pytest         # 503 tests (BD temporal, no toca la de dev)
 ```
 
 **CI:** cada push y pull request a `main` corre en GitHub Actions la suite de pytest

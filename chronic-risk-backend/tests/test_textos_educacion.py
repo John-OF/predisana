@@ -1,30 +1,28 @@
 """Revision 2026-10 — lo que la pagina de Educacion dice de cada modelo.
 
-La caja "Variables Clave (IA)" de Educacion.jsx (`variables_ia`) no cuadraba con los
-modelos servidos: en hipertension decia que lo que mas pesa es la presion, que no es
-feature del modelo (AUD-1); en diabetes nombraba la HbA1c, que no usa ningun modelo;
-y en cardiovascular, el tabaco, que pesa cero. Los textos se reescribieron con la
-media de |SHAP| sobre el test real. Si un reentrenamiento cambia el orden, estos tests
-fallan y hay que revisar esos textos.
+La caja "Variables Clave (IA)" de Educacion.jsx (`variables_ia`) describe los modelos
+servidos, no la medicina en general. En la v1 no cuadraba (hablaba de la presion en
+hipertension, que no era variable del modelo); con la v2 se reescribio con la media de
+|SHAP| sobre el test real de cada modo. Si un reentrenamiento cambia el orden, estos
+tests fallan y hay que revisar esos textos.
 """
 import numpy as np
 import pandas as pd
 import pytest
 import shap
 
-GRUPOS_ONE_HOT = ("gender_", "smoking_history_")
+import modos as M
 
 
-def _importancia(app_module, key, datos):
-    """Media de |SHAP| por variable sobre el test real, de mayor a menor. Las one-hot
-    se suman por grupo (sexo, tabaquismo) antes del valor absoluto."""
-    feats = app_module.FEATURES[key]
-    df = pd.read_csv(f"data_curated/{datos}/{datos}_test.csv", low_memory=False)
-    X = df.reindex(columns=feats, fill_value=0).apply(pd.to_numeric, errors="coerce").fillna(0)
-    if "blood_glucose_level" in feats:
-        X = X[X["blood_glucose_level"] > 0]   # la variante con glucosa solo se sirve con ella
-    Xt = app_module.MODELS[key].named_steps["scaler"].transform(X.values.astype(float))
-    explainer = app_module.EXPLAINERS[key]
+def _importancia(app_module, clave):
+    """Media de |SHAP| por variable sobre el test real, de mayor a menor. Los grupos
+    (sexo, tabaco) se suman antes del valor absoluto."""
+    disease, modo = app_module._partes(clave)
+    feats = app_module.FEATURES[clave]
+    te = pd.read_csv(f"data_curated/{disease}/{disease}_test.csv")
+    X = pd.DataFrame({f: te[M.columna(modo, f)] for f in feats}).dropna().values.astype(float)
+    Xt = app_module.MODELS[clave][:-1].transform(X)
+    explainer = app_module.EXPLAINERS[clave]
     if isinstance(explainer, shap.TreeExplainer):
         sv = explainer.shap_values(Xt, check_additivity=False)
     else:
@@ -34,7 +32,7 @@ def _importancia(app_module, key, datos):
         sv = sv[..., -1]
     por_variable = {}
     for i, f in enumerate(feats):
-        nombre = next((g.rstrip("_") for g in GRUPOS_ONE_HOT if f.startswith(g)), f)
+        nombre = "sexo" if f.startswith("gender_") else "tabaco" if f.startswith("smoking_") else f
         por_variable[nombre] = por_variable.get(nombre, 0) + sv[:, i]
     return pd.Series({k: np.abs(v).mean() for k, v in por_variable.items()}).sort_values(
         ascending=False)
@@ -42,31 +40,47 @@ def _importancia(app_module, key, datos):
 
 @pytest.fixture(scope="module")
 def importancia(app_module):
-    modelos = [("diabetes", "diabetes"), (app_module.DIABETES_GLUCOSE_KEY, "diabetes"),
-               ("hipertension", "hipertension"), ("cardiovascular", "cardiovascular")]
-    return {key: _importancia(app_module, key, datos) for key, datos in modelos}
+    return {clave: _importancia(app_module, clave) for clave in app_module.CLAVES}
 
 
-def test_diabetes_sin_analisis_pesa_la_edad_luego_la_hipertension_y_el_imc(importancia):
-    assert list(importancia["diabetes"].index[:3]) == ["age", "hypertension", "bmi"]
+# ---------- diabetes ----------
+
+def test_diabetes_pesa_la_edad_luego_el_imc_y_la_presion_alta(importancia):
+    assert list(importancia["diabetes_simplificado"].index[:3]) == ["age", "bmi", "hypertension"]
 
 
-def test_diabetes_con_glucosa_la_glucosa_es_lo_que_mas_pesa(app_module, importancia):
-    assert importancia[app_module.DIABETES_GLUCOSE_KEY].index[0] == "blood_glucose_level"
+def test_diabetes_completo_suma_albumina_cintura_y_hdl(importancia):
+    arriba = set(importancia["diabetes_completo"].index[:4])
+    assert {"age", "albumin_creatinine_ratio", "waist_circumference", "hdl_cholesterol"} == arriba
 
 
-def test_hipertension_pesa_la_edad_luego_el_colesterol_y_el_imc(importancia):
-    assert list(importancia["hipertension"].index[:3]) == ["age", "high_cholesterol", "bmi"]
+# ---------- hipertension ----------
+
+def test_hipertension_pesa_la_edad_luego_el_imc_y_el_colesterol(importancia):
+    assert list(importancia["hipertension_simplificado"].index[:3]) == ["age", "bmi", "high_cholesterol"]
 
 
-def test_cardiovascular_la_sistolica_con_diferencia_luego_la_edad_y_el_colesterol(importancia):
-    imp = importancia["cardiovascular"]
-    assert list(imp.index[:3]) == ["ap_hi", "age", "cholesterol"]
-    assert imp["ap_hi"] > 2 * imp["age"]
-    assert imp["smoke"] <= 1e-12 and imp["alco"] <= 1e-12
+def test_hipertension_completo_suma_albumina_y_cintura(importancia):
+    arriba = set(importancia["hipertension_completo"].index[:4])
+    assert {"albumin_creatinine_ratio", "waist_circumference"} <= arriba
 
 
-def test_ni_la_presion_en_hipertension_ni_la_hba1c_entran_en_un_modelo(app_module):
-    assert not {"blood_pressure", "ap_hi", "ap_lo"} & set(app_module.FEATURES["hipertension"])
-    for key, feats in app_module.FEATURES.items():
-        assert "hba1c_level" not in feats, key
+# ---------- cardiovascular ----------
+
+def test_cardiovascular_pesa_la_edad_luego_la_presion_alta_y_el_tabaco(importancia):
+    assert list(importancia["cardiovascular_simplificado"].index[:3]) == ["age", "hypertension", "tabaco"]
+
+
+def test_cardiovascular_completo_no_usa_presion_colesterol_ni_hba1c(app_module, importancia):
+    imp = importancia["cardiovascular_completo"]
+    for f in ("ap_hi", "ap_lo", "total_cholesterol", "hba1c_level"):
+        assert f in app_module.SIN_EFECTO["cardiovascular_completo"]
+        assert imp[f] <= 1e-12, f
+
+
+# ---------- lo que define la enfermedad no entra en el modelo ----------
+
+def test_ni_la_hba1c_y_la_glucosa_en_diabetes_ni_la_presion_en_hipertension(app_module):
+    for modo in M.MODOS:
+        assert not {"hba1c_level", "blood_glucose_level"} & set(app_module.FEATURES[f"diabetes_{modo}"])
+        assert not {"ap_hi", "ap_lo"} & set(app_module.FEATURES[f"hipertension_{modo}"])

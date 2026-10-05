@@ -26,23 +26,33 @@ export function getSessionId() {
 
 export const checkHealth = () => api.get('/health');
 
-export const getConfig = (disease) => api.get(`/config/${disease}`);
+// Cada enfermedad tiene dos modelos (v2): el simplificado pide lo que cualquiera sabe de
+// sí mismo; el completo, además, lo que mide el personal sanitario.
+export const MODOS = ['simplificado', 'completo'];
+export const MODO_POR_DEFECTO = 'simplificado';
 
-export const getMetrics = (disease) => api.get(`/metrics/${disease}`);
+export const getConfig = (disease, mode = MODO_POR_DEFECTO) =>
+    api.get(`/config/${disease}`, { params: { mode } });
 
-export const predictRisk = (disease, data) =>
-    api.post(`/predict/${disease}`, data, { headers: { 'X-Session-Id': getSessionId() } });
+export const getMetrics = (disease, mode = MODO_POR_DEFECTO) =>
+    api.get(`/metrics/${disease}`, { params: { mode } });
 
-// Paciente sintético del laboratorio por el mismo modelo. Con ?source=synthetic el
-// backend NO lo registra: no es una simulación de nadie y mezclaría la analítica del
-// admin con datos del GAN.
-export const evaluateSyntheticCase = (disease, data) =>
-    api.post(`/predict/${disease}`, data, { params: { source: 'synthetic' } });
+export const predictRisk = (disease, data, mode = MODO_POR_DEFECTO) =>
+    api.post(`/predict/${disease}`, data, {
+        params: { mode },
+        headers: { 'X-Session-Id': getSessionId() },
+    });
 
-// Análisis contrafactual: barre una feature sobre un rango y devuelve la curva de
+// Paciente sintético del laboratorio por el modelo completo, que es el que lee todas
+// sus variables. Con ?source=synthetic el backend NO lo registra: no es una simulación
+// de nadie y mezclaría la analítica del admin con datos del GAN.
+export const evaluateSyntheticCase = (disease, data, mode = 'completo') =>
+    api.post(`/predict/${disease}`, data, { params: { source: 'synthetic', mode } });
+
+// Análisis contrafactual: barre una variable sobre un rango y devuelve la curva de
 // riesgo (probabilidad calibrada). NO se registra en la BD.
-export const getWhatIf = (disease, { base, feature, min, max, steps = 25 }) =>
-    api.post(`/whatif/${disease}`, { base, feature, min, max, steps });
+export const getWhatIf = (disease, { base, feature, min, max, steps = 25, mode = MODO_POR_DEFECTO }) =>
+    api.post(`/whatif/${disease}`, { base, feature, min, max, steps }, { params: { mode } });
 
 // ... al final del archivo agrega:
 export const getSyntheticCase = (disease) => api.get(`/synthetic/${disease}`);

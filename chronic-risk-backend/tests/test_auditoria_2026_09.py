@@ -2,7 +2,8 @@
 
 Cada test fija el comportamiento CORREGIDO. Los dos de severidad alta (JSON invalido
 con datos clinicos no finitos) viven en test_auditoria.py, junto a AUD-2; la fuerza
-bruta del token repartida entre endpoints, en test_seguridad_cors_ratelimit.py.
+bruta del token repartida entre endpoints, en test_seguridad_cors_ratelimit.py. Desde
+la v2 los perfiles son del modo simplificado (peso y talla en vez del IMC).
 """
 import glob
 import json
@@ -13,66 +14,81 @@ import sys
 import pandas as pd
 import pytest
 
-HTA = {
-    "age": 45, "bmi": 25, "weight": 75, "waist_circumference": 85,
-    "diabetes": 0, "heart_disease": 0, "high_cholesterol": 0,
-    "gender_Male": 1, "gender_Female": 0,
+import modos as M
+
+CLAVES = sorted(f"{d}_{m}" for d in M.ENFERMEDADES for m in M.MODOS)
+
+# Lleva los cuatro diagnosticos: cada modelo lee los suyos y la API ignora el resto.
+SIMPLE = {
+    "age": 45, "weight": 75, "height": 175, "diabetes": 0, "hypertension": 0,
+    "heart_disease": 0, "high_cholesterol": 0, "gender_Male": 1, "gender_Female": 0,
     "smoking_history_never": 1, "smoking_history_current": 0, "smoking_history_former": 0,
 }
-CARDIO = {
-    "age": 50, "bmi": 26, "ap_hi": 120, "ap_lo": 80, "cholesterol": 1, "gluc": 1,
-    "smoke": 0, "alco": 0, "active": 1, "gender_Female": 1, "gender_Male": 0,
+COMPLETO = {
+    **{k: v for k, v in SIMPLE.items() if k not in ("weight", "height")},
+    "bmi": 24.5, "waist_circumference": 88, "ap_hi": 122, "ap_lo": 78,
+    "total_cholesterol": 190, "hdl_cholesterol": 52, "hba1c_level": 5.4, "egfr": 95,
+    "albumin_creatinine_ratio": 7,
 }
 
 
 # ---------- Limites fisicos de entrada ----------
 
-@pytest.mark.parametrize("enfermedad,base,campo,valor", [
-    ("hipertension", HTA, "age", -30),
-    ("hipertension", HTA, "bmi", 900),
-    ("hipertension", HTA, "weight", 10),
-    ("hipertension", HTA, "blood_pressure", -40),
-    ("hipertension", HTA, "blood_pressure", 400),
-    ("cardiovascular", CARDIO, "ap_hi", 500),
-    ("cardiovascular", CARDIO, "gender_Male", 7),
-    ("diabetes", None, "blood_glucose_level", 1000),
-    ("diabetes", None, "hba1c_level", 50),
+@pytest.mark.parametrize("enfermedad,modo,campo,valor", [
+    ("hipertension", "simplificado", "age", -30),
+    ("hipertension", "simplificado", "weight", 10),
+    ("hipertension", "simplificado", "height", 300),
+    ("hipertension", "simplificado", "bmi", 900),
+    ("hipertension", "simplificado", "ap_hi", -40),
+    ("hipertension", "simplificado", "ap_hi", 400),
+    ("cardiovascular", "simplificado", "gender_Male", 7),
+    ("diabetes", "simplificado", "blood_glucose_level", 1000),
+    ("diabetes", "simplificado", "hba1c_level", 50),
+    ("cardiovascular", "completo", "ap_lo", 500),
+    ("cardiovascular", "completo", "egfr", 0),
+    ("diabetes", "completo", "albumin_creatinine_ratio", 30000),
+    ("hipertension", "completo", "total_cholesterol", 900),
 ])
-def test_valor_fisicamente_imposible_da_400(client, perfil_diabetes, enfermedad, base, campo, valor):
+def test_valor_fisicamente_imposible_da_400(client, enfermedad, modo, campo, valor):
     """Antes: 200, probabilidad 1.0 y una fila basura en la BD del admin."""
-    r = client.post(f"/predict/{enfermedad}", json={**(base or perfil_diabetes), campo: valor})
+    base = SIMPLE if modo == "simplificado" else COMPLETO
+    r = client.post(f"/predict/{enfermedad}?mode={modo}", json={**base, campo: valor})
     assert r.status_code == 400
     assert campo in r.get_json()["error"] and "fuera de rango" in r.get_json()["error"]
 
 
 @pytest.mark.parametrize("edad", [18, 100])
 def test_los_extremos_del_limite_se_aceptan(client, edad):
-    assert client.post("/predict/hipertension", json={**HTA, "age": edad}).status_code == 200
+    assert client.post("/predict/hipertension", json={**SIMPLE, "age": edad}).status_code == 200
 
 
 def test_whatif_no_barre_fuera_de_los_limites(client):
     r = client.post("/whatif/hipertension",
-                    json={"base": HTA, "feature": "age", "min": 0, "max": 200, "steps": 5})
+                    json={"base": SIMPLE, "feature": "age", "min": 0, "max": 200, "steps": 5})
     assert r.status_code == 400
 
 
-def test_todo_campo_del_formulario_tiene_limite(app_module):
+@pytest.mark.parametrize("modo", M.MODOS)
+@pytest.mark.parametrize("enfermedad", M.ENFERMEDADES)
+def test_todo_campo_del_formulario_tiene_limite(client, app_module, enfermedad, modo):
     """Si el esquema cambia (como al migrar a NHANES), una feature nueva sin limite
     quedaria sin validar y sin min/max en el formulario."""
-    for key, feats in app_module.FEATURES.items():
-        clinicos = app_module.OPTIONAL_CLINICAL_INPUTS.get(app_module._data_disease(key), [])
-        for f in feats + clinicos:
-            assert app_module._input_limits(f) is not None, f"{key}: '{f}' sin limite"
+    c = client.get(f"/config/{enfermedad}?mode={modo}").get_json()
+    for f in c["features"] + c["inputs"] + c["optional_features"]:
+        if f not in c["categoricals"]:
+            assert app_module._input_limits(f) is not None, f"{enfermedad}/{modo}: '{f}' sin limite"
 
 
-@pytest.mark.parametrize("enfermedad", ["diabetes", "hipertension", "cardiovascular"])
+@pytest.mark.parametrize("enfermedad", M.ENFERMEDADES)
 def test_los_limites_no_rechazan_ningun_dato_real_ni_sintetico(app_module, enfermedad):
     """Un limite es un tope FISICO, no el rango entrenado: ninguna fila real ni
-    sintetica puede quedar fuera (p.ej. hay adultos reales de 27,9 kg en NHANES)."""
+    sintetica puede quedar fuera (p.ej. hay adultos reales de 27,9 kg en NHANES). El
+    IMC declarado es el `bmi` del simplificado: se juzga con el limite del IMC."""
+    como_feature = {columna: f for (_, f), columna in M.FUENTE.items()}
     for path in glob.glob(os.path.join("data_curated", enfermedad, "*.csv")):
         df = pd.read_csv(path)
         for col in df.columns:
-            limites = app_module._input_limits(col)
+            limites = app_module._input_limits(como_feature.get(col, col))
             if limites is None:
                 continue
             serie = df[col].dropna()
@@ -80,29 +96,36 @@ def test_los_limites_no_rechazan_ningun_dato_real_ni_sintetico(app_module, enfer
             assert fuera.empty, f"{os.path.basename(path)}:{col} {fuera.tolist()[:5]} fuera de {limites}"
 
 
-@pytest.mark.parametrize("enfermedad", ["diabetes", "hipertension", "cardiovascular"])
-def test_config_sirve_los_mismos_limites_que_valida(client, app_module, enfermedad):
+@pytest.mark.parametrize("modo", M.MODOS)
+@pytest.mark.parametrize("enfermedad", M.ENFERMEDADES)
+def test_config_sirve_los_mismos_limites_que_valida(client, app_module, enfermedad, modo):
     """/config.ranges era un dict fijo que el front no leia y que contradecia sus
     propios limites (presion 60-130 frente a 50-300)."""
-    c = client.get(f"/config/{enfermedad}").get_json()
+    c = client.get(f"/config/{enfermedad}?mode={modo}").get_json()
     for f in c["features"] + c["optional_features"]:
         assert c["ranges"][f] == app_module._input_limits(f), f
 
 
-# ---------- HbA1c: la capa clinica ADA ya se puede disparar ----------
+# ---------- HbA1c y glucosa: los lee la guia ADA, no el modelo ----------
 
-def test_hba1c_es_dato_clinico_opcional_de_diabetes(client):
-    c = client.get("/config/diabetes").get_json()
-    assert "hba1c_level" in c["optional_features"]
-    assert c["clinical_inputs"] == ["hba1c_level"]
-    # La glucosa es opcional pero SI cambia la estimacion (variante hibrida).
-    assert "blood_glucose_level" not in c["clinical_inputs"]
+@pytest.mark.parametrize("modo", M.MODOS)
+def test_hba1c_y_glucosa_son_datos_clinicos_de_diabetes(client, modo):
+    """Definen la diabetes (objetivo v2: diagnosticada, HbA1c >= 6,5% o glucosa en
+    ayunas >= 126): con ellas el modelo solo reaprenderia el umbral. Se pueden aportar
+    en los dos modos y las interpreta la capa clinica."""
+    c = client.get(f"/config/diabetes?mode={modo}").get_json()
+    assert {"hba1c_level", "blood_glucose_level"} <= set(c["clinical_inputs"])
+    assert c["defining_inputs"] == ["hba1c_level", "blood_glucose_level"]
+    assert not {"hba1c_level", "blood_glucose_level"} & set(c["features"])
 
 
-def test_hba1c_dispara_su_indicador_sin_tocar_la_probabilidad(client, perfil_diabetes):
+@pytest.mark.parametrize("campo,valor,indicador", [("hba1c_level", 9.5, "hba1c"),
+                                                   ("blood_glucose_level", 160, "glucose")])
+def test_el_dato_de_la_guia_dispara_su_indicador_sin_tocar_la_probabilidad(
+        client, perfil_diabetes, campo, valor, indicador):
     sin = client.post("/predict/diabetes", json=perfil_diabetes).get_json()
-    con = client.post("/predict/diabetes", json={**perfil_diabetes, "hba1c_level": 9.5}).get_json()
-    assert [f["category"] for f in con["clinical_flags"] if f["indicator"] == "hba1c"] == ["diabetes"]
+    con = client.post("/predict/diabetes", json={**perfil_diabetes, campo: valor}).get_json()
+    assert [f["category"] for f in con["clinical_flags"] if f["indicator"] == indicador] == ["diabetes"]
     assert con["probability"] == sin["probability"]
 
 
@@ -118,17 +141,17 @@ def test_admin_limit_no_positivo_usa_el_de_por_defecto(client, app_module, admin
     assert r.get_json()["count"] == 50
 
 
-# ---------- La variante con glucosa no es una enfermedad servida ----------
+# ---------- Solo se sirven enfermedades ----------
 
-@pytest.mark.parametrize("peticion", [
-    lambda c: c.post("/whatif/diabetes_glucosa",
-                     json={"base": {}, "feature": "age", "min": 20, "max": 80, "steps": 3}),
-    lambda c: c.get("/config/diabetes_glucosa"),
-])
-def test_diabetes_glucosa_no_se_sirve_suelta(client, peticion):
-    """Como /predict: solo enfermedades de FILES. /metrics si la acepta a proposito
-    (el toggle con/sin glucosa de la pagina de metricas)."""
-    assert peticion(client).status_code == 404
+@pytest.mark.parametrize("ruta", ["diabetes_glucosa", "diabetes_completo", "hipertension_simplificado"])
+def test_solo_se_sirven_enfermedades(client, ruta):
+    """La variante con glucosa de la v1 ya no existe, y la clave interna de cada modelo
+    (<enfermedad>_<modo>) no es una ruta: el modo va en ?mode=."""
+    assert client.get(f"/config/{ruta}").status_code == 404
+    assert client.get(f"/metrics/{ruta}").status_code == 404
+    assert client.post(f"/predict/{ruta}", json=SIMPLE).status_code == 404
+    assert client.post(f"/whatif/{ruta}", json={"base": SIMPLE, "feature": "age",
+                                                "min": 20, "max": 80, "steps": 3}).status_code == 404
 
 
 # ---------- Coste de los endpoints publicos ----------
@@ -173,17 +196,16 @@ def test_health_sin_modelos_responde_503(client, app_module, monkeypatch):
     d = r.get_json()
     assert d["status"] == "degraded"
     assert d["database_ok"] is True
-    assert d["models_missing"] == ["cardiovascular", "diabetes", "diabetes_glucosa",
-                                   "hipertension"]
+    assert d["models_missing"] == CLAVES
 
 
-def test_health_sin_la_variante_con_glucosa_responde_503(client, app_module, monkeypatch):
-    """Sin la variante, /predict de diabetes sigue respondiendo con el modelo base e
-    ignora la glucosa en silencio: tambien es un deploy roto."""
-    monkeypatch.delitem(app_module.MODELS, "diabetes_glucosa")
+def test_health_sin_un_modo_responde_503(client, app_module, monkeypatch):
+    """Sin el modelo de un modo, /predict de ese modo responde 500 aunque el otro
+    funcione: tambien es un deploy roto."""
+    monkeypatch.delitem(app_module.MODELS, "diabetes_completo")
     r = client.get("/health")
     assert r.status_code == 503
-    assert r.get_json()["models_missing"] == ["diabetes_glucosa"]
+    assert r.get_json()["models_missing"] == ["diabetes_completo"]
 
 
 # ---------- Rutas ancladas a la carpeta del backend (severidad media) ----------
@@ -223,34 +245,26 @@ def test_la_app_arranca_desde_otra_carpeta(app_module, tmp_path):
     codigo, salud = r["health"]
     assert codigo == 200 and salud["status"] == "ok"
     assert salud["models_missing"] == []
-    modelos = ["cardiovascular", "diabetes", "diabetes_glucosa", "hipertension"]
-    assert salud["models_loaded"] == r["shap"] == modelos   # SHAP lee el fondo de data_curated
-    assert r["support"] == r["prevalence"] == ["cardiovascular", "diabetes", "hipertension"]
+    # SHAP y la cobertura leen el train de data_curated.
+    assert salud["models_loaded"] == r["shap"] == r["support"] == CLAVES
+    assert r["prevalence"] == ["cardiovascular", "diabetes", "hipertension"]
     assert (r["sample"], r["synthetic"], r["distribution"], r["quality"]) == (200, 200, 200, 200)
 
 
 # ---------- Tope de edad de NHANES (80 = "80 o mas") ----------
 
 def test_edad_sobre_el_tope_de_nhanes_no_dice_que_no_vio_casos(client):
-    r = client.post("/predict/hipertension", json={**HTA, "age": 85}).get_json()
+    r = client.post("/predict/hipertension", json={**SIMPLE, "age": 85}).get_json()
     [aviso] = [a for a in r["support_warnings"] if a["feature"] == "age"]
     assert aviso["topcoded"] == 80
     assert "no vio ningún caso" not in aviso["detail"]
     assert "figura como 80" in aviso["detail"]
 
 
-def test_cardiovascular_no_tiene_tope(client):
-    """Su edad no viene de NHANES: a los 90 sigue siendo una extrapolacion pura."""
-    r = client.post("/predict/cardiovascular", json={**CARDIO, "age": 90}).get_json()
-    [aviso] = [a for a in r["support_warnings"] if a["feature"] == "age"]
-    assert "topcoded" not in aviso
-
-
-def test_whatif_y_config_exponen_el_tope(client):
-    wi = client.post("/whatif/hipertension",
-                     json={"base": HTA, "feature": "age", "min": 18, "max": 90, "steps": 3}).get_json()
+@pytest.mark.parametrize("enfermedad", M.ENFERMEDADES)
+def test_whatif_y_config_exponen_el_tope(client, enfermedad):
+    """Desde la v2 cardiovascular tambien sale de NHANES: las tres tienen el tope."""
+    wi = client.post(f"/whatif/{enfermedad}",
+                     json={"base": SIMPLE, "feature": "age", "min": 18, "max": 90, "steps": 3}).get_json()
     assert wi["topcoded_at"] == 80
-    assert client.get("/config/hipertension").get_json()["topcoded"] == {"age": 80}
-    wi = client.post("/whatif/cardiovascular",
-                     json={"base": CARDIO, "feature": "age", "min": 30, "max": 90, "steps": 3}).get_json()
-    assert wi["topcoded_at"] is None
+    assert client.get(f"/config/{enfermedad}").get_json()["topcoded"] == {"age": 80}

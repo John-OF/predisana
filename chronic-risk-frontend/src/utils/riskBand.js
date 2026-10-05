@@ -1,8 +1,8 @@
 // Banda de riesgo serena (no alarmista): bajo / moderado / alto.
 // Los cortes no son fijos: los decide el backend por enfermedad (`risk_band` y
 // `risk_bands` en /predict), porque un 30% no significa lo mismo en diabetes, donde
-// la media de los datos es 13,6%, que en cardiovascular, donde es 50%. Con tercios
-// fijos una glucosa de 250 salia como "Riesgo bajo". Aqui solo se pinta.
+// la media de los datos es 18,9%, que en hipertension, donde es 44%. Con tercios
+// fijos, en la v1 una glucosa de 250 salia como "Riesgo bajo". Aqui solo se pinta.
 const BANDAS = {
   low: { key: 'low', label: 'Riesgo bajo', color: 'var(--risk-low)', bg: 'var(--risk-low-bg)' },
   mid: { key: 'mid', label: 'Riesgo moderado', color: 'var(--risk-mid)', bg: 'var(--risk-mid-bg)' },

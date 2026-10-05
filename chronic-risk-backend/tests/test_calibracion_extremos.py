@@ -108,16 +108,12 @@ def test_ningun_calibrador_servido_tiene_mesetas(app_module):
 
 
 def test_el_whatif_ya_no_sube_a_saltos(client, app_module):
-    """Barrido de edad en hipertension (LogReg: el crudo sube en cada paso). Dentro del
-    tramo entre el primer centro y el ultimo, la probabilidad tambien. Con escalones,
-    en el test real el 46% de los pasos de este barrido salian planos."""
-    base = {"age": 40, "bmi": 30, "weight": 90, "waist_circumference": 104,
-            "diabetes": 0, "heart_disease": 0, "high_cholesterol": 1,
-            "gender_Male": 1, "gender_Female": 0, "smoking_history_never": 1,
-            "smoking_history_current": 0, "smoking_history_former": 0}
-    curva = client.post("/whatif/hipertension", json={
-        "base": base, "feature": "age", "min": 20, "max": 80, "steps": 25}).get_json()["curve"]
-    cal = app_module.CALIBRATORS["hipertension"]
+    """Barrido de edad en cardiovascular completo (LogReg: el crudo sube en cada paso).
+    Dentro del tramo entre el primer centro y el ultimo, la probabilidad tambien. Con
+    escalones, en el test real entre el 30% y el 56% de los pasos salian planos."""
+    curva = client.post("/whatif/cardiovascular?mode=completo", json={
+        "base": COMPLETO, "feature": "age", "min": 20, "max": 80, "steps": 25}).get_json()["curve"]
+    cal = app_module.CALIBRATORS["cardiovascular_completo"]
     dentro = [p for p in curva
               if cal.X_thresholds_[0] <= p["raw_probability"] <= cal.X_thresholds_[-1]]
     assert len(dentro) >= 20
@@ -126,43 +122,41 @@ def test_el_whatif_ya_no_sube_a_saltos(client, app_module):
         assert despues["probability"] > antes["probability"]
 
 
-PEOR_CASO = {
-    "diabetes": {"age": 100, "bmi": 90, "hypertension": 1, "heart_disease": 1,
-                 "gender_Male": 1, "gender_Female": 0, "smoking_history_never": 0,
-                 "smoking_history_current": 1, "smoking_history_former": 0},
-    "hipertension": {"age": 100, "bmi": 90, "weight": 250, "waist_circumference": 200,
-                     "diabetes": 1, "heart_disease": 1, "high_cholesterol": 1,
-                     "gender_Male": 1, "gender_Female": 0, "smoking_history_never": 0,
-                     "smoking_history_current": 1, "smoking_history_former": 0},
-    "cardiovascular": {"age": 100, "bmi": 90, "ap_hi": 250, "ap_lo": 150,
-                       "cholesterol": 3, "gluc": 3, "smoke": 1, "alco": 1, "active": 0,
-                       "gender_Male": 1, "gender_Female": 0},
-}
-MEJOR_CASO = {
-    "diabetes": {"age": 18, "bmi": 18, "hypertension": 0, "heart_disease": 0,
-                 "gender_Male": 0, "gender_Female": 1, "smoking_history_never": 1,
-                 "smoking_history_current": 0, "smoking_history_former": 0},
-    "hipertension": {"age": 18, "bmi": 18, "weight": 50, "waist_circumference": 62,
-                     "diabetes": 0, "heart_disease": 0, "high_cholesterol": 0,
-                     "gender_Male": 0, "gender_Female": 1, "smoking_history_never": 1,
-                     "smoking_history_current": 0, "smoking_history_former": 0},
-    "cardiovascular": {"age": 30, "bmi": 19, "ap_hi": 95, "ap_lo": 60,
-                       "cholesterol": 1, "gluc": 1, "smoke": 0, "alco": 0, "active": 1,
-                       "gender_Male": 0, "gender_Female": 1},
-}
+_HOMBRE_FUMADOR = {"gender_Male": 1, "gender_Female": 0, "smoking_history_never": 0,
+                   "smoking_history_current": 1, "smoking_history_former": 0}
+_MUJER_NO_FUMADORA = {"gender_Male": 0, "gender_Female": 1, "smoking_history_never": 1,
+                      "smoking_history_current": 0, "smoking_history_former": 0}
+_TODOS_LOS_DX = {"diabetes": 1, "hypertension": 1, "high_cholesterol": 1, "heart_disease": 1}
+_NINGUN_DX = {k: 0 for k in _TODOS_LOS_DX}
+
+# Modo simplificado: peso y talla (200 kg y 160 cm dan un IMC de 78).
+PEOR_CASO = {"age": 100, "weight": 200, "height": 160, **_TODOS_LOS_DX, **_HOMBRE_FUMADOR}
+MEJOR_CASO = {"age": 18, "weight": 50, "height": 170, **_NINGUN_DX, **_MUJER_NO_FUMADORA}
+
+COMPLETO = {"age": 40, "bmi": 30, "waist_circumference": 104, "ap_hi": 130, "ap_lo": 85,
+            "total_cholesterol": 210, "hdl_cholesterol": 45, "hba1c_level": 5.6, "egfr": 90,
+            "albumin_creatinine_ratio": 10, "diabetes": 0, "hypertension": 0,
+            "high_cholesterol": 1, "heart_disease": 0, **_HOMBRE_FUMADOR}
+PEOR_COMPLETO = {"age": 90, "bmi": 60, "waist_circumference": 160, "ap_hi": 190, "ap_lo": 110,
+                 "total_cholesterol": 320, "hdl_cholesterol": 25, "hba1c_level": 9, "egfr": 25,
+                 "albumin_creatinine_ratio": 800, **_TODOS_LOS_DX, **_HOMBRE_FUMADOR}
+MEJOR_COMPLETO = {"age": 20, "bmi": 20, "waist_circumference": 70, "ap_hi": 105, "ap_lo": 65,
+                  "total_cholesterol": 150, "hdl_cholesterol": 75, "hba1c_level": 5.0, "egfr": 120,
+                  "albumin_creatinine_ratio": 4, **_NINGUN_DX, **_MUJER_NO_FUMADORA}
 
 
 @pytest.mark.parametrize("disease", ["diabetes", "hipertension", "cardiovascular"])
 def test_ni_el_peor_perfil_da_100_ni_el_mejor_da_0(client, disease):
-    peor = client.post(f"/predict/{disease}", json=PEOR_CASO[disease]).get_json()
-    mejor = client.post(f"/predict/{disease}", json=MEJOR_CASO[disease]).get_json()
+    peor = client.post(f"/predict/{disease}", json=PEOR_CASO).get_json()
+    mejor = client.post(f"/predict/{disease}", json=MEJOR_CASO).get_json()
     assert 0.5 < peor["probability"] < 1.0
     assert 0.0 < mejor["probability"] < 0.1
 
 
-def test_diabetes_con_glucosa_tampoco_llega_a_los_extremos(client):
-    alta = client.post("/predict/diabetes", json={**PEOR_CASO["diabetes"], "blood_glucose_level": 500}).get_json()
-    baja = client.post("/predict/diabetes", json={**MEJOR_CASO["diabetes"], "blood_glucose_level": 75}).get_json()
-    assert alta["variant"] == baja["variant"] == "glucosa"
-    assert 0.5 < alta["probability"] < 1.0
-    assert 0.0 < baja["probability"] < 0.1
+@pytest.mark.parametrize("disease", ["diabetes", "hipertension", "cardiovascular"])
+def test_el_modo_completo_tampoco_llega_a_los_extremos(client, disease):
+    peor = client.post(f"/predict/{disease}?mode=completo", json=PEOR_COMPLETO).get_json()
+    mejor = client.post(f"/predict/{disease}?mode=completo", json=MEJOR_COMPLETO).get_json()
+    assert peor["mode"] == mejor["mode"] == "completo"
+    assert 0.5 < peor["probability"] < 1.0
+    assert 0.0 < mejor["probability"] < 0.1

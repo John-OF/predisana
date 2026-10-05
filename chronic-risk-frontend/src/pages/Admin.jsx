@@ -8,7 +8,7 @@ import {
 import {
   verifyAdmin, getAdminStats, getAdminPredictions, downloadAdminCsv,
 } from '../services/api';
-import { getLabel } from '../utils/translations';
+import { getLabel, getFeatureLabel } from '../utils/translations';
 
 // El token vive en sessionStorage: se borra al cerrar la pestaña (más seguro que
 // localStorage para una credencial de admin). NO es auth de usuario.
@@ -358,7 +358,7 @@ const Admin = () => {
                   <tbody>
                     {topFeatures.map((f) => (
                       <tr key={f.feature}>
-                        <td>{getLabel(f.feature)}</td>
+                        <td>{getFeatureLabel(f.feature)}</td>
                         <td className="num">{f.count}</td>
                         <td className="num text-faint">{f.avg_abs_shap?.toFixed(3)}</td>
                         <td><div className="ps-mini-bar" style={{ width: `${Math.round((f.count / maxFeatCount) * 100)}%` }} /></td>
@@ -388,7 +388,13 @@ const Admin = () => {
                 {byDisease.map((d) => (
                   <tr key={d.disease}>
                     <td className="text-capitalize">{getLabel(d.disease)}</td>
-                    <td>{prettyModel(d.model)}</td>
+                    <td className="small">
+                      {d.models
+                        ? Object.entries(d.models).map(([modo, m]) => (
+                            <div key={modo}>{getLabel(modo)}: {prettyModel(m)}</div>
+                          ))
+                        : prettyModel(d.model)}
+                    </td>
                     <td className="num">{d.count}</td>
                     <td className="num">{pct(d.positive_rate)}</td>
                     <td className="num text-faint">{pct(d.avg_probability)}</td>
@@ -427,7 +433,7 @@ const Admin = () => {
                       </Badge>
                     </td>
                     <td className="num">{pct(p.probability)}</td>
-                    <td className="small">{prettyModel(p.model)}</td>
+                    <td className="small">{prettyModel(p.model)}{p.mode ? ` · ${getLabel(p.mode)}` : ''}</td>
                     <td className="small text-faint">{p.session_id ? p.session_id.slice(0, 8) : '—'}</td>
                   </tr>
                 ))}

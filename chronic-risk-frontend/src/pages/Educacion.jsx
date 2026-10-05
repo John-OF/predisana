@@ -1,10 +1,8 @@
 import { Container, Row, Col, Card, Badge, Tab, Nav, ListGroup } from 'react-bootstrap';
 import { Droplet, HeartPulse, Heart, GraphDownArrow, Cpu, ExclamationOctagon, ExclamationTriangle } from 'react-bootstrap-icons';
 
-// `variables_ia` describe los modelos servidos, no la medicina en general: el orden
-// sale de la media de |SHAP| sobre el test real (revision 2026-10). Hablaban de la
-// presion en hipertension y de la HbA1c en diabetes, que no son features de ningun
-// modelo, y del tabaco en cardiovascular, que pesa cero.
+// `variables_ia` describe los modelos servidos (v2: simplificado y completo), no la
+// medicina en general: el orden sale de la media de |SHAP| sobre el test real.
 // tests/test_textos_educacion.py (backend) comprueba cada afirmacion contra los
 // modelos: si un reentrenamiento cambia el orden, falla y hay que revisar el texto.
 const INFO_ENFERMEDADES = {
@@ -15,7 +13,7 @@ const INFO_ENFERMEDADES = {
         mortalidad: "La diabetes mellitus es una de las principales causas de muerte no violenta a nivel mundial.",
         poblacion: "Se estima que afecta a cerca del 10% de la población adulta mundial (más de 500 millones de personas).",
         organos: ["Páncreas", "Riñones (Nefropatía)", "Ojos (Retina)", "Corazón", "Nervios periféricos"],
-        variables_ia: "Sin análisis de sangre, lo que más pesa es la edad, seguida de la hipertensión y el IMC. Si aportas tu glucosa, pasa a ser la variable de mayor peso. La HbA1c no entra en el modelo: se interpreta aparte con los umbrales de la ADA.",
+        variables_ia: "Con lo que cualquiera sabe de sí mismo, lo que más pesa es la edad, seguida del IMC y de tener la presión alta. En el modo completo cuentan además la albúmina en orina, la cintura y el colesterol HDL. La HbA1c y la glucosa no entran en el modelo: definen la diabetes, así que se interpretan aparte con los umbrales de la ADA.",
         factores: [
             "Sedentarismo y falta de actividad física.",
             "Dieta alta en carbohidratos refinados y azúcares.",
@@ -32,7 +30,7 @@ const INFO_ENFERMEDADES = {
         mortalidad: "Conocida como 'el asesino silencioso', es un factor crítico en infartos y accidentes cerebrovasculares.",
         poblacion: "Afecta aproximadamente a 1 de cada 3 adultos en el mundo (cerca del 30%).",
         organos: ["Corazón (Insuficiencia)", "Arterias", "Cerebro", "Riñones"],
-        variables_ia: "Lo que más pesa es la edad, seguida del colesterol alto y el IMC. La presión no entra en el modelo, porque es la medida con la que se diagnostica la hipertensión: si la aportas, se interpreta aparte con los umbrales ACC/AHA.",
+        variables_ia: "Lo que más pesa es la edad, seguida del IMC y del colesterol alto. En el modo completo cuentan además la albúmina en orina y la cintura. La presión no entra en el modelo, porque es la medida con la que se diagnostica la hipertensión: si la aportas, se interpreta aparte con los umbrales ACC/AHA.",
         factores: [
             "Consumo excesivo de sal (Sodio).",
             "Estrés crónico.",
@@ -43,13 +41,13 @@ const INFO_ENFERMEDADES = {
         tratamiento: "Crónico y de por vida. Se trata reduciendo el sodio, controlando el peso y usando fármacos antihipertensivos."
     },
     cardiovascular: {
-        titulo: "Riesgo Cardiovascular",
+        titulo: "Enfermedad Cardiovascular",
         color: "info",
         definicion: "Grupo de desórdenes del corazón y los vasos sanguíneos, incluyendo cardiopatías coronarias y enfermedades cerebrovasculares.",
         mortalidad: "Es la causa #1 de muerte a nivel mundial (aprox. 32% de las defunciones).",
         poblacion: "El riesgo aumenta significativamente en hombres >45 años y mujeres >55 años.",
         organos: ["Corazón", "Cerebro", "Sistema circulatorio completo"],
-        variables_ia: "Lo que más pesa, con diferencia, es la presión sistólica; después, la edad y el colesterol. Fumar y beber son factores de riesgo reales, pero en estos datos no dan señal y el modelo no los tiene en cuenta: el simulador lo avisa si los marcas.",
+        variables_ia: "Lo que más pesa es la edad, seguida de tener la presión alta y del tabaco (fumar o haber fumado). En el modo completo, la presión medida, el colesterol total y la HbA1c no cambian la estimación: quien ya tuvo un evento suele estar en tratamiento, así que en estos datos no dan señal. El simulador lo avisa.",
         factores: [
             "Tabaquismo (Factor crítico).",
             "Colesterol LDL alto.",

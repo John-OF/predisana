@@ -15,13 +15,15 @@ import os
 
 import pandas as pd
 
+import modos as M
+
 # Anclada a esta carpeta: la API puede arrancar desde otro directorio de trabajo.
 CURATED_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data_curated")
 
 # Variables continuas por enfermedad para el heatmap de correlaciones.
 CORR_FEATURES = {
-    "diabetes": ["age", "bmi", "blood_glucose_level", "hba1c_level"],
-    "hipertension": ["age", "bmi", "weight", "waist_circumference"],
+    "diabetes": ["age", "bmi", "waist_circumference", "hba1c_level"],
+    "hipertension": ["age", "bmi", "waist_circumference", "ap_hi"],
     "cardiovascular": ["age", "bmi", "ap_hi", "ap_lo"],
 }
 
@@ -59,14 +61,18 @@ def compute(disease: str):
     if not os.path.exists(real_path) or not synth_files:
         return None
 
-    real = pd.read_csv(real_path)
+    # El real se compara con las MISMAS columnas y los mismos casos completos con los
+    # que se entreno el GAN (modos.columnas_laboratorio): fuera el ciclo, los pesos
+    # muestrales y la glucosa en ayunas, que solo tiene la submuestra de ayuno.
+    lab = M.columnas_laboratorio(disease)
+    real = pd.read_csv(real_path)[lab].dropna()
     synth = pd.read_csv(synth_files[0])
 
     # Con target: TSTR y DCR lo necesitan. El bloque de fidelidad de mas abajo
     # trabaja sobre copias sin target, que es como se venia calculando.
     real_full, synth_full = real.copy(), synth.copy()
     test_path = os.path.join(CURATED_DIR, disease, f"{disease}_test.csv")
-    real_test = pd.read_csv(test_path) if os.path.exists(test_path) else None
+    real_test = pd.read_csv(test_path)[lab].dropna() if os.path.exists(test_path) else None
 
     real = real.drop(columns=["target"], errors="ignore")
     synth = synth.drop(columns=["target"], errors="ignore")
@@ -105,7 +111,10 @@ def compute(disease: str):
     # --- Utilidad (TSTR) y privacidad (DCR) ---
     if real_test is not None:
         try:
-            result["tstr"] = compute_tstr(real_full, real_test, synth_full)
+            # La tarea del modo completo, sin las variables que definen la enfermedad:
+            # con la HbA1c dentro, real y sintetico darian un AUC de 0,99 los dos.
+            result["tstr"] = compute_tstr(real_full, real_test, synth_full,
+                                          features=M.features(disease, "completo"))
         except Exception as e:
             print(f"tstr fail ({disease}): {e}")
             result["tstr"] = None
@@ -183,12 +192,15 @@ def _entrenar_y_evaluar(X_tr, y_tr, X_te, y_te):
     return out
 
 
-def compute_tstr(real_tr, real_te, synth):
+def compute_tstr(real_tr, real_te, synth, features=None):
     """TSTR vs TRTR sobre el mismo test real. El ratio es la lectura corta: 1.0 seria
-    'el sintetico sirve tanto como el real para entrenar'."""
+    'el sintetico sirve tanto como el real para entrenar'. `features` acota la tarea
+    (por defecto, todas las columnas comunes)."""
     if "target" not in synth.columns or "target" not in real_tr.columns:
         return None
     cols = _arreglar_columnas(real_tr, real_te, synth)
+    if features is not None:
+        cols = [c for c in cols if c in features]
     if not cols:
         return None
 

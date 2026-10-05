@@ -31,7 +31,7 @@ const Aviso = () => {
                 <Card.Header as="h5">Uso de Datos</Card.Header>
                 <Card.Body>
                     <ul>
-                        <li>Los modelos han sido entrenados con datasets públicos y datos sintéticos.</li>
+                        <li>Los modelos han sido entrenados con datos públicos y anonimizados de NHANES (CDC, EE. UU.). Los datos sintéticos solo se usan en el laboratorio de la página del proyecto.</li>
                         <li>Las predicciones son estimaciones estadísticas y pueden contener márgenes de error.</li>
                         <li><strong>Privacidad:</strong> Las simulaciones se registran de forma <strong>anónima</strong> (los datos clínicos ingresados, sin ningún dato personal identificable / PII) con fines estadísticos y de mejora del sistema. No se solicita ni se almacena información que permita identificarte.</li>
                     </ul>

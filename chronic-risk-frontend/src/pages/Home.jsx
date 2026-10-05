@@ -62,9 +62,9 @@ const Home = () => {
                 <div className="ps-ic"><Activity size={22} /></div>
                 <h3 style={{ fontSize: '1.28rem' }}>Predicción con ML</h3>
                 <p className="text-soft mb-0">
-                  Modelos entrenados (Regresión Logística, Random Forest, LightGBM) estiman
-                  tu riesgo a partir de variables clínicas y de hábitos; se sirve el mejor por
-                  enfermedad.
+                  Dos modelos por enfermedad: uno simplificado, con lo que cualquiera sabe de sí
+                  mismo, y uno completo, con medidas y análisis. Estiman la enfermedad total,
+                  diagnosticada o no.
                 </p>
               </div>
             </Col>
@@ -105,22 +105,22 @@ const Home = () => {
             <Col md={4}>
               <div className="ps-card h-100">
                 <span className="ps-tag">1 · Datos</span>
-                <h3 style={{ fontSize: '1.2rem', margin: '12px 0 8px' }}>Un dataset limpio por enfermedad</h3>
+                <h3 style={{ fontSize: '1.2rem', margin: '12px 0 8px' }}>Datos reales, revisados</h3>
                 <p className="text-soft mb-0">
-                  Cada enfermedad se entrena con su propia fuente real curada (sin imputación
-                  cruzada): saneo de outliers fisiológicos y selección de variables que una
-                  persona común <em>puede responder</em>.
+                  Las tres enfermedades salen de NHANES 2017-2023 (CDC), con examen físico y
+                  laboratorio. Antes de entrenar se limpian, y el modo simplificado usa el peso y
+                  la talla que la gente <em>declara</em>, que es lo que escribirá aquí.
                 </p>
               </div>
             </Col>
             <Col md={4}>
               <div className="ps-card h-100">
                 <span className="ps-tag">2 · Modelos</span>
-                <h3 style={{ fontSize: '1.2rem', margin: '12px 0 8px' }}>Selección por validación cruzada</h3>
+                <h3 style={{ fontSize: '1.2rem', margin: '12px 0 8px' }}>Selección con filtro clínico</h3>
                 <p className="text-soft mb-0">
-                  Compite un baseline interpretable (Regresión Logística) contra modelos de
-                  boosting y bosques. Se elige el mejor por AUC en cross-validation y se publica
-                  el leaderboard completo.
+                  Compiten Regresión Logística, LightGBM y Random Forest, ajustados por validación
+                  cruzada anidada. Solo gana quien respeta el sentido clínico de cada variable, y se
+                  publica el leaderboard completo.
                 </p>
               </div>
             </Col>

@@ -1,9 +1,16 @@
 # Regresiones de la auditoria 2026-08-20 (AUD-1, 2, 3, 5, 6, 7, 8, 9, 14, 15 y 18).
-# Cada test fija el comportamiento CORREGIDO para que no vuelva a colarse.
+# Cada test fija el comportamiento CORREGIDO para que no vuelva a colarse. Desde la v2
+# (NHANES 2017-2023, dos modos por enfermedad) los perfiles son del modo simplificado:
+# peso y talla en vez del IMC.
 import json
 import math
 
+import pandas as pd
 import pytest
+
+import modos as M
+
+CLAVES = [(d, m) for d in M.ENFERMEDADES for m in M.MODOS]
 
 
 # ---------- AUD-2: NaN nunca sale al JSON ----------
@@ -32,24 +39,26 @@ def test_fichas_de_paciente_son_json_valido(client, ruta):
 
 
 # Mismo fallo por otra via (auditoria 2026-09): los datos clinicos que NO entran al
-# modelo (la sistolica en hipertension, la glucosa en un modelo que no la usa) se
-# leian con float() a secas, y un inf acababa como `Infinity` en clinical_flags.
+# modelo (la presion en hipertension, la glucosa en cardiovascular) se leian con
+# float() a secas, y un inf acababa como `Infinity` en clinical_flags.
 _HTA = {
-    "age": 45, "bmi": 25, "weight": 75, "waist_circumference": 85,
-    "diabetes": 0, "heart_disease": 0, "high_cholesterol": 0,
-    "gender_Male": 1, "gender_Female": 0,
+    "age": 45, "weight": 75, "height": 175, "diabetes": 0, "heart_disease": 0,
+    "high_cholesterol": 0, "gender_Male": 1, "gender_Female": 0,
     "smoking_history_never": 1, "smoking_history_current": 0, "smoking_history_former": 0,
 }
 _CARDIO = {
-    "age": 50, "bmi": 26, "ap_hi": 120, "ap_lo": 80, "cholesterol": 1, "gluc": 1,
-    "smoke": 0, "alco": 0, "active": 1, "gender_Female": 1, "gender_Male": 0,
+    "age": 50, "weight": 68, "height": 163, "diabetes": 0, "hypertension": 0,
+    "high_cholesterol": 0, "gender_Male": 0, "gender_Female": 1,
+    "smoking_history_never": 1, "smoking_history_current": 0, "smoking_history_former": 0,
 }
 
 
 @pytest.mark.parametrize("enfermedad,base,campo", [
-    ("hipertension", _HTA, "blood_pressure"),
+    ("hipertension", _HTA, "ap_hi"),
+    ("hipertension", _HTA, "ap_lo"),
     ("hipertension", _HTA, "blood_glucose_level"),
     ("cardiovascular", _CARDIO, "blood_glucose_level"),
+    ("cardiovascular", _CARDIO, "hba1c_level"),
 ])
 @pytest.mark.parametrize("valor", [float("inf"), "inf", "NaN", "ciento cuarenta"])
 def test_dato_clinico_opcional_invalido_da_400(client, enfermedad, base, campo, valor):
@@ -61,7 +70,7 @@ def test_dato_clinico_opcional_invalido_da_400(client, enfermedad, base, campo, 
 def test_dato_clinico_opcional_valido_sigue_funcionando(client):
     """El arreglo no puede romper el caso normal: una sistolica de 150 sigue dando su
     indicador ACC/AHA, y la respuesta es JSON estricto."""
-    r = client.post("/predict/hipertension", json={**_HTA, "blood_pressure": 150})
+    r = client.post("/predict/hipertension", json={**_HTA, "ap_hi": 150})
     assert r.status_code == 200
     crudo = r.get_data(as_text=True)
     assert "Infinity" not in crudo and "NaN" not in crudo
@@ -71,7 +80,7 @@ def test_dato_clinico_opcional_valido_sigue_funcionando(client):
 
 def test_dato_clinico_opcional_vacio_es_ausente(client):
     """Un input opcional borrado en el form manda "": es ausente, no un 400."""
-    r = client.post("/predict/hipertension", json={**_HTA, "blood_pressure": ""})
+    r = client.post("/predict/hipertension", json={**_HTA, "ap_hi": ""})
     assert r.status_code == 200
     assert r.get_json()["clinical_flags"] == []
 
@@ -84,11 +93,15 @@ def test_predict_valor_no_numerico_da_400(client, perfil_diabetes, valor):
     assert r.status_code == 400
     assert "age" in r.get_json()["error"]
 
-def test_predict_campo_vacio_se_trata_como_ausente(client, perfil_diabetes):
-    """Un input borrado en el form manda "": es ausente, no un 500."""
-    r = client.post("/predict/diabetes", json={**perfil_diabetes, "bmi": ""})
-    assert r.status_code == 200
-    assert "bmi" in r.get_json()["missing_filled_as_zero"]
+@pytest.mark.parametrize("campo,se_nombra", [("age", "age"), ("weight", "weight y height")])
+def test_predict_campo_vacio_se_trata_como_ausente(client, perfil_diabetes, campo, se_nombra):
+    """Un input borrado en el form manda "": es ausente, no un 500. Desde la v2 lo que
+    el modelo usa es obligatorio (la v1 lo rellenaba con 0, y un IMC de 0 no es un
+    paciente): falta -> 400 que dice que falta."""
+    r = client.post("/predict/diabetes", json={**perfil_diabetes, campo: ""})
+    assert r.status_code == 400
+    error = r.get_json()["error"]
+    assert "faltan datos" in error and se_nombra in error
 
 def test_predict_cuerpo_no_objeto_da_400(client):
     assert client.post("/predict/diabetes", json=[1, 2, 3]).status_code == 400
@@ -110,7 +123,7 @@ def test_whatif_base_no_objeto_da_400(client):
 
 def test_whatif_valor_no_numerico_en_base_da_400(client, perfil_diabetes):
     r = client.post("/whatif/diabetes", json={"feature": "age", "min": 20, "max": 80,
-                                              "base": {**perfil_diabetes, "bmi": "gordo"}})
+                                              "base": {**perfil_diabetes, "weight": "gordo"}})
     assert r.status_code == 400
 
 
@@ -164,7 +177,7 @@ def test_health_reporta_estado_real_de_la_bd(client):
     assert d["status"] == "ok"
     assert d["database_ok"] is True
     assert d["database"] == "sqlite"          # el motor real, no un string fijo
-    assert "diabetes" in d["models_loaded"]
+    assert d["models_loaded"] == sorted(f"{e}_{m}" for e, m in CLAVES)
     assert d["models_missing"] == []
 
 
@@ -179,7 +192,9 @@ def test_input_data_no_guarda_claves_arbitrarias(client, admin_headers, perfil_d
     guardado = client.get("/admin/predictions?limit=1",
                           headers=admin_headers).get_json()["items"][0]["input_data"]
     assert "basura" not in guardado and "__proto__" not in guardado
-    assert guardado["age"] == 55 and guardado["bmi"] == 31
+    # El peso y la talla que dio, y el IMC que sale de ellos (92 / 1,72^2).
+    assert (guardado["age"], guardado["weight"], guardado["height"]) == (55, 92, 172)
+    assert guardado["bmi"] == 31.1
 
 def test_input_data_conserva_la_glucosa_aunque_no_sea_del_modelo_base(client, admin_headers,
                                                                      perfil_diabetes):
@@ -207,11 +222,16 @@ def test_cuerpo_normal_no_se_ve_afectado(client, perfil_diabetes):
 
 # ---------- AUD-1: hipertension migrada a NHANES ----------
 
+# 169 cm: con 80 kg, IMC 28.
 PERFIL_HTA = {
-    "age": 50, "bmi": 28, "weight": 80, "waist_circumference": 95,
-    "diabetes": 0, "heart_disease": 0, "high_cholesterol": 0,
-    "gender_Male": 1, "gender_Female": 0,
+    "age": 50, "weight": 80, "height": 169, "diabetes": 0, "heart_disease": 0,
+    "high_cholesterol": 0, "gender_Male": 1, "gender_Female": 0,
     "smoking_history_never": 1, "smoking_history_current": 0, "smoking_history_former": 0,
+}
+PERFIL_HTA_COMPLETO = {
+    **{k: v for k, v in PERFIL_HTA.items() if k not in ("weight", "height")},
+    "bmi": 28, "waist_circumference": 97, "total_cholesterol": 195, "hdl_cholesterol": 48,
+    "hba1c_level": 5.5, "egfr": 92, "albumin_creatinine_ratio": 9,
 }
 
 
@@ -228,105 +248,108 @@ def test_hipertension_el_riesgo_crece_con_la_edad(client):
     assert riesgos == sorted(riesgos), riesgos
     assert riesgos[-1] > riesgos[0] * 2
 
-def test_hipertension_el_riesgo_crece_con_el_imc(client):
-    riesgos = [_riesgo_hta(client, bmi=b) for b in (20, 27, 33, 40)]
+def test_hipertension_el_riesgo_crece_con_el_peso(client):
+    """A talla fija, de un IMC de 20 a uno de 40."""
+    riesgos = [_riesgo_hta(client, weight=w) for w in (57, 77, 94, 114)]
     assert riesgos == sorted(riesgos), riesgos
 
 def test_hipertension_no_satura_en_el_extremo_sano(client):
     """Un adulto joven y delgado no puede salir con un riesgo alto (el modelo viejo
     devolvia 100% con 25 años y presion 110)."""
-    assert _riesgo_hta(client, age=25, bmi=22, weight=62, waist_circumference=75) < 0.15
+    assert _riesgo_hta(client, age=25, weight=62, height=168) < 0.15
 
 def test_hipertension_las_comorbilidades_suman(client):
     base = _riesgo_hta(client)
     assert _riesgo_hta(client, diabetes=1) > base
     assert _riesgo_hta(client, high_cholesterol=1) > base
 
-def test_presion_no_entra_al_modelo_pero_si_a_la_capa_clinica(client):
-    sin = client.post("/predict/hipertension", json=PERFIL_HTA).get_json()
-    con = client.post("/predict/hipertension",
-                      json={**PERFIL_HTA, "blood_pressure": 165}).get_json()
+@pytest.mark.parametrize("modo,perfil", [("simplificado", PERFIL_HTA),
+                                         ("completo", PERFIL_HTA_COMPLETO)])
+def test_presion_no_entra_al_modelo_pero_si_a_la_capa_clinica(client, modo, perfil):
+    """La presion define la hipertension: con ella el modelo solo reaprenderia el
+    umbral. La lee la guia ACC/AHA, sistolica y diastolica."""
+    ruta = f"/predict/hipertension?mode={modo}"
+    sin = client.post(ruta, json=perfil).get_json()
+    con = client.post(ruta, json={**perfil, "ap_hi": 165, "ap_lo": 95}).get_json()
     assert con["probability"] == sin["probability"]      # la presion no mueve el modelo
     assert not sin["clinical_flags"]
-    assert any(f["indicator"] == "blood_pressure" for f in con["clinical_flags"])
-    assert con["clinical_flags"][0]["source"] == "ACC/AHA"
+    [flag] = [f for f in con["clinical_flags"] if f["indicator"] == "blood_pressure"]
+    assert flag["source"] == "ACC/AHA" and flag["category"] == "hipertension_grado_2"
 
 
-# ---------- AUD-14: tope fisiologico de la glucosa en los datos REALES ----------
+# ---------- AUD-14: la glucosa real cae en lo que acepta la API ----------
+# La v1 traia glucosas de hasta 898 mg/dL (perfil bioquimico, sin ayuno) que acababan
+# en el fondo de SHAP y en las fichas de 'caso real' del laboratorio. La v2 usa la de
+# AYUNAS (hasta 561) y solo para definir el objetivo: no es variable de ningun modelo
+# ni sale en las fichas. Que el resto de columnas reales caiga en los limites lo exige
+# test_los_limites_no_rechazan_ningun_dato_real_ni_sintetico (auditoria 2026-09).
+
 @pytest.mark.parametrize("ruta", [
     "data_processed/diabetes_dataset.csv",
     "data_curated/diabetes/diabetes_train.csv",
     "data_curated/diabetes/diabetes_test.csv",
 ])
-def test_glucosa_real_topada(ruta):
-    """NHANES trae hasta 898 mg/dL. El tope ya se aplicaba al sintetico y a la entrada
-    del formulario, pero no al CSV real, y esas filas acababan en el fondo de SHAP y en
-    las fichas de 'caso real' del laboratorio."""
-    import pandas as pd
-    g = pd.read_csv(ruta)["blood_glucose_level"]
-    assert g.max() <= 500, f"{ruta}: glucosa maxima {g.max()}"
+def test_glucosa_real_dentro_de_los_limites(app_module, ruta):
+    lo, hi = app_module.INPUT_LIMITS["blood_glucose_level"]
+    g = pd.read_csv(ruta)["blood_glucose_level"].dropna()
+    assert lo <= g.min() and g.max() <= hi, f"{ruta}: glucosa de {g.min()} a {g.max()}"
 
 
-def test_el_fondo_de_shap_no_tiene_glucosas_imposibles(app_module):
-    """El fondo sale del train curado: si entra un 898, distorsiona las explicaciones."""
-    import numpy as np
-    feats = app_module.FEATURES["diabetes_glucosa"]
-    fondo = app_module._load_background_for_shap("diabetes", feats)
-    if "blood_glucose_level" in feats:
-        col = fondo[:, feats.index("blood_glucose_level")]
-        assert np.nanmax(col) <= 500
+def test_la_glucosa_no_llega_al_fondo_de_shap_ni_a_las_fichas(app_module):
+    for disease, modo in CLAVES:
+        assert "blood_glucose_level" not in app_module.FEATURES[f"{disease}_{modo}"]
+    for disease in M.ENFERMEDADES:
+        assert "blood_glucose_level" not in M.columnas_laboratorio(disease)
 
 
-# ---------- AUD-15: un solo split para diabetes ----------
+# ---------- AUD-15: un solo reparto ----------
 # `train_nhanes_diabetes.py` hacia su propio train_test_split del CSV completo
-# mientras `data_curated/diabetes/*` salia de `curate_and_synthesize.py`. Para la
-# variante con glucosa los dos repartos eran distintos (filtraba las filas sin
-# glucosa ANTES de partir, asi que n cambiaba): el test que reportaban las metricas
-# no era el curado, y el 79% de sus filas de test estaban en el fondo de SHAP.
-FEATURES_VARIANTE = {
-    "diabetes": ["age", "bmi", "hypertension", "heart_disease",
-                 "gender_Female", "gender_Male", "smoking_history_never",
-                 "smoking_history_current", "smoking_history_former"],
-    "diabetes_glucosa": ["age", "bmi", "hypertension", "heart_disease",
-                         "gender_Female", "gender_Male", "smoking_history_never",
-                         "smoking_history_current", "smoking_history_former",
-                         "blood_glucose_level"],
-}
+# mientras `data_curated/diabetes/*` salia de `curate_and_synthesize.py`: el test que
+# reportaban las metricas no era el curado, y el 79% de sus filas de test estaban en
+# el fondo de SHAP. Desde la v2 hay un solo reparto por enfermedad
+# (train_models.repartir) y cada modo se queda con sus filas completas.
+
+def _curado(disease, cual):
+    return pd.read_csv(f"data_curated/{disease}/{disease}_{cual}.csv")
 
 
-def _curado(cual):
-    import pandas as pd
-    return pd.read_csv(f"data_curated/diabetes/diabetes_{cual}.csv")
-
-
-def test_train_y_test_curados_son_disjuntos():
-    import pandas as pd
-    tr, te = _curado("train"), _curado("test")
-    cols = list(tr.columns)
-    comunes = pd.merge(tr[cols].round(6), te[cols].round(6), how="inner")
+@pytest.mark.parametrize("disease", M.ENFERMEDADES)
+def test_train_y_test_curados_son_disjuntos(disease):
+    tr, te = _curado(disease, "train"), _curado(disease, "test")
+    comunes = pd.merge(tr.round(6), te.round(6), how="inner")
     assert comunes.empty, f"{len(comunes)} filas compartidas entre train y test"
 
 
-@pytest.mark.parametrize("clave", ["diabetes", "diabetes_glucosa"])
-def test_las_metricas_se_reportan_sobre_el_test_curado(clave):
+@pytest.mark.parametrize("disease,modo", CLAVES)
+def test_las_metricas_se_reportan_sobre_el_test_curado(disease, modo):
     """El numero publicado en /metricas tiene que salir del MISMO test que sirve el
-    laboratorio. Antes, `diabetes_glucosa` reportaba sobre 1122 filas de otro reparto
+    laboratorio. En la v1, `diabetes_glucosa` reportaba sobre 1122 filas de otro reparto
     mientras el test curado tenia 1131."""
-    feats = FEATURES_VARIANTE[clave]
-    esperado = len(_curado("test").dropna(subset=feats + ["target"]))
-    with open(f"models/{clave}_metrics.json", encoding="utf-8") as f:
+    te = _curado(disease, "test")
+    columnas = [M.columna(modo, f) for f in M.features(disease, modo)]
+    esperado = int(te[columnas].notna().all(axis=1).sum())
+    with open(f"models/{disease}_{modo}_metrics.json", encoding="utf-8") as f:
         reportado = json.load(f)["report_test"]["macro avg"]["support"]
     assert int(reportado) == esperado
 
 
-def test_el_fondo_de_shap_no_contiene_filas_del_test(app_module):
-    """El fondo sale del train curado; si ese train no es el del modelo, las
-    explicaciones se calculan contra filas que el modelo uso para evaluarse."""
-    import numpy as np
-    import pandas as pd
-    feats = app_module.FEATURES["diabetes_glucosa"]
-    fondo = pd.DataFrame(app_module._load_background_for_shap("diabetes", feats),
-                         columns=feats)
-    test = _curado("test").dropna(subset=feats + ["target"])[feats]
-    comunes = pd.merge(fondo.round(6), test.round(6), how="inner")
-    assert comunes.empty, f"{len(comunes)} filas del test en el fondo de SHAP"
+@pytest.mark.parametrize("disease,modo", CLAVES)
+def test_la_app_usa_el_train_del_modelo(app_module, disease, modo):
+    """El fondo de SHAP, la cobertura de datos (AUD-16) y las medianas salen de
+    _train_modo: tienen que ser las filas con las que se entreno el modelo."""
+    with open(f"models/{disease}_{modo}_metrics.json", encoding="utf-8") as f:
+        n_train = json.load(f)["n_train"]
+    assert len(app_module._train_modo(f"{disease}_{modo}")) == n_train
+
+
+@pytest.mark.parametrize("disease", M.ENFERMEDADES)
+def test_el_train_de_la_app_no_contiene_filas_del_test(app_module, disease):
+    """En el completo (analiticas con decimales) dos personas distintas no comparten
+    fila: si una coincide, es la misma, y SHAP se explicaria contra el test."""
+    clave = f"{disease}_completo"
+    feats = app_module.FEATURES[clave]
+    te = _curado(disease, "test")
+    test = pd.DataFrame({f: te[M.columna("completo", f)] for f in feats}).dropna()
+    usado = app_module._train_modo(clave)[feats]
+    comunes = pd.merge(usado.round(6), test.round(6), how="inner")
+    assert comunes.empty, f"{len(comunes)} filas del test en el train de la app"

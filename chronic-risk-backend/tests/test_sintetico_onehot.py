@@ -8,7 +8,8 @@ simple vista en la ficha de paciente del laboratorio y hacia trivial el juego
 entrenar y la expande al muestrear.
 
 Estos tests cubren las dos mitades: los helpers (round-trip exacto) y el ARTEFACTO
-que el API sirve de verdad (los CSV de data_curated).
+que el API sirve de verdad (los CSV de data_curated). Desde la v2 el GAN ve las
+columnas del laboratorio de las filas completas del train.
 """
 import glob
 import math
@@ -18,12 +19,13 @@ import pandas as pd
 import pytest
 
 import curate_and_synthesize as cs
+import modos as M
 
-ENFERMEDADES = ["diabetes", "hipertension", "cardiovascular"]
 
-
-def _train(enf):
-    return pd.read_csv(f"data_curated/{enf}/{enf}_train.csv")
+def _real(enf):
+    """Lo que ve el GAN: las columnas del laboratorio de las filas completas del train."""
+    tr = pd.read_csv(f"data_curated/{enf}/{enf}_train.csv")
+    return tr[M.columnas_laboratorio(enf)].dropna().reset_index(drop=True)
 
 
 def _sinteticos(enf):
@@ -31,20 +33,20 @@ def _sinteticos(enf):
 
 
 # ---------- helpers de colapso/expansion ----------
-@pytest.mark.parametrize("enf", ENFERMEDADES)
+@pytest.mark.parametrize("enf", M.ENFERMEDADES)
 def test_detecta_los_grupos_onehot(enf):
-    grupos = cs._detect_onehot_groups(_train(enf))
-    assert "gender" in grupos
+    """Desde la v2 las tres enfermedades salen de NHANES y traen el tabaquismo (la
+    cardiovascular de Kaggle no lo traia categorizado)."""
+    grupos = cs._detect_onehot_groups(_real(enf))
+    assert set(grupos) == {"gender", "smoking_history"}
     assert set(grupos["gender"]) == {"gender_Male", "gender_Female"}
-    if enf != "cardiovascular":  # cardio (Kaggle) no trae tabaquismo categorizado
-        assert len(grupos["smoking_history"]) == 3
+    assert len(grupos["smoking_history"]) == 3
 
 
-@pytest.mark.parametrize("enf", ENFERMEDADES)
+@pytest.mark.parametrize("enf", M.ENFERMEDADES)
 def test_round_trip_exacto(enf):
-    """Colapsar y expandir tiene que devolver EXACTAMENTE el dato original, incluidas
-    las pocas filas sin categoria (7 en diabetes, 9 en hipertension)."""
-    df = _train(enf)
+    """Colapsar y expandir tiene que devolver EXACTAMENTE el dato original."""
+    df = _real(enf)
     grupos = cs._detect_onehot_groups(df)
     ida = cs._colapsar_onehot(df, grupos)
     vuelta = cs._expandir_onehot(ida, grupos)[df.columns]
@@ -108,9 +110,10 @@ def test_si_son_muchas_no_se_descartan():
 def test_las_epocas_se_derivan_del_tamano_del_dataset():
     """CTGAN cuenta pasos, no epocas: con --epochs fijo un dataset pequeno recibia
     10x menos entrenamiento que uno grande (correlaciones destruidas en el sintetico).
-    Las epocas se derivan para que todos reciban los mismos pasos."""
-    pequeno = cs._epocas_para(4789, 15000)     # hipertension
-    grande = cs._epocas_para(54392, 15000)     # cardiovascular
+    Las epocas se derivan para que todos reciban los mismos pasos. (Tamanos de la v1:
+    hipertension de ENSANUT y cardiovascular de Kaggle.)"""
+    pequeno = cs._epocas_para(4789, 15000)
+    grande = cs._epocas_para(54392, 15000)
     assert pequeno > grande * 5, (pequeno, grande)
     # y en pasos reales acaban en el mismo orden de magnitud
     pasos = lambda n, e: e * math.ceil(n / cs.BATCH_SIZE_CTGAN)
@@ -122,10 +125,10 @@ def test_nunca_menos_de_una_epoca():
 
 
 # ---------- el artefacto que sirve el API ----------
-@pytest.mark.parametrize("enf", ENFERMEDADES)
+@pytest.mark.parametrize("enf", M.ENFERMEDADES)
 def test_los_csv_sinteticos_respetan_los_onehot(enf):
     """El test que importa: los CSV versionados, que son los que ve el usuario."""
-    grupos = cs._detect_onehot_groups(_train(enf))
+    grupos = cs._detect_onehot_groups(_real(enf))
     ficheros = _sinteticos(enf)
     assert ficheros, f"no hay sintetico para {enf}"
     for f in ficheros:
@@ -137,17 +140,16 @@ def test_los_csv_sinteticos_respetan_los_onehot(enf):
                 f"categorias de {prefijo} y {(suma == 0).sum()} sin ninguna")
 
 
-@pytest.mark.parametrize("enf", ENFERMEDADES)
-def test_el_sintetico_conserva_el_esquema_del_real(enf):
-    """Mismas columnas y en el mismo orden: la ficha de paciente y la comparacion de
-    distribuciones asumen el esquema del train."""
-    real = _train(enf)
+@pytest.mark.parametrize("enf", M.ENFERMEDADES)
+def test_el_sintetico_conserva_el_esquema_del_laboratorio(enf):
+    """Mismas columnas y en el mismo orden que las del laboratorio: la ficha de
+    paciente y la comparacion de distribuciones asumen ese esquema."""
     for f in _sinteticos(enf):
-        assert list(pd.read_csv(f).columns) == list(real.columns), os.path.basename(f)
+        assert list(pd.read_csv(f).columns) == M.columnas_laboratorio(enf), os.path.basename(f)
 
 
 # ---------- lo que se ve por HTTP ----------
-@pytest.mark.parametrize("enf", ENFERMEDADES)
+@pytest.mark.parametrize("enf", M.ENFERMEDADES)
 def test_las_fichas_sinteticas_tienen_un_solo_genero(client, enf):
     """El sintoma visible de AUD-13: pacientes sin genero o con los dos."""
     for _ in range(25):
@@ -177,11 +179,11 @@ def _peor_marginal(real, synth, grupos):
                for c in columnas if c in synth.columns)
 
 
-@pytest.mark.parametrize("enf", ENFERMEDADES)
+@pytest.mark.parametrize("enf", M.ENFERMEDADES)
 def test_las_marginales_categoricas_cuadran_con_el_real(enf):
     """El invariante que importa: lo que se sirve como 'población sintética' tiene la
     misma composición que la real."""
-    real = _train(enf)
+    real = _real(enf)
     grupos = cs._detect_onehot_groups(real)
     for f in _sinteticos(enf):
         peor = _peor_marginal(real, pd.read_csv(f), grupos)
@@ -200,7 +202,7 @@ def test_el_reparto_de_cupos_suma_exacto_y_no_pierde_estratos():
 
 def test_el_ajuste_solo_elige_filas_del_pool():
     """No inventa nada: submuestrea. Cada fila devuelta tiene que existir en el pool."""
-    real = _train("hipertension")
+    real = _real("hipertension")
     pool = pd.read_csv(_sinteticos("hipertension")[0])
     grupos = cs._detect_onehot_groups(real)
     elegidas = cs._ajustar_marginales(real, pool, grupos, len(pool) // 4, 42)
@@ -211,7 +213,7 @@ def test_el_ajuste_solo_elige_filas_del_pool():
 
 def test_el_ajuste_mejora_la_desviacion():
     """La prueba de que el mecanismo hace lo que dice, sobre el artefacto real."""
-    real = _train("hipertension")
+    real = _real("hipertension")
     pool = pd.read_csv(_sinteticos("hipertension")[0])
     grupos = cs._detect_onehot_groups(real)
     # Se desequilibra el pool a proposito y se comprueba que el ajuste lo recompone.

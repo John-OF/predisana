@@ -2,14 +2,13 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Container, Row, Col, Card, Button, Table, Badge, Accordion, Spinner, Tabs, Tab } from 'react-bootstrap';
 import { getSyntheticCase, getMetrics, evaluateSyntheticCase, getSampleCase, getDistribution, getSyntheticQuality } from '../services/api';
-import { getLabel } from '../utils/translations';
+import { getLabel, getFeatureLabel } from '../utils/translations';
 import { riskBand } from '../utils/riskBand';
 import { Droplet, HeartPulse, Heart, Eyedropper, Robot, Lightbulb, Magic, Stars, BarChartLineFill, ArrowRight, TrophyFill, CpuFill, ArrowUpShort, ArrowDownShort, ArrowRepeat, PatchQuestion, ClipboardCheck, ClipboardPulse, CodeSlash, Window, Github, PersonBadge } from 'react-bootstrap-icons';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
-// Cada enfermedad tiene un esquema de datos distinto (diabetes no mide presión
-// continua, cardiovascular usa colesterol/glucosa ordinales 1-3, hipertensión
-// trae cintura/peso...). Por eso la interpretación clínica es por-enfermedad.
+// Desde la v2 las tres enfermedades salen de NHANES 2017-2023 con el mismo esquema
+// (cambian los diagnósticos previos: el de la propia enfermedad no está).
 const DISEASE_TABS = [
     { key: 'diabetes', label: 'Diabetes', icon: <Droplet className="me-2" />, variant: 'primary' },
     { key: 'hipertension', label: 'Hipertensión', icon: <HeartPulse className="me-2" />, variant: 'danger' },
@@ -20,9 +19,9 @@ const diseaseLabel = (key) => DISEASE_TABS.find((t) => t.key === key)?.label ?? 
 
 // Variables numéricas continuas por enfermedad para el histograma comparado.
 const DIST_FEATURES = {
-    diabetes: ['age', 'bmi', 'blood_glucose_level', 'hba1c_level'],
-    hipertension: ['age', 'bmi', 'weight', 'waist_circumference'],
-    cardiovascular: ['age', 'bmi', 'ap_hi', 'ap_lo'],
+    diabetes: ['age', 'bmi', 'hba1c_level', 'waist_circumference', 'bmi_autodeclarado'],
+    hipertension: ['age', 'bmi', 'ap_hi', 'waist_circumference', 'bmi_autodeclarado'],
+    cardiovascular: ['age', 'bmi', 'ap_hi', 'total_cholesterol', 'egfr'],
 };
 
 // Nombres legibles de los algoritmos del leaderboard (claves que emite el backend).
@@ -48,24 +47,27 @@ const imcBadge = (bmi) =>
     bmi >= 25 ? <Badge bg="warning">Sobrepeso</Badge> :
     <Badge bg="success">Normal</Badge>;
 
-const glucosaBadge = (g) =>
-    g > 200 ? <Badge bg="danger">Diabetes</Badge> :
-    g > 100 ? <Badge bg="warning">Riesgo</Badge> :
+// Presión: manda la más alta de las dos (ACC/AHA 2017).
+const presionBadge = (sys, dia) =>
+    sys >= 140 || dia >= 90 ? <Badge bg="danger">Hipertensión</Badge> :
+    sys >= 130 || dia >= 80 ? <Badge bg="warning">Elevada</Badge> :
     <Badge bg="success">Normal</Badge>;
 
-const presionBadge = (sys) =>
-    sys >= 140 ? <Badge bg="danger">Hipertensión</Badge> :
-    sys >= 130 ? <Badge bg="warning">Elevada</Badge> :
+const hba1cBadge = (v) =>
+    v >= 6.5 ? <Badge bg="danger">Diabetes</Badge> :
+    v >= 5.7 ? <Badge bg="warning">Prediabetes</Badge> :
     <Badge bg="success">Normal</Badge>;
 
-// cholesterol / gluc de cardiovascular son ordinales: 1=normal, 2=alto, 3=muy alto
-const ordinalBadge = (v) =>
-    Number(v) === 3 ? <Badge bg="danger">Muy alto</Badge> :
-    Number(v) === 2 ? <Badge bg="warning">Elevado</Badge> :
-    <Badge bg="success">Normal</Badge>;
+const colesterolBadge = (total) =>
+    total >= 240 ? <Badge bg="danger">Alto</Badge> :
+    total >= 200 ? <Badge bg="warning">Límite</Badge> :
+    <Badge bg="success">Deseable</Badge>;
 
-const siNoBadge = (v, texto) =>
-    Number(v) === 1 ? <Badge bg="danger">{texto}</Badge> : <span className="text-muted">—</span>;
+// Enfermedad renal crónica (KDIGO): filtrado < 60 o albúmina/creatinina >= 30.
+const renalBadge = (egfr, acr) =>
+    egfr < 60 || acr >= 300 ? <Badge bg="danger">Alterada</Badge> :
+    acr >= 30 ? <Badge bg="warning">Albuminuria</Badge> :
+    <Badge bg="success">Normal</Badge>;
 
 const getGenderLabel = (data) => {
     if (data.gender_Male === undefined && data.gender_Female === undefined) return 'No especificado';
@@ -74,43 +76,39 @@ const getGenderLabel = (data) => {
     return 'Otro';
 };
 
-// Devuelve las filas {label, valor, interp} a renderizar según el esquema real
-// que /synthetic/<disease> entrega para cada enfermedad.
+const tabaco = (d) =>
+    Number(d.smoking_history_current) === 1 ? 'Fumador actual' :
+    Number(d.smoking_history_former) === 1 ? 'Exfumador' :
+    Number(d.smoking_history_never) === 1 ? 'Nunca ha fumado' : '—';
+
+// Diagnósticos previos que trae la ficha (el de la propia enfermedad no está: es el
+// objetivo que se estima).
+const DIAGNOSTICOS = [
+    ['hypertension', 'Hipertensión'], ['diabetes', 'Diabetes'],
+    ['high_cholesterol', 'Colesterol alto'], ['heart_disease', 'Cardiovascular'],
+];
+
+// Devuelve las filas {label, valor, interp} de una ficha (real o sintética): mismas
+// columnas en las dos, clave para el juego "¿cuál es real?". Solo las que trae.
 const buildRows = (disease, d) => {
-    const edadGenero = { label: 'Edad / Género', valor: `${Math.floor(d.age)} años / ${getGenderLabel(d)}`, interp: <span className="text-muted">Demográfico</span> };
-    const imc = { label: 'IMC (Masa Corporal)', valor: Number(d.bmi).toFixed(1), interp: imcBadge(d.bmi) };
-
-    if (disease === 'diabetes') {
-        return [
-            edadGenero,
-            imc,
-            { label: 'Glucosa', valor: `${Math.round(d.blood_glucose_level)} mg/dL`, interp: glucosaBadge(d.blood_glucose_level) },
-            { label: 'HbA1c', valor: `${Number(d.hba1c_level).toFixed(1)} %`, interp: d.hba1c_level >= 6.5 ? <Badge bg="danger">Diabetes</Badge> : d.hba1c_level >= 5.7 ? <Badge bg="warning">Prediabetes</Badge> : <Badge bg="success">Normal</Badge> },
-            { label: 'Hipertensión (Dx)', valor: Number(d.hypertension) === 1 ? 'Sí' : 'No', interp: siNoBadge(d.hypertension, 'Diagnóstico Presente') },
-            { label: 'Enfermedad Cardíaca', valor: Number(d.heart_disease) === 1 ? 'Sí' : 'No', interp: siNoBadge(d.heart_disease, 'Historial Presente') },
-        ];
-    }
-
-    if (disease === 'hipertension') {
-        return [
-            edadGenero,
-            imc,
-            { label: 'Circunferencia de Cintura', valor: `${Math.round(d.waist_circumference)} cm`, interp: <span className="text-muted">Adiposidad central</span> },
-            { label: 'Peso', valor: `${Math.round(d.weight)} kg`, interp: <span className="text-muted">Antropometría</span> },
-            { label: 'Diabetes (Dx)', valor: Number(d.diabetes) === 1 ? 'Sí' : 'No', interp: siNoBadge(d.diabetes, 'Diagnóstico Presente') },
-            { label: 'Colesterol Alto (Dx)', valor: Number(d.high_cholesterol) === 1 ? 'Sí' : 'No', interp: siNoBadge(d.high_cholesterol, 'Diagnóstico Presente') },
-        ];
-    }
-
-    // cardiovascular
+    const hay = (...ks) => ks.every((k) => d[k] !== undefined && d[k] !== null);
+    const dx = DIAGNOSTICOS.filter(([k]) => d[k] !== undefined);
     return [
-        edadGenero,
-        imc,
-        { label: 'Presión (Sistólica / Diastólica)', valor: `${Math.round(d.ap_hi)} / ${Math.round(d.ap_lo)} mmHg`, interp: presionBadge(d.ap_hi) },
-        { label: 'Colesterol', valor: `Nivel ${Number(d.cholesterol)}`, interp: ordinalBadge(d.cholesterol) },
-        { label: 'Glucosa', valor: `Nivel ${Number(d.gluc)}`, interp: ordinalBadge(d.gluc) },
-        { label: 'Hábitos', valor: 'Tabaco / Alcohol / Actividad', interp: <span className="d-flex gap-1 justify-content-center flex-wrap">{siNoBadge(d.smoke, 'Fuma')}{siNoBadge(d.alco, 'Alcohol')}{Number(d.active) === 1 ? <Badge bg="success">Activo</Badge> : <Badge bg="secondary">Sedentario</Badge>}</span> },
-    ];
+        hay('age') && { label: 'Edad / Sexo', valor: `${Math.floor(d.age)} años / ${getGenderLabel(d)}`, interp: <span className="text-muted">Demográfico</span> },
+        hay('bmi') && { label: 'IMC medido', valor: Number(d.bmi).toFixed(1), interp: imcBadge(d.bmi) },
+        hay('weight', 'height') && { label: 'Peso / talla (declarados)', valor: `${Math.round(d.weight)} kg / ${Math.round(d.height)} cm`, interp: <span className="text-muted">IMC declarado {Number(d.bmi_autodeclarado).toFixed(1)}</span> },
+        hay('waist_circumference') && { label: 'Cintura', valor: `${Math.round(d.waist_circumference)} cm`, interp: <span className="text-muted">Adiposidad central</span> },
+        hay('ap_hi', 'ap_lo') && { label: 'Presión', valor: `${Math.round(d.ap_hi)} / ${Math.round(d.ap_lo)} mmHg`, interp: presionBadge(d.ap_hi, d.ap_lo) },
+        hay('total_cholesterol', 'hdl_cholesterol') && { label: 'Colesterol total / HDL', valor: `${Math.round(d.total_cholesterol)} / ${Math.round(d.hdl_cholesterol)} mg/dL`, interp: colesterolBadge(d.total_cholesterol) },
+        hay('hba1c_level') && { label: 'HbA1c', valor: `${Number(d.hba1c_level).toFixed(1)} %`, interp: hba1cBadge(d.hba1c_level) },
+        hay('egfr', 'albumin_creatinine_ratio') && { label: 'Riñón (eGFR / albúmina)', valor: `${Math.round(d.egfr)} / ${Number(d.albumin_creatinine_ratio).toFixed(1)}`, interp: renalBadge(d.egfr, d.albumin_creatinine_ratio) },
+        dx.length > 0 && {
+            label: 'Diagnósticos previos',
+            valor: dx.filter(([k]) => Number(d[k]) === 1).map(([, l]) => l).join(', ') || 'Ninguno',
+            interp: <span className="text-muted">Autodeclarados</span>,
+        },
+        { label: 'Tabaco', valor: tabaco(d), interp: <span className="text-muted">Autodeclarado</span> },
+    ].filter(Boolean);
 };
 
 const Proyecto = () => {
@@ -240,7 +238,7 @@ const Proyecto = () => {
                                 const pos = shapVal >= 0;
                                 return (
                                     <div className="ps-shap-row" key={idx}>
-                                        <span className="lbl">{getLabel(f.feature) || f.feature}</span>
+                                        <span className="lbl">{getFeatureLabel(f.feature)}</span>
                                         <div className="ps-shap-track">
                                             <div className={`ps-shap-bar ${pos ? 'ps-shap-pos' : 'ps-shap-neg'}`} style={{ width: `${w}%` }}>
                                                 {pos ? '+' : '−'}{Math.abs(shapVal).toFixed(2)}
@@ -535,7 +533,7 @@ const Proyecto = () => {
                                     {qualData.per_column.map((p) => (
                                         <Col md={6} key={p.column}>
                                             <div className="d-flex align-items-center gap-2">
-                                                <span className="small text-soft text-truncate" style={{ width: '128px', flex: 'none' }} title={getLabel(p.column) || p.column}>{getLabel(p.column) || p.column}</span>
+                                                <span className="small text-soft text-truncate" style={{ width: '128px', flex: 'none' }} title={getFeatureLabel(p.column)}>{getFeatureLabel(p.column)}</span>
                                                 <div className="ps-shap-track" style={{ height: '12px' }}>
                                                     <div style={{ width: `${p.score * 100}%`, height: '100%', borderRadius: '6px', background: 'var(--accent)' }} />
                                                 </div>
@@ -674,8 +672,8 @@ const Proyecto = () => {
                 <h2>El proyecto por dentro</h2>
                 <p>
                     Las decisiones de ingeniería detrás de la herramienta: de dónde salen los
-                    datos, cómo se eligen los modelos, cómo se interpreta el resultado y cómo se
-                    entrena la IA sin exponer datos de pacientes reales.
+                    datos, cómo se eligen los modelos, cómo se interpreta el resultado y qué aportan
+                    los datos sintéticos.
                 </p>
             </div>
 
@@ -686,9 +684,10 @@ const Proyecto = () => {
                 <span className="ps-eyebrow">Los datos</span>
                 <h2>De dónde salen los datos</h2>
                 <p>
-                    Cada enfermedad se entrena con su propia fuente real, curada por separado
-                    (sin imputación cruzada): se sanean valores fisiológicamente imposibles y se
-                    eligen variables que una persona común puede responder.
+                    Las tres enfermedades salen de <strong>NHANES 2017-2023</strong>, la encuesta de salud
+                    de los CDC con examen físico y laboratorio. Antes de entrenar se revisan y limpian los
+                    datos: fuera las embarazadas, un «no sabe» cuenta como dato faltante y no como un «no»,
+                    y fuera las variables cuyo cuestionario cambió entre ciclos.
                 </p>
             </div>
 
@@ -700,12 +699,13 @@ const Proyecto = () => {
                                 <Droplet className="me-2" />Diabetes
                             </div>
                             <p className="text-soft small mb-2">
-                                <strong>NHANES 2021-2023</strong> (CDC): <strong>6 234</strong> adultos con
-                                examen físico y laboratorio. Señal clínica real: glucosa sérica, HbA1c, IMC, edad.
+                                <strong>14 347</strong> adultos con HbA1c medida. Se estima la diabetes
+                                total: diagnosticada o detectada por análisis (HbA1c ≥ 6,5% o glucosa en
+                                ayunas ≥ 126). Más de 1 de cada 5 diabéticos no estaba diagnosticado.
                             </p>
                             <p className="text-faint small mb-0">
-                                Transparencia: la glucosa es <em>opcional</em> — sin ella el resultado es un
-                                cribado tipo FINDRISC; con ella, una estimación mucho más precisa.
+                                Transparencia: la HbA1c y la glucosa <strong>no</strong> son variables del
+                                modelo: definen la enfermedad. Si se aportan, las interpreta la guía (ADA).
                             </p>
                         </Card.Body>
                     </Card>
@@ -717,9 +717,8 @@ const Proyecto = () => {
                                 <HeartPulse className="me-2" />Hipertensión
                             </div>
                             <p className="text-soft small mb-2">
-                                <strong>NHANES 2021-2023</strong> (CDC): <strong>5 998</strong> adultos.
-                                El objetivo es un diagnóstico autorreportado, no una fórmula: 36% de prevalencia,
-                                en línea con la población.
+                                <strong>14 017</strong> adultos con la presión medida. Se estima la
+                                hipertensión total: diagnosticada, ≥ 140/90 mmHg medida o con medicación (44%).
                             </p>
                             <p className="text-faint small mb-0">
                                 Transparencia: la presión medida <strong>no</strong> es una variable del
@@ -735,12 +734,13 @@ const Proyecto = () => {
                                 <Heart className="me-2" />Cardiovascular
                             </div>
                             <p className="text-soft small mb-2">
-                                <strong>68 666</strong> registros balanceados al 50/50 (Kaggle). Se derivan
-                                medidas como el IMC a partir de talla y peso.
+                                <strong>16 815</strong> adultos. Se estima la enfermedad cardiovascular
+                                diagnosticada: coronaria, angina, infarto, insuficiencia cardiaca o ictus (13%).
+                                Sustituye al dataset de Kaggle, de origen poco documentado.
                             </p>
                             <p className="text-faint small mb-0">
-                                Transparencia: presiones imposibles (negativas o de miles) se
-                                descartan antes de entrenar.
+                                Transparencia: en el modo completo, la presión, el colesterol y la HbA1c no
+                                tienen efecto — quien ya tuvo un evento suele estar en tratamiento — y la app lo avisa.
                             </p>
                         </Card.Body>
                     </Card>
@@ -754,11 +754,13 @@ const Proyecto = () => {
                 <Col lg={7}>
                     <h3 className="mb-3">Tecnología: Datos Sintéticos y Privacidad</h3>
                     <p className="lead text-muted">
-                        ¿Cómo entrenamos a la IA sin comprometer la privacidad de los pacientes reales?
+                        ¿Se puede trabajar con datos de salud sin exponer a pacientes reales?
                     </p>
                     <p>
-                        En salud, usar datos reales es delicado por las leyes de privacidad.
-                        Nuestra solución utiliza <strong>Redes Generativas Antagónicas (GAN)</strong>.
+                        En salud, compartir datos reales es delicado por las leyes de privacidad. Los
+                        modelos del simulador se entrenan con NHANES, una encuesta pública que los CDC
+                        publican anonimizada; el laboratorio de abajo explora la otra vía: las{' '}
+                        <strong>Redes Generativas Antagónicas (GAN)</strong>, que crean pacientes que no existen.
                     </p>
 
                     <Accordion defaultActiveKey="0" className="mb-4">
@@ -789,8 +791,10 @@ const Proyecto = () => {
                         <Card.Body className="p-4">
                             <h5><Lightbulb className="me-2" />Sabías que...</h5>
                             <p className="mb-0">
-                                Los modelos de IA de este proyecto fueron entrenados usando una técnica llamada <strong>CTGAN</strong> (Conditional Tabular GAN).
-                                Esto permite generar casos raros o extremos para mejorar la capacidad de predicción del sistema.
+                                Los modelos del simulador se entrenan con los datos reales, no con el sintético.
+                                El sintético (<strong>CTGAN</strong>, Conditional Tabular GAN) alimenta este laboratorio y
+                                una prueba: entrenar un modelo solo con él y evaluarlo con pacientes reales (TSTR, en
+                                la pestaña Calidad).
                             </p>
                         </Card.Body>
                     </Card>
@@ -802,7 +806,7 @@ const Proyecto = () => {
                 <div className="text-center mb-4">
                     <h3><Magic className="me-2" />Laboratorio de IA generativa</h3>
                     <p className="text-muted mb-0">
-                        Demos interactivas sobre los datos sintéticos que entrenan el sistema.
+                        Demos interactivas sobre los datos sintéticos: cómo imitan a los reales y cuánto se parecen.
                     </p>
                 </div>
 
@@ -906,8 +910,11 @@ const Proyecto = () => {
                 <span className="ps-eyebrow">Modelos</span>
                 <h2>Cómo se elige el modelo de cada enfermedad</h2>
                 <p>
-                    No se asume un único algoritmo: para cada enfermedad compiten tres y se sirve el
-                    de mayor AUC en validación cruzada (5-fold). El ganador no es el mismo en las tres.
+                    No se asume un único algoritmo: para cada enfermedad compiten tres, cada uno con sus
+                    parámetros ajustados por validación cruzada anidada. Solo puede ganar quien pasa el
+                    filtro de validación: ninguna variable puede mover el riesgo al revés de su sentido
+                    clínico. Random Forest, que no admite esa restricción, no lo pasa en ninguna.
+                    (Modo simplificado; el completo, en Métricas.)
                 </p>
             </div>
 
@@ -935,12 +942,14 @@ const Proyecto = () => {
                                         </div>
                                         {board.map((row) => {
                                             const isWinner = row.model === m.best_model;
+                                            const fuera = row.pasa_filtro === false;
                                             // Barra proporcional al AUC de CV, con piso en 0.5 (azar)
                                             // para que las diferencias se aprecien sin clavar cifras.
                                             const w = Math.max(6, Math.round(((row.cv_auc_mean - 0.5) / (maxAuc - 0.5)) * 100));
                                             return (
-                                                <div className="d-flex align-items-center gap-2 mb-2" key={row.model}>
-                                                    <span className="small text-soft" style={{ width: '92px', flex: 'none' }}>{prettyModel(row.model)}</span>
+                                                <div className="d-flex align-items-center gap-2 mb-2" key={row.model}
+                                                    title={fuera ? `No pasa el filtro: ${(row.motivos || []).join('; ')}` : undefined}>
+                                                    <span className="small text-soft" style={{ width: '92px', flex: 'none', textDecoration: fuera ? 'line-through' : 'none' }}>{prettyModel(row.model)}</span>
                                                     <div className="ps-shap-track" style={{ height: '14px' }}>
                                                         <div style={{ width: `${w}%`, height: '100%', borderRadius: '7px', background: isWinner ? 'var(--accent)' : 'var(--text-faint)', opacity: isWinner ? 1 : 0.4, transition: 'width .4s ease' }} />
                                                     </div>
@@ -960,13 +969,13 @@ const Proyecto = () => {
 
             <div className="d-flex flex-wrap align-items-center justify-content-between gap-3 mt-4">
                 <p className="text-soft small mb-0" style={{ maxWidth: '52ch' }}>
-                    Cifras: AUC medio en validación cruzada (5-fold). La probabilidad del simulador es
+                    Cifras: AUC medio en validación cruzada anidada (5 pliegues). La probabilidad del simulador es
                     la salida limpia del modelo; los umbrales clínicos (ADA, ACC/AHA) van en una capa
                     aparte.
                 </p>
                 <Button as={Link} to="/metricas" variant="primary">
                     <BarChartLineFill className="me-2" />
-                    Ver el detalle por clase y la desviación
+                    Ver el detalle por clase y el modo completo
                     <ArrowRight className="ms-2" />
                 </Button>
             </div>
