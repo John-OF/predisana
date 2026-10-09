@@ -137,14 +137,14 @@ MEJOR_CASO = {"age": 18, "weight": 50, "height": 170, **_NINGUN_DX, **_MUJER_NO_
 
 COMPLETO = {"age": 40, "bmi": 30, "waist_circumference": 104, "ap_hi": 130, "ap_lo": 85,
             "total_cholesterol": 210, "hdl_cholesterol": 45, "hba1c_level": 5.6, "egfr": 90,
-            "albumin_creatinine_ratio": 10, "diabetes": 0, "hypertension": 0,
+            "albumin_creatinine_ratio": 10, "alt": 25, "diabetes": 0, "hypertension": 0,
             "high_cholesterol": 1, "heart_disease": 0, **_HOMBRE_FUMADOR}
 PEOR_COMPLETO = {"age": 90, "bmi": 60, "waist_circumference": 160, "ap_hi": 190, "ap_lo": 110,
                  "total_cholesterol": 320, "hdl_cholesterol": 25, "hba1c_level": 9, "egfr": 25,
-                 "albumin_creatinine_ratio": 800, **_TODOS_LOS_DX, **_HOMBRE_FUMADOR}
+                 "albumin_creatinine_ratio": 800, "alt": 300, **_TODOS_LOS_DX, **_HOMBRE_FUMADOR}
 MEJOR_COMPLETO = {"age": 20, "bmi": 20, "waist_circumference": 70, "ap_hi": 105, "ap_lo": 65,
                   "total_cholesterol": 150, "hdl_cholesterol": 75, "hba1c_level": 5.0, "egfr": 120,
-                  "albumin_creatinine_ratio": 4, **_NINGUN_DX, **_MUJER_NO_FUMADORA}
+                  "albumin_creatinine_ratio": 4, "alt": 10, **_NINGUN_DX, **_MUJER_NO_FUMADORA}
 
 
 @pytest.mark.parametrize("disease", list(M.ENFERMEDADES))

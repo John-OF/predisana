@@ -1,5 +1,5 @@
 import { Container, Row, Col, Card, Badge, Tab, Nav, ListGroup } from 'react-bootstrap';
-import { Droplet, HeartPulse, Heart, Funnel, GraphDownArrow, Cpu, ExclamationOctagon, ExclamationTriangle } from 'react-bootstrap-icons';
+import { Droplet, HeartPulse, Heart, Funnel, Activity, GraphDownArrow, Cpu, ExclamationOctagon, ExclamationTriangle } from 'react-bootstrap-icons';
 
 // `variables_ia` describe los modelos servidos (v2: simplificado y completo), no la
 // medicina en general: el orden sale de la media de |SHAP| sobre el test real.
@@ -73,6 +73,23 @@ const INFO_ENFERMEDADES = {
         ],
         sintomas: ["Generalmente asintomática hasta fases avanzadas.", "Hinchazón de piernas y tobillos.", "Cansancio y falta de apetito.", "Orina espumosa."],
         tratamiento: "No tiene cura, pero se puede frenar: controlar la presión y la glucosa, fármacos que protegen el riñón y evitar los que lo dañan. En la fase final, diálisis o trasplante."
+    },
+    higado: {
+        titulo: "Hígado Graso (esteatosis hepática)",
+        color: "warning",
+        definicion: "Acumulación de grasa en el hígado. Aquí se define como en las encuestas de los CDC: una elastografía (FibroScan) con un CAP de 288 dB/m o más. No separa el origen (metabólico, alcohol u otro).",
+        mortalidad: "Puede evolucionar a inflamación (esteatohepatitis), cirrosis y cáncer de hígado, y multiplica el riesgo cardiovascular.",
+        poblacion: "Es la enfermedad hepática más común: en estos datos la tiene cerca de 1 de cada 3 adultos, y casi nadie lo sabe, porque no da síntomas ni sale en un análisis de rutina.",
+        organos: ["Hígado", "Corazón y vasos", "Páncreas (resistencia a la insulina)"],
+        variables_ia: "Lo que más pesa es el IMC, seguido de la edad y el sexo (más frecuente en hombres) y de la diabetes. En el modo completo manda la cintura, seguida de la transaminasa ALT, el colesterol HDL y el IMC. El tabaco pesa muy poco y una enfermedad cardiovascular previa no cambia la estimación: en estos datos no dan señal. Es una estimación: solo una elastografía confirma la grasa.",
+        factores: [
+            "Obesidad y grasa abdominal.",
+            "Diabetes tipo 2 y resistencia a la insulina.",
+            "Colesterol HDL bajo e hipertensión.",
+            "Sedentarismo y exceso de azúcares y alcohol."
+        ],
+        sintomas: ["Generalmente asintomática.", "Cansancio y molestia en la parte alta derecha del abdomen.", "Transaminasas elevadas en un análisis.", "En fases avanzadas: ictericia e hinchazón abdominal."],
+        tratamiento: "Perder entre un 7% y un 10% del peso, dieta mediterránea, ejercicio y controlar la diabetes y los lípidos. No hay un fármaco aprobado para todos los casos."
     }
 };
 
@@ -104,6 +121,9 @@ const Educacion = () => {
                                 </Nav.Item>
                                 <Nav.Item>
                                     <Nav.Link eventKey="renal"><Funnel className="me-2" />Renal</Nav.Link>
+                                </Nav.Item>
+                                <Nav.Item>
+                                    <Nav.Link eventKey="higado"><Activity className="me-2" />Hígado graso</Nav.Link>
                                 </Nav.Item>
                             </Nav>
                         </Col>

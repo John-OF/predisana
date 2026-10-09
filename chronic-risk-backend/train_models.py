@@ -244,7 +244,8 @@ def entrenar(enfermedad, modo, tr, te, rapido):
                      "cardiovascular": "cardiopatia coronaria, angina, infarto, insuficiencia "
                                        "cardiaca o ictus autorreportados",
                      "renal": "diagnosticada, filtrado glomerular < 60 o albumina/creatinina "
-                              "en orina >= 30 mg/g"}[enfermedad],
+                              "en orina >= 30 mg/g",
+                     "higado": "esteatosis hepatica por elastografia (CAP >= 288 dB/m)"}[enfermedad],
         "n_train": int(len(y)), "n_test": int(len(yte)), "prevalencia": prevalencia,
         "best_model": ganador_fila["model"], "cv_auc": ganador_fila["cv_auc_mean"],
         # Variables que el modelo servido no usa (las restricciones las dejaron en cero):

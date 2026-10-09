@@ -217,6 +217,7 @@ INPUT_LIMITS: Dict[str, List[float]] = {
     "blood_glucose_level": [30, 700],
     "egfr": [1, 200],
     "albumin_creatinine_ratio": [0, 20000],
+    "alt": [1, 2000],
     **{b: _BINARIAS for b in ("hypertension", "heart_disease", "diabetes", "high_cholesterol")},
 }
 _PREFIJOS_ONE_HOT = ("gender_", "smoking_history_")
@@ -666,6 +667,7 @@ _NOMBRES = {
     "total_cholesterol": "el colesterol total", "hdl_cholesterol": "el colesterol HDL",
     "hba1c_level": "la HbA1c", "egfr": "el filtrado glomerular",
     "albumin_creatinine_ratio": "la albúmina en orina", "waist_circumference": "la cintura",
+    "alt": "la transaminasa ALT",
     "bmi": "el IMC",
 }
 

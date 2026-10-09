@@ -8,7 +8,7 @@ import { getMetrics, MODOS, MODO_POR_DEFECTO } from '../services/api';
 import { getLabel, getFeatureLabel, grupoOneHot } from '../utils/translations';
 import { riskBand, bandNote } from '../utils/riskBand';
 
-const DISEASES = ['diabetes', 'hipertension', 'cardiovascular', 'renal'];
+const DISEASES = ['diabetes', 'hipertension', 'cardiovascular', 'renal', 'higado'];
 
 const MODEL_LABELS = {
   logistic_regression: 'Regresión Logística',

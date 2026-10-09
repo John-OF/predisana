@@ -1,0 +1,201 @@
+{
+  "n_used": 2000,
+  "overall": 0.9084,
+  "column_shapes": 0.94,
+  "column_pair_trends": 0.8768,
+  "per_column": [
+    {
+      "column": "heart_disease",
+      "score": 0.999
+    },
+    {
+      "column": "hypertension",
+      "score": 0.996
+    },
+    {
+      "column": "diabetes",
+      "score": 0.992
+    },
+    {
+      "column": "smoking_history_current",
+      "score": 0.991
+    },
+    {
+      "column": "high_cholesterol",
+      "score": 0.985
+    },
+    {
+      "column": "smoking_history_former",
+      "score": 0.979
+    },
+    {
+      "column": "gender_Female",
+      "score": 0.977
+    },
+    {
+      "column": "gender_Male",
+      "score": 0.977
+    },
+    {
+      "column": "smoking_history_never",
+      "score": 0.97
+    },
+    {
+      "column": "hba1c_level",
+      "score": 0.958
+    },
+    {
+      "column": "age",
+      "score": 0.935
+    },
+    {
+      "column": "hdl_cholesterol",
+      "score": 0.928
+    },
+    {
+      "column": "ap_lo",
+      "score": 0.923
+    },
+    {
+      "column": "ap_hi",
+      "score": 0.914
+    },
+    {
+      "column": "total_cholesterol",
+      "score": 0.912
+    },
+    {
+      "column": "weight",
+      "score": 0.907
+    },
+    {
+      "column": "height",
+      "score": 0.899
+    },
+    {
+      "column": "bmi_autodeclarado",
+      "score": 0.894
+    },
+    {
+      "column": "bmi",
+      "score": 0.875
+    },
+    {
+      "column": "waist_circumference",
+      "score": 0.867
+    },
+    {
+      "column": "alt",
+      "score": 0.859
+    }
+  ],
+  "tstr": {
+    "n_train_real": 8674,
+    "n_train_synth": 8674,
+    "n_test_real": 2186,
+    "features": [
+      "age",
+      "gender_Female",
+      "gender_Male",
+      "smoking_history_current",
+      "smoking_history_former",
+      "bmi",
+      "waist_circumference",
+      "diabetes",
+      "hypertension",
+      "high_cholesterol",
+      "heart_disease",
+      "ap_hi",
+      "ap_lo",
+      "total_cholesterol",
+      "hdl_cholesterol",
+      "hba1c_level",
+      "alt"
+    ],
+    "models": [
+      {
+        "model": "logreg",
+        "trtr_auc": 0.8392,
+        "tstr_auc": 0.8225,
+        "ratio": 0.98
+      },
+      {
+        "model": "random_forest",
+        "trtr_auc": 0.8451,
+        "tstr_auc": 0.8295,
+        "ratio": 0.982
+      }
+    ]
+  },
+  "privacy": {
+    "median_synthetic": 1.6884,
+    "median_real_test": 1.433,
+    "ratio": 1.178,
+    "share_near_zero_synthetic": 0.0,
+    "share_near_zero_real_test": 0.0,
+    "exact_copies": 0,
+    "exact_copies_real_test": 0,
+    "n_synthetic": 8674,
+    "n_real_test": 2186
+  },
+  "corr": {
+    "features": [
+      "age",
+      "bmi",
+      "waist_circumference",
+      "alt"
+    ],
+    "real": [
+      [
+        1.0,
+        0.03,
+        0.21,
+        -0.06
+      ],
+      [
+        0.03,
+        1.0,
+        0.9,
+        0.14
+      ],
+      [
+        0.21,
+        0.9,
+        1.0,
+        0.16
+      ],
+      [
+        -0.06,
+        0.14,
+        0.16,
+        1.0
+      ]
+    ],
+    "synthetic": [
+      [
+        1.0,
+        -0.07,
+        0.09,
+        -0.04
+      ],
+      [
+        -0.07,
+        1.0,
+        0.9,
+        0.04
+      ],
+      [
+        0.09,
+        0.9,
+        1.0,
+        0.09
+      ],
+      [
+        -0.04,
+        0.04,
+        0.09,
+        1.0
+      ]
+    ]
+  }
+}

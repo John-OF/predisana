@@ -79,6 +79,7 @@ describe('etiquetas en español', () => {
 
   it('cada enfermedad servida tiene nombre propio', () => {
     expect(enfermedades).toContain('renal');
+    expect(enfermedades).toContain('higado');
     for (const d of enfermedades) {
       expect(getLabel(d)).not.toBe(d);
     }

@@ -20,7 +20,7 @@ const Home = () => {
               <p className="lead">
                 Predisana estima tu probabilidad de <strong>diabetes</strong>,{' '}
                 <strong>hipertensión</strong>, <strong>riesgo cardiovascular</strong> y{' '}
-                <strong>enfermedad renal crónica</strong> con
+                <strong>enfermedad renal crónica</strong> e <strong>hígado graso</strong> con
                 Machine Learning — y te muestra <strong>por qué</strong>, variable por
                 variable, con total transparencia.
               </p>

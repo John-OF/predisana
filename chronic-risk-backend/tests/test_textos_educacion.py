@@ -95,6 +95,22 @@ def test_renal_el_colesterol_alto_no_cambia_la_estimacion(app_module, importanci
         assert importancia[f"renal_{modo}"]["high_cholesterol"] <= 1e-12
 
 
+# ---------- higado graso ----------
+
+def test_higado_pesa_el_imc_luego_la_edad_y_el_sexo(importancia):
+    assert list(importancia["higado_simplificado"].index[:3]) == ["bmi", "age", "sexo"]
+
+
+def test_higado_completo_manda_la_cintura_luego_la_alt(importancia):
+    assert list(importancia["higado_completo"].index[:2]) == ["waist_circumference", "alt"]
+
+
+def test_higado_enfermedad_cardiovascular_previa_no_cambia_la_estimacion(app_module, importancia):
+    for modo in M.MODOS:
+        assert "heart_disease" in app_module.SIN_EFECTO[f"higado_{modo}"]
+        assert importancia[f"higado_{modo}"]["heart_disease"] <= 1e-12
+
+
 # ---------- lo que define la enfermedad no entra en el modelo ----------
 
 def test_lo_que_define_cada_enfermedad_no_entra_en_su_modelo(app_module):

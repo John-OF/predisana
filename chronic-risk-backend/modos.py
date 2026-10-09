@@ -6,7 +6,7 @@
 import numpy as np
 from sklearn.base import BaseEstimator, TransformerMixin
 
-ENFERMEDADES = ("diabetes", "hipertension", "cardiovascular", "renal")
+ENFERMEDADES = ("diabetes", "hipertension", "cardiovascular", "renal", "higado")
 MODOS = ("simplificado", "completo")
 
 # El tabaco entra como dos columnas frente a "nunca ha fumado", que es la referencia:
@@ -51,11 +51,23 @@ FEATURES = {
                                "high_cholesterol", "heart_disease", "ap_hi", "ap_lo",
                                "total_cholesterol", "hdl_cholesterol", "hba1c_level"),
     },
+    # Higado graso (esteatosis hepatica por elastografia, CAP >= 288 dB/m). Lo mide un
+    # FibroScan, que casi nadie tiene a mano: por eso el modelo es una estimacion a
+    # partir de los factores metabolicos que la causan. La ALT (transaminasa) solo
+    # entra en el completo; no define la enfermedad (la define el CAP, que no se pide).
+    "higado": {
+        "simplificado": COMUNES + ("bmi", "diabetes", "hypertension", "high_cholesterol",
+                                   "heart_disease"),
+        "completo": COMUNES + ("bmi", "waist_circumference", "diabetes", "hypertension",
+                               "high_cholesterol", "heart_disease", "ap_hi", "ap_lo",
+                               "total_cholesterol", "hdl_cholesterol", "hba1c_level", "alt"),
+    },
 }
 DEFINITORIAS = {"diabetes": ("hba1c_level", "blood_glucose_level"),
                 "hipertension": ("ap_hi", "ap_lo"),
                 "cardiovascular": (),
-                "renal": ("egfr", "albumin_creatinine_ratio")}
+                "renal": ("egfr", "albumin_creatinine_ratio"),
+                "higado": ()}
 
 # El modo simplificado lee el IMC AUTODECLARADO: es el que va a escribir el usuario,
 # y la gente se quita IMC (-0,8 de media, -1,5 con obesidad y -2,3 con un IMC de 40 o
@@ -88,7 +100,7 @@ SENTIDO = {
     "age": 1, "bmi": 1, "waist_circumference": 1, "hypertension": 1, "diabetes": 1,
     "high_cholesterol": 1, "heart_disease": 1, "ap_hi": 1, "ap_lo": 1,
     "total_cholesterol": 1, "hdl_cholesterol": -1, "hba1c_level": 1, "egfr": -1,
-    "albumin_creatinine_ratio": 1, "smoking_history_current": 1, "smoking_history_former": 1,
+    "albumin_creatinine_ratio": 1, "alt": 1, "smoking_history_current": 1, "smoking_history_former": 1,
 }
 
 # Variables muy asimetricas: el modelo las ve en escala log (1 + x). Es monotona, asi

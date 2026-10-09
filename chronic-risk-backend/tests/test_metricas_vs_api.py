@@ -33,7 +33,7 @@ HOMBRE_60_COMPLETO = {
     **{k: v for k, v in HOMBRE_60.items() if k not in ("weight", "height")},
     "bmi": 29.4, "waist_circumference": 104, "ap_hi": 138, "ap_lo": 86,
     "total_cholesterol": 200, "hdl_cholesterol": 45, "hba1c_level": 5.7, "egfr": 85,
-    "albumin_creatinine_ratio": 15,
+    "albumin_creatinine_ratio": 15, "alt": 28,
 }
 
 

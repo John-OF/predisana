@@ -25,5 +25,6 @@ export const FIELD_HINTS = {
   blood_glucose_level: { label: "70 - 99 mg/dL en ayunas", step: 1 },
   egfr: { label: "≥ 60 normal", step: 0.1 },
   albumin_creatinine_ratio: { label: "< 30 mg/g normal", step: 0.01 },
+  alt: { label: "< 35 U/L normal", step: 1 },
   default: { label: "Valor positivo", step: 1 }
 };

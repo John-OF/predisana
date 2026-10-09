@@ -18,6 +18,10 @@
 #                    una sola medicion, como en la vigilancia de los CDC: el diagnostico
 #                    clinico exige que dure mas de 3 meses. El 81% de quienes la tienen
 #                    no estaba diagnosticado.
+#     higado:        esteatosis hepatica por elastografia (FibroScan): CAP >= 288 dB/m
+#                    en una exploracion valida. Solo la miden las personas de 12 a 79
+#                    anos que se hicieron la exploracion; el objetivo es medido, no
+#                    autodeclarado. No separa causas (alcohol, virus): es "higado graso".
 #   Solo entra quien tiene la medicion que define el objetivo (HbA1c, presion; en
 #   renal, la creatinina y la orina): si no, los no diagnosticados sin analitica
 #   contarian como sanos aunque no lo sepamos.
@@ -50,7 +54,7 @@ CICLOS = {
                   "peso_examen": "WTMEC2YR", "medicacion_hta": "BPQ150"},
 }
 COMPONENTES = ("DEMO", "BMX", "BPXO", "BPQ", "DIQ", "MCQ", "SMQ", "WHQ", "GHB", "GLU",
-               "BIOPRO", "TCHOL", "HDL", "ALB_CR", "KIQ_U")
+               "BIOPRO", "TCHOL", "HDL", "ALB_CR", "KIQ_U", "LUX")
 CARDIO = ("MCQ160B", "MCQ160C", "MCQ160D", "MCQ160E", "MCQ160F")  # IC, coronaria, angina, infarto, ictus
 
 
@@ -139,6 +143,7 @@ def _ciclo(ciclo):
     out["blood_glucose_level"] = df["LBXGLU"]          # en ayunas (submuestra)
     out["egfr"] = _egfr(df["LBXSCR"], df["RIDAGEYR"], df["RIAGENDR"] == 2).round(1)
     out["albumin_creatinine_ratio"] = df["URDACT"].round(2)
+    out["alt"] = df["LBXSATSI"]                         # transaminasa ALT (U/L)
 
     # ---- Objetivos (enfermedad total); NaN = no determinable
     medicado = _si_no(df[cfg["medicacion_hta"]]).fillna(0)  # solo se pregunta a diagnosticados
@@ -159,6 +164,9 @@ def _ciclo(ciclo):
     out["obj_renal"] = np.where(
         renal_dx.isna() | out["egfr"].isna() | out["albumin_creatinine_ratio"].isna(), np.nan,
         ((renal_dx == 1) | renal_lab).astype(float))
+    # Higado graso: solo cuenta la exploracion valida (LUAXSTAT 1) con CAP medido.
+    valida = (df["LUAXSTAT"] == 1) & df["LUXCAPM"].notna()
+    out["obj_higado"] = np.where(valida, (df["LUXCAPM"] >= 288).astype(float), np.nan)
     return out
 
 
@@ -188,6 +196,12 @@ DATASETS = {
               "bmi_autodeclarado",
               "bmi", "waist_circumference", "ap_hi", "ap_lo", "total_cholesterol",
               "hdl_cholesterol", "hba1c_level", "egfr", "albumin_creatinine_ratio"],
+    "higado": ["age", "gender_Male", "gender_Female", "smoking_history_never",
+               "smoking_history_current", "smoking_history_former",
+               "diabetes", "hypertension", "high_cholesterol", "heart_disease", "weight", "height",
+               "bmi_autodeclarado",
+               "bmi", "waist_circumference", "ap_hi", "ap_lo", "total_cholesterol",
+               "hdl_cholesterol", "hba1c_level", "alt"],
 }
 
 

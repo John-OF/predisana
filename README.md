@@ -1,7 +1,7 @@
 # Predisana — riesgo de enfermedades crónicas, explicado
 
-Aplicación web full-stack que **estima el riesgo** de cuatro enfermedades crónicas
-(**diabetes, hipertensión, cardiovascular y renal crónica**) con Machine Learning y — lo más
+Aplicación web full-stack que **estima el riesgo** de cinco enfermedades crónicas
+(**diabetes, hipertensión, cardiovascular, renal crónica e hígado graso**) con Machine Learning y — lo más
 importante — **explica cada predicción**: qué variables la empujaron (SHAP), qué
 dicen los umbrales clínicos de referencia (ADA / ACC-AHA) y qué tan honestas son
 las probabilidades (calibración isotónica con curva de fiabilidad).
@@ -61,7 +61,7 @@ las probabilidades (calibración isotónica con curva de fiabilidad).
 
 ## Decisiones técnicas destacables
 
-- **Datos reales, revisados antes de entrenar**: las cuatro enfermedades salen de
+- **Datos reales, revisados antes de entrenar**: las cinco enfermedades salen de
   **NHANES 2017-2023** (la encuesta de salud de los CDC, dos ciclos, 13 000-17 000
   adultos por enfermedad). La v1 mezclaba NHANES con un CSV de Kaggle para
   cardiovascular, donde los fumadores enfermaban menos y el modelo aprendía que fumar
@@ -71,7 +71,8 @@ las probabilidades (calibración isotónica con curva de fiabilidad).
   el 15-17% de quienes tienen hipertensión y el 81% de quienes tienen enfermedad renal
   crónica no estaban diagnosticados. El objetivo los cuenta (HbA1c, glucosa en ayunas,
   presión medida, filtrado glomerular y albúmina en orina), así que el modelo estima
-  tener la enfermedad, no que te la hayan diagnosticado.
+  tener la enfermedad, no que te la hayan diagnosticado. El hígado graso es la excepción
+  que lo confirma: lo mide un FibroScan (CAP ≥ 288 dB/m), no un diagnóstico ni un análisis.
 - **Lo que define la enfermedad no entra al modelo**: con la HbA1c dentro, un modelo
   de diabetes solo reaprende el umbral diagnóstico. Esos datos se piden en el modo
   completo y los lee la capa clínica (ADA, ACC/AHA, KDIGO), que se devuelve como
@@ -107,7 +108,7 @@ las probabilidades (calibración isotónica con curva de fiabilidad).
   probabilidad— y el what-if sombrea en la curva el tramo sin respaldo.
 - **Capa de datos agnóstica al motor** (SQLAlchemy): SQLite en dev, Postgres en
   producción cambiando solo `DATABASE_URL`.
-- **607 tests de pytest** sobre los invariantes delicados: signos clínicos de los
+- **695 tests de pytest** sobre los invariantes delicados: signos clínicos de los
   modelos servidos, que `/metricas` publique lo que la API hace, calibración, capa
   clínica, avisos, laboratorio sintético y auth del admin.
 
@@ -145,7 +146,7 @@ Monorepo con dos componentes:
 | `/simulacion` | El simulador: formulario → riesgo + SHAP + capa clínica + what-if |
 | `/metricas` | Por enfermedad y modo: leaderboard con el filtro de validación, calibración, bandas y reporte por clase |
 | `/proyecto` | Case study: historia de los datos, modelos, laboratorio sintético, stack |
-| `/educacion` | Enciclopedia breve de las cuatro enfermedades |
+| `/educacion` | Enciclopedia breve de las cinco enfermedades |
 | `/aviso` | Aviso legal / disclaimer |
 | `/admin` | Dashboard de uso (dev-only, por URL directa + token; sin link en la UI) |
 
@@ -164,7 +165,7 @@ python app.py                     # http://localhost:8000
 ```powershell
 npm install
 npm run dev              # Vite dev server (http://localhost:5173)
-npm test                 # 53 tests de Vitest (~2 s)
+npm test                 # 57 tests de Vitest (~2 s)
 ```
 
 El frontend lee `VITE_API_URL` (por defecto `http://localhost:8000`). El panel
@@ -173,7 +174,7 @@ admin requiere definir la variable de entorno `ADMIN_TOKEN` en el backend.
 **Tests del backend:**
 ```powershell
 pip install -r requirements-dev.txt
-python -m pytest         # 607 tests (BD temporal, no toca la de dev)
+python -m pytest         # 695 tests (BD temporal, no toca la de dev)
 ```
 
 **CI:** cada push y pull request a `main` corre en GitHub Actions la suite de pytest

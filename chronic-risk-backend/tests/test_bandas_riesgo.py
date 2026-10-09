@@ -92,7 +92,7 @@ def test_predict_devuelve_la_banda_y_sus_cortes(client, app_module, disease, mod
     payload = HOMBRE_68 if modo == "simplificado" else {
         **HOMBRE_68, "bmi": 35.9, "waist_circumference": 118, "ap_hi": 142, "ap_lo": 88,
         "total_cholesterol": 215, "hdl_cholesterol": 40, "hba1c_level": 6.0, "egfr": 70,
-        "albumin_creatinine_ratio": 25}
+        "albumin_creatinine_ratio": 25, "alt": 45}
     d = _predict(client, disease, payload, modo)
     assert d["risk_bands"] == client.get(f"/config/{disease}").get_json()["risk_bands"]
     assert d["risk_band"] == app_module.risk_band(disease, d["probability"])

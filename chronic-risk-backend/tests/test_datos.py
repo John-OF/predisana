@@ -78,6 +78,10 @@ def test_ninguna_variable_cambia_de_significado_entre_ciclos(datos):
 def test_la_prevalencia_crece_con_la_edad(datos):
     nombre, d = datos
     tramos = [d[d["age"].between(lo, lo + 19)]["target"].mean() for lo in (20, 40, 60)]
+    if nombre == "higado":
+        # La grasa en el higado sube hasta los 40 y se queda en una meseta (39% y 38%).
+        assert tramos[0] < tramos[1] and tramos[2] > tramos[0] + 0.1, (nombre, tramos)
+        return
     assert tramos == sorted(tramos), (nombre, tramos)
 
 
@@ -115,6 +119,20 @@ def test_cardiovascular_empieza_a_los_20_y_las_cardiopatias_de_18_19_son_cero():
     for nombre in ("diabetes", "hipertension", "renal"):
         jovenes = _uno(nombre).query("age < 20")
         assert len(jovenes) > 100 and (jovenes["heart_disease"] == 0).all()
+
+
+def test_higado_es_cap_288_en_una_exploracion_valida():
+    """Esteatosis por elastografia (CAP >= 288 dB/m); solo entra quien tiene una
+    exploracion valida. No hay diagnostico autodeclarado: es una medicion."""
+    d = _uno("higado")
+    assert len(d) > 12000
+    assert d["target"].mean() == pytest.approx(0.335, abs=0.01)
+    assert d["alt"].dropna().between(1, 700).all()
+    # sube con el IMC y con la ALT
+    por_imc = d.groupby(pd.cut(d["bmi"], [0, 25, 30, 35, 100]), observed=True)["target"].mean()
+    assert list(por_imc) == sorted(por_imc)
+    por_alt = d.groupby(pd.qcut(d["alt"], 4), observed=True)["target"].mean()
+    assert list(por_alt) == sorted(por_alt)
 
 
 def _renal_por_analitica(d):

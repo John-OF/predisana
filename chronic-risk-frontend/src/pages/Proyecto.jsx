@@ -4,7 +4,7 @@ import { Container, Row, Col, Card, Button, Table, Badge, Accordion, Spinner, Ta
 import { getSyntheticCase, getMetrics, evaluateSyntheticCase, getSampleCase, getDistribution, getSyntheticQuality } from '../services/api';
 import { getLabel, getFeatureLabel } from '../utils/translations';
 import { riskBand } from '../utils/riskBand';
-import { Droplet, HeartPulse, Heart, Funnel, Eyedropper, Robot, Lightbulb, Magic, Stars, BarChartLineFill, ArrowRight, TrophyFill, CpuFill, ArrowUpShort, ArrowDownShort, ArrowRepeat, PatchQuestion, ClipboardCheck, ClipboardPulse, CodeSlash, Window, Github, PersonBadge } from 'react-bootstrap-icons';
+import { Droplet, HeartPulse, Heart, Funnel, Activity, Eyedropper, Robot, Lightbulb, Magic, Stars, BarChartLineFill, ArrowRight, TrophyFill, CpuFill, ArrowUpShort, ArrowDownShort, ArrowRepeat, PatchQuestion, ClipboardCheck, ClipboardPulse, CodeSlash, Window, Github, PersonBadge } from 'react-bootstrap-icons';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 // Desde la v2 todas las enfermedades salen de NHANES 2017-2023 con el mismo esquema
@@ -14,6 +14,7 @@ const DISEASE_TABS = [
     { key: 'hipertension', label: 'Hipertensión', icon: <HeartPulse className="me-2" />, variant: 'danger' },
     { key: 'cardiovascular', label: 'Cardiovascular', icon: <Heart className="me-2" />, variant: 'info' },
     { key: 'renal', label: 'Renal', icon: <Funnel className="me-2" />, variant: 'success' },
+    { key: 'higado', label: 'Hígado graso', icon: <Activity className="me-2" />, variant: 'warning' },
 ];
 
 const diseaseLabel = (key) => DISEASE_TABS.find((t) => t.key === key)?.label ?? key;
@@ -24,6 +25,7 @@ const DIST_FEATURES = {
     hipertension: ['age', 'bmi', 'ap_hi', 'waist_circumference', 'bmi_autodeclarado'],
     cardiovascular: ['age', 'bmi', 'ap_hi', 'total_cholesterol', 'egfr'],
     renal: ['age', 'egfr', 'albumin_creatinine_ratio', 'ap_hi', 'bmi_autodeclarado'],
+    higado: ['age', 'bmi', 'waist_circumference', 'alt', 'bmi_autodeclarado'],
 };
 
 // Nombres legibles de los algoritmos del leaderboard (claves que emite el backend).
@@ -71,6 +73,12 @@ const renalBadge = (egfr, acr) =>
     acr >= 30 ? <Badge bg="warning">Albuminuria</Badge> :
     <Badge bg="success">Normal</Badge>;
 
+// Transaminasa ALT: por encima de ~35 U/L (hombre ~50) se considera elevada.
+const altBadge = (alt) =>
+    alt >= 80 ? <Badge bg="danger">Muy elevada</Badge> :
+    alt >= 40 ? <Badge bg="warning">Elevada</Badge> :
+    <Badge bg="success">Normal</Badge>;
+
 const getGenderLabel = (data) => {
     if (data.gender_Male === undefined && data.gender_Female === undefined) return 'No especificado';
     if (Number(data.gender_Male) === 1) return 'Masculino';
@@ -104,6 +112,7 @@ const buildRows = (disease, d) => {
         hay('total_cholesterol', 'hdl_cholesterol') && { label: 'Colesterol total / HDL', valor: `${Math.round(d.total_cholesterol)} / ${Math.round(d.hdl_cholesterol)} mg/dL`, interp: colesterolBadge(d.total_cholesterol) },
         hay('hba1c_level') && { label: 'HbA1c', valor: `${Number(d.hba1c_level).toFixed(1)} %`, interp: hba1cBadge(d.hba1c_level) },
         hay('egfr', 'albumin_creatinine_ratio') && { label: 'Riñón (eGFR / albúmina)', valor: `${Math.round(d.egfr)} / ${Number(d.albumin_creatinine_ratio).toFixed(1)}`, interp: renalBadge(d.egfr, d.albumin_creatinine_ratio) },
+        hay('alt') && { label: 'Transaminasa ALT', valor: `${Math.round(d.alt)} U/L`, interp: altBadge(d.alt) },
         dx.length > 0 && {
             label: 'Diagnósticos previos',
             valor: dx.filter(([k]) => Number(d[k]) === 1).map(([, l]) => l).join(', ') || 'Ninguno',

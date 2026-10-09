@@ -23,6 +23,7 @@ export const LABELS_ES = {
     blood_glucose_level: "Glucosa en Ayunas (mg/dL)",
     egfr: "Filtrado Glomerular (eGFR)",
     albumin_creatinine_ratio: "Albúmina/Creatinina en Orina (mg/g)",
+    alt: "Transaminasa ALT (U/L)",
 
     // Opciones
     Male: "Masculino",
@@ -39,7 +40,8 @@ export const LABELS_ES = {
     diabetes: "Diabetes Tipo 2",
     hipertension: "Hipertensión Arterial",
     cardiovascular: "Enfermedad Cardiovascular",
-    renal: "Enfermedad Renal Crónica"
+    renal: "Enfermedad Renal Crónica",
+    higado: "Hígado Graso"
 };
 
 export const getLabel = (key) => LABELS_ES[key] || key;

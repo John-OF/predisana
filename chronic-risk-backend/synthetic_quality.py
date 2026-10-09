@@ -26,6 +26,7 @@ CORR_FEATURES = {
     "hipertension": ["age", "bmi", "waist_circumference", "ap_hi"],
     "cardiovascular": ["age", "bmi", "ap_hi", "ap_lo"],
     "renal": ["age", "bmi", "ap_hi", "egfr"],
+    "higado": ["age", "bmi", "waist_circumference", "alt"],
 }
 
 

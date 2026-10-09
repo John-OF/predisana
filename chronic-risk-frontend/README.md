@@ -50,7 +50,7 @@ npm run dev       # Vite dev server con HMR (http://localhost:5173)
 npm run build     # build de producción en dist/
 npm run preview   # sirve el build localmente para probarlo
 npm run lint      # ESLint sobre todo el proyecto
-npm test          # Vitest (53 tests, ~2 s)
+npm test          # Vitest (57 tests, ~2 s)
 npm run test:watch  # los mismos, en modo watch
 ```
 
@@ -59,7 +59,7 @@ npm run test:watch  # los mismos, en modo watch
 
 ## Tests
 
-**53 tests con Vitest + Testing Library** (`npm test`), sobre las cosas del front que
+**57 tests con Vitest + Testing Library** (`npm test`), sobre las cosas del front que
 tienen lógica de verdad:
 
 - **`ErrorBoundary`** — que un fallo de render muestre una salida en vez de dejar la
@@ -226,7 +226,7 @@ chronic-risk-frontend/
   que un fallo de una página no se lleve por delante la navegación. Su
   `key={pathname}` lo resetea al navegar; remontarlo no vuelve a pedir los chunks
   (`React.lazy` cachea el módulo ya resuelto), así que no deshace el code-splitting.
-- **Las 4 enfermedades** (`diabetes`, `hipertension`, `cardiovascular`, `renal`) son un
+- **Las 5 enfermedades** (`diabetes`, `hipertension`, `cardiovascular`, `renal`, `higado`) son un
   set cerrado declarado en `DISEASES` dentro de `Simulacion.jsx` (y `Metricas.jsx` /
   `Proyecto.jsx`, más su ficha en `Educacion.jsx`). Si se añade una nueva al backend, hay
   que añadirla aquí también: el contrato de etiquetas lo comprueba contra los modelos

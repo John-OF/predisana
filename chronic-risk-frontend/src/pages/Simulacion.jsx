@@ -16,7 +16,7 @@ import {
   ArrowRepeat, CpuFill, GraphUpArrow, PersonFill, Clipboard2PulseFill,
 } from 'react-bootstrap-icons';
 
-const DISEASES = ['diabetes', 'hipertension', 'cardiovascular', 'renal'];
+const DISEASES = ['diabetes', 'hipertension', 'cardiovascular', 'renal', 'higado'];
 
 const MODEL_LABELS = {
   logistic_regression: 'Regresión Logística',
@@ -62,6 +62,7 @@ const WHATIF_RANGOS = {
   hba1c_level: { min: 4, max: 10, step: 0.25 },
   egfr: { min: 20, max: 130, step: 5 },
   albumin_creatinine_ratio: { min: 0, max: 300, step: 10 },
+  alt: { min: 5, max: 150, step: 5 },
 };
 
 // La clave `diabetes` ya existe en LABELS_ES como NOMBRE de enfermedad (la
@@ -91,6 +92,7 @@ const VARIABLE_DESCRIPTIONS = {
   blood_glucose_level: "Glucosa en sangre tras 8 horas sin comer. Lo normal: 70 a 99 mg/dL.",
   egfr: "Filtrado glomerular estimado: cuánto filtran los riñones (mL/min/1,73 m²). Por debajo de 60, enfermedad renal.",
   albumin_creatinine_ratio: "Albúmina en orina frente a creatinina (mg/g). Por encima de 30, daño renal.",
+  alt: "Alanina aminotransferasa (U/L): una enzima del hígado. Sube cuando el hígado está inflamado o con grasa.",
   default: "Variable clínica utilizada por la Inteligencia Artificial."
 };
 
@@ -123,6 +125,7 @@ const SHAP_LABELS_ES = {
   hba1c_level: "HbA1c",
   egfr: "Filtrado Glomerular",
   albumin_creatinine_ratio: "Albúmina en Orina",
+  alt: "Transaminasa ALT",
   smoking_history_current: "Tabaquismo: Actual",
   smoking_history_former: "Tabaquismo: Exfumador",
   gender_Male: "Sexo: Masculino",
