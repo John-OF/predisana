@@ -22,7 +22,7 @@
     "alt"
   ],
   "definitorias": [],
-  "objetivo": "esteatosis hepatica por elastografia (CAP >= 288 dB/m)",
+  "objetivo": "esteatosis hepática por elastografía (CAP ≥ 288 dB/m)",
   "n_train": 8892,
   "n_test": 2232,
   "prevalencia": 0.33771929824561403,

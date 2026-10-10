@@ -17,7 +17,7 @@
     "hba1c_level",
     "blood_glucose_level"
   ],
-  "objetivo": "diagnosticada, HbA1c >= 6,5% o glucosa en ayunas >= 126 mg/dL",
+  "objetivo": "diagnosticada, HbA1c ≥ 6,5 % o glucosa en ayunas ≥ 126 mg/dL",
   "n_train": 11016,
   "n_test": 2749,
   "prevalencia": 0.18654684095860566,

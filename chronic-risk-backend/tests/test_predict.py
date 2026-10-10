@@ -152,9 +152,9 @@ def test_presion_alta_genera_flag_acc_aha(client, perfil_diabetes):
 
 def test_la_diastolica_tambien_cuenta(client, perfil_diabetes):
     """El objetivo de hipertension es >= 140/90: con solo la sistolica, un 132/95 salia
-    como grado 1."""
+    como estadio 1."""
     d = _predict(client, "hipertension", {**perfil_diabetes, "diabetes": 0, "ap_hi": 132, "ap_lo": 95})
-    assert _flags(d, "blood_pressure")[0]["category"] == "hipertension_grado_2"
+    assert _flags(d, "blood_pressure")[0]["category"] == "hipertension_estadio_2"
 
 def test_valores_normales_sin_flags(client, perfil_diabetes):
     d = _predict(client, "diabetes", {**perfil_diabetes, "blood_glucose_level": 90, "hba1c_level": 5.2})

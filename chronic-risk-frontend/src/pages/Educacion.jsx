@@ -79,7 +79,7 @@ const INFO_ENFERMEDADES = {
         color: "warning",
         definicion: "Acumulación de grasa en el hígado. Aquí se define como en las encuestas de los CDC: una elastografía (FibroScan) con un CAP de 288 dB/m o más. No separa el origen (metabólico, alcohol u otro).",
         mortalidad: "Puede evolucionar a inflamación (esteatohepatitis), cirrosis y cáncer de hígado, y multiplica el riesgo cardiovascular.",
-        poblacion: "Es la enfermedad hepática más común: en estos datos la tiene cerca de 1 de cada 3 adultos, y casi nadie lo sabe, porque no da síntomas ni sale en un análisis de rutina.",
+        poblacion: "Es la enfermedad hepática más común: en estos datos la tiene cerca de 1 de cada 3 adultos. Suele pasar inadvertida, porque no da síntomas y las transaminasas pueden salir normales.",
         organos: ["Hígado", "Corazón y vasos", "Páncreas (resistencia a la insulina)"],
         variables_ia: "Lo que más pesa es el IMC, seguido de la edad y el sexo (más frecuente en hombres) y de la diabetes. En el modo completo manda la cintura, seguida de la transaminasa ALT, el colesterol HDL y el IMC. El tabaco pesa muy poco y una enfermedad cardiovascular previa no cambia la estimación: en estos datos no dan señal. Es una estimación: solo una elastografía confirma la grasa.",
         factores: [

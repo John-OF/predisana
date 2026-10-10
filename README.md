@@ -165,7 +165,7 @@ python app.py                     # http://localhost:8000
 ```powershell
 npm install
 npm run dev              # Vite dev server (http://localhost:5173)
-npm test                 # 57 tests de Vitest (~2 s)
+npm test                 # 58 tests de Vitest (~2 s)
 ```
 
 El frontend lee `VITE_API_URL` (por defecto `http://localhost:8000`). El panel
@@ -199,9 +199,9 @@ Orden de ejecución:
    de IMC ≥ 35 y la regla de laboratorio que define el objetivo (ver el README del
    backend). Queda abierto, y es menor: la edad se relaciona menos con la sistólica y el
    filtrado glomerular que en el real.
-2. **Revisión de corrección** — repasar lo que el sistema afirma (textos de
-   Educación, avisos clínicos, what-if, bandas) en las cinco enfermedades, y probar la
-   app en el navegador, también en móvil.
+2. **Revisión de corrección** — hecha (2026-10-09): textos de todas las páginas contra
+   los modelos servidos, barrido de la API (10 modelos, 200 casos virtuales, what-if),
+   flujo completo en el navegador y vista móvil a 390 px.
 3. **Despliegue gratuito** — frontend en Vercel (ya tiene `vercel.json`), backend en un
    plan gratuito con Postgres gratuito (SQLite no sirve si el disco se borra en cada
    despliegue), con `CORS_ORIGINS` y `ADMIN_TOKEN` en variables de entorno. Hay que

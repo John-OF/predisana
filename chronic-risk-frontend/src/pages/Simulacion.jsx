@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Container, Row, Col, Form, Button, Alert, Nav, Spinner, OverlayTrigger, Tooltip } from 'react-bootstrap';
 import { getConfig, predictRisk, getSyntheticCase, getWhatIf, MODOS, MODO_POR_DEFECTO } from '../services/api';
 import { getLabel } from '../utils/translations';
-import { riskBand, bandNote } from '../utils/riskBand';
+import { riskBand, bandNote, pctRiesgo } from '../utils/riskBand';
 import { FIELD_HINTS } from '../utils/fieldHints';
 import AvisoSoporte from '../components/AvisoSoporte';
 import Swal from 'sweetalert2';
@@ -37,7 +37,7 @@ const MODE_COPY = {
   },
   completo: {
     icon: Clipboard2PulseFill,
-    desc: 'Para personal sanitario: añade medidas y análisis (IMC medido, cintura, presión, colesterol, función renal).',
+    desc: 'Para personal sanitario: añade medidas y análisis (IMC medido, cintura, presión, colesterol y otros, según la enfermedad).',
     optional: (guias) => `No cambian la estimación: o definen la enfermedad (lo dice la guía, sin necesidad de un modelo) o el modelo no encuentra en ellos señal. Se interpretan aparte con las guías${guias ? ` (${guias})` : ''}.`,
   },
 };
@@ -132,6 +132,9 @@ const SHAP_LABELS_ES = {
   gender_Female: "Sexo: Femenino",
 };
 
+// "Transaminasa ALT" -> "transaminasa ALT": toLowerCase() dejaba "imc" y "alt".
+const minusculaInicial = (texto) => texto.charAt(0).toLowerCase() + texto.slice(1);
+
 const labelES = (feat) => {
   const key = String(feat || "").trim().replace(/\s+/g, "_");
   return SHAP_LABELS_ES[key] || FIELD_LABEL_OVERRIDES[key] || getLabel(feat) || feat;
@@ -154,7 +157,7 @@ const Gauge = ({ pct, band }) => {
           />
         </svg>
         <div className="ps-gauge-num">
-          <b>{pct.toFixed(0)}%</b>
+          <b>{pctRiesgo(pct)}</b>
           <span>Riesgo estimado</span>
         </div>
       </div>
@@ -171,6 +174,8 @@ const Simulacion = () => {
   const [loading, setLoading] = useState(false);
 
   const [currentResult, setCurrentResult] = useState(null);
+  // En móvil el resultado queda debajo de un formulario largo: al calcular se lleva ahí.
+  const resultadoRef = useRef(null);
   const [baseResult, setBaseResult] = useState(null);
   const [error, setError] = useState(null);
 
@@ -255,7 +260,8 @@ const Simulacion = () => {
     const { name, value, type } = e.target;
     if (currentResult && !baseResult) { setCurrentResult(null); resetWhatIf(); }
 
-    if (type === 'number') {
+    // Los sí/no van en un select pero viajan como número, igual que los demás campos.
+    if (type === 'number' || e.target.dataset.binaria) {
       if (value === '') {
         setFormData(prev => ({ ...prev, [name]: '' }));
         return;
@@ -295,6 +301,9 @@ const Simulacion = () => {
       const { data } = await predictRisk(selectedDisease, payload, selectedMode);
       setCurrentResult(data);
       resetWhatIf();
+      if (window.matchMedia?.('(max-width: 991px)').matches) {
+        setTimeout(() => resultadoRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+      }
     } catch (err) {
       console.error(err);
       if (err?.response?.status === 429) {
@@ -317,7 +326,8 @@ const Simulacion = () => {
     Swal.fire({
       icon: 'success',
       title: 'Escenario base fijado',
-      text: 'Ahora modifica las variables (ej. baja el IMC) y vuelve a calcular.',
+      // En el simplificado no hay campo de IMC: sale del peso y la talla.
+      text: `Ahora modifica las variables (p. ej., baja ${selectedMode === 'simplificado' ? 'el peso' : 'el IMC'}) y vuelve a calcular.`,
     });
   };
 
@@ -331,6 +341,30 @@ const Simulacion = () => {
   const renderNumberInput = (feat, aparte = false) => {
     const hint = FIELD_HINTS[feat] || FIELD_HINTS.default;
     const [min, max] = config.ranges?.[feat] || [];
+    // Un diagnóstico previo es un sí/no: con un campo numérico se pedía un "1".
+    if (min === 0 && max === 1) {
+      return (
+        <Form.Group className="ps-field" key={feat}>
+          <Form.Label className="d-flex align-items-center justify-content-between">
+            <span>
+              {FIELD_LABEL_OVERRIDES[feat] || getLabel(feat)}<InfoIcon variableKey={feat} />
+              {aparte && <span className="ps-tag ms-2" style={{ background: 'var(--surface-2)', fontSize: '.68rem' }}>opcional</span>}
+            </span>
+          </Form.Label>
+          <Form.Select name={feat} data-binaria="1" required={!aparte}
+            value={formData[feat] !== undefined ? String(formData[feat]) : ''} onChange={handleChange}>
+            <option value="">{aparte ? 'Sin respuesta' : 'Elige…'}</option>
+            <option value="0">No</option>
+            <option value="1">Sí</option>
+          </Form.Select>
+          {aparte && (
+            <Form.Text className="text-faint d-block text-end small">
+              No cambia la estimación: el modelo no le da peso
+            </Form.Text>
+          )}
+        </Form.Group>
+      );
+    }
     return (
       <Form.Group className="ps-field" key={feat}>
         <Form.Label className="d-flex align-items-center justify-content-between">
@@ -369,18 +403,25 @@ const Simulacion = () => {
       Base: (baseResult.probability * 100).toFixed(1),
       Nuevo: (currentResult.probability * 100).toFixed(1),
     }];
-    const diff = (currentResult.probability * 100) - (baseResult.probability * 100);
+    // Redondeados antes de restar: si no, "de 20,3% a 16,1%" salía como 4,3 puntos.
+    const antes = Number((baseResult.probability * 100).toFixed(1));
+    const ahora = Number((currentResult.probability * 100).toFixed(1));
+    // En puntos porcentuales, no en %: de 30% a 25% son 5 puntos (un 17% menos).
+    const diff = Number((ahora - antes).toFixed(1));
     const isImprovement = diff < 0;
+    const tramo = `de ${antes.toFixed(1)}% a ${ahora.toFixed(1)}%`;
 
     return (
       <div className="mt-4">
         <hr style={{ borderColor: 'var(--border)' }} />
         <h5 className="mb-3"><BarChartSteps className="me-2" />Comparativa de escenarios</h5>
-        <Alert variant={isImprovement ? 'success' : 'warning'}>
+        <Alert variant={diff === 0 ? 'secondary' : isImprovement ? 'success' : 'warning'}>
           <strong>Conclusión: </strong>
-          {isImprovement
-            ? `Con estos cambios, tu riesgo estimado se reduciría un ${Math.abs(diff).toFixed(1)} %.`
-            : `Estos cambios aumentarían tu riesgo estimado en un ${Math.abs(diff).toFixed(1)} %.`}
+          {diff === 0
+            ? `Estos cambios no mueven tu riesgo estimado (${ahora.toFixed(1)}%).`
+            : isImprovement
+              ? `Con estos cambios, tu riesgo estimado bajaría ${Math.abs(diff).toFixed(1)} puntos (${tramo}).`
+              : `Estos cambios subirían tu riesgo estimado ${Math.abs(diff).toFixed(1)} puntos (${tramo}).`}
         </Alert>
         <div style={{ width: '100%', height: 230 }}>
           <ResponsiveContainer>
@@ -547,10 +588,13 @@ const Simulacion = () => {
           </div>
           {/* Fuera del div de altura fija del grafico: dentro se solapaba con el
               boton de comparar y el aviso se leia a medias. */}
-          {whatIf.supported && (
+          {/* Solo si la curva se sale de verdad del rango entrenado: si no, no hay zona
+              sombreada que explicar. */}
+          {whatIf.supported && whatIf.curve.length > 0 && (whatIf.curve[0].value < whatIf.supported[0]
+            || whatIf.curve[whatIf.curve.length - 1].value > whatIf.supported[1]) && (
             <p className="text-secondary small mt-2 mb-0">
               Zona sombreada: fuera de los datos de entrenamiento
-              ({labelES(whatIf.feature).toLowerCase()} de {whatIf.supported[0]} a {whatIf.supported[1]}).
+              ({minusculaInicial(labelES(whatIf.feature))} de {whatIf.supported[0]} a {whatIf.supported[1]}).
               {whatIf.topcoded != null
                 ? ` En estos datos todo el que pasa de ${whatIf.topcoded} figura como ${whatIf.topcoded}: el modelo sí vio casos así, pero agrupados, y por encima la curva prolonga la tendencia.`
                 : ' Ahí la curva es una extrapolación.'}
@@ -668,7 +712,7 @@ const Simulacion = () => {
 
               {baseResult && (
                 <Alert variant="info" className="py-2 mb-4">
-                  <small><strong>Modo comparación:</strong> modifica los valores (ej. reduce el IMC) y recalcula para ver el impacto.</small>
+                  <small><strong>Modo comparación:</strong> modifica los valores (p. ej., {selectedMode === 'simplificado' ? 'el peso' : 'el IMC'}) y recalcula para ver el impacto.</small>
                 </Alert>
               )}
 
@@ -713,7 +757,7 @@ const Simulacion = () => {
             </div>
 
             {/* DERECHA: RESULTADO */}
-            <div className="ps-card">
+            <div className="ps-card" ref={resultadoRef} style={{ scrollMarginTop: '80px' }}>
               {!currentResult && !baseResult && (
                 <div className="text-center text-faint py-5">
                   <HeartPulse size={56} style={{ color: 'var(--accent)', opacity: .55 }} />

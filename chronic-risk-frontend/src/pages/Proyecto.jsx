@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Container, Row, Col, Card, Button, Table, Badge, Accordion, Spinner, Tabs, Tab } from 'react-bootstrap';
 import { getSyntheticCase, getMetrics, evaluateSyntheticCase, getSampleCase, getDistribution, getSyntheticQuality } from '../services/api';
 import { getLabel, getFeatureLabel } from '../utils/translations';
-import { riskBand } from '../utils/riskBand';
+import { riskBand, pctRiesgo } from '../utils/riskBand';
 import { Droplet, HeartPulse, Heart, Funnel, Activity, Eyedropper, Robot, Lightbulb, Magic, Stars, BarChartLineFill, ArrowRight, TrophyFill, CpuFill, ArrowUpShort, ArrowDownShort, ArrowRepeat, PatchQuestion, ClipboardCheck, ClipboardPulse, CodeSlash, Window, Github, PersonBadge } from 'react-bootstrap-icons';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
@@ -231,7 +231,7 @@ const Proyecto = () => {
                         <div className="d-flex align-items-center gap-3">
                             <div>
                                 <div className="text-faint" style={{ fontSize: '.74rem', textTransform: 'uppercase', letterSpacing: '.05em', fontWeight: 600 }}>Riesgo estimado</div>
-                                <div style={{ fontFamily: 'var(--font-display)', fontSize: '2.1rem', lineHeight: 1.1, color: band.color }}>{pct.toFixed(0)}%</div>
+                                <div style={{ fontFamily: 'var(--font-display)', fontSize: '2.1rem', lineHeight: 1.1, color: band.color }}>{pctRiesgo(pct)}</div>
                             </div>
                             <span className="ps-risk-pill" style={{ background: band.bg, color: band.color }}>{band.label}</span>
                         </div>
@@ -494,7 +494,7 @@ const Proyecto = () => {
             <div className="text-center mb-4">
                 <p className="text-muted">
                     Tres preguntas distintas sobre el sintético: si <strong>se parece</strong> al real
-                    (fidelidad), si <strong>sirve</strong> para entrenar (utilidad) y si <strong>no copia</strong>
+                    (fidelidad), si <strong>sirve</strong> para entrenar (utilidad) y si <strong>no copia</strong>{' '}
                     a nadie (privacidad). La primera es la fácil; las otras dos son las que mira un revisor.
                 </p>
                 <div className="d-flex gap-2 justify-content-center flex-wrap">
@@ -563,7 +563,7 @@ const Proyecto = () => {
                                 <h5 className="mb-1">¿Sirve para entrenar? (TSTR)</h5>
                                 <p className="text-soft small mb-3">
                                     Se entrena un modelo <strong>solo con datos sintéticos</strong> y se evalúa
-                                    contra <strong>pacientes reales que nunca vio nadie</strong>. Al lado, el mismo
+                                    contra <strong>pacientes reales que ningún modelo vio al entrenar</strong>. Al lado, el mismo
                                     modelo entrenado con datos reales sobre ese mismo test. Si el sintético fuera
                                     ruido bonito, la barra de abajo se hundiría.
                                 </p>
@@ -633,9 +633,18 @@ const Proyecto = () => {
                                     </Col>
                                 </Row>
                                 <p className="text-faint small mt-3 mb-0">
-                                    El sintético queda <strong>{qualData.privacy.ratio}x más lejos</strong> de los
-                                    datos de entrenamiento que el propio test real: se parece a los reales
-                                    <em> menos</em> de lo que se parecen entre sí dos muestras reales.
+                                    {qualData.privacy.ratio >= 1 ? (
+                                        <>
+                                            El sintético dista de los datos de entrenamiento <strong>{qualData.privacy.ratio} veces</strong> lo
+                                            que dista el propio test real: no se parece a los reales <em>más</em> de lo
+                                            que se parecen entre sí dos muestras reales.
+                                        </>
+                                    ) : (
+                                        <>
+                                            Ojo: el sintético queda <strong>más cerca</strong> de los datos de entrenamiento
+                                            que el propio test real ({qualData.privacy.ratio} veces su distancia).
+                                        </>
+                                    )}
                                     {qualData.privacy.exact_copies_real_test > 0 && (
                                         <>
                                             {' '}Las coincidencias exactas tampoco son señal de copia aquí: entre los
@@ -667,6 +676,10 @@ const Proyecto = () => {
 
                     <p className="text-faint small text-center mt-3">
                         Calculado con SDMetrics sobre {qualData.n_used?.toLocaleString()} filas submuestreadas de cada conjunto.
+                        Parte de este parecido es por construcción, no aprendido por la GAN: las proporciones
+                        de lo categórico, la obesidad grave, el tope de edad 80 y la regla de laboratorio que
+                        define la enfermedad se imponen al elegir las fichas, y las relaciones más fuertes
+                        (peso e IMC, cintura, presión) se reconstruyen con una recta del real.
                     </p>
                 </>
             )}
@@ -695,7 +708,7 @@ const Proyecto = () => {
                 <span className="ps-eyebrow">Los datos</span>
                 <h2>De dónde salen los datos</h2>
                 <p>
-                    Las cuatro enfermedades salen de <strong>NHANES 2017-2023</strong>, la encuesta de salud
+                    Las cinco enfermedades salen de <strong>NHANES 2017-2023</strong>, la encuesta de salud
                     de los CDC con examen físico y laboratorio. Antes de entrenar se revisan y limpian los
                     datos: fuera las embarazadas, un «no sabe» cuenta como dato faltante y no como un «no»,
                     y fuera las variables cuyo cuestionario cambió entre ciclos.
@@ -703,7 +716,7 @@ const Proyecto = () => {
             </div>
 
             <Row className="g-3 mb-5">
-                <Col md={6} xl={3}>
+                <Col md={6} lg={4}>
                     <Card className="h-100 ps-card-hover">
                         <Card.Body>
                             <div className="d-flex align-items-center mb-2 fw-bold text-primary">
@@ -721,7 +734,7 @@ const Proyecto = () => {
                         </Card.Body>
                     </Card>
                 </Col>
-                <Col md={6} xl={3}>
+                <Col md={6} lg={4}>
                     <Card className="h-100 ps-card-hover">
                         <Card.Body>
                             <div className="d-flex align-items-center mb-2 fw-bold text-danger">
@@ -738,7 +751,7 @@ const Proyecto = () => {
                         </Card.Body>
                     </Card>
                 </Col>
-                <Col md={6} xl={3}>
+                <Col md={6} lg={4}>
                     <Card className="h-100 ps-card-hover">
                         <Card.Body>
                             <div className="d-flex align-items-center mb-2 fw-bold text-info">
@@ -756,7 +769,7 @@ const Proyecto = () => {
                         </Card.Body>
                     </Card>
                 </Col>
-                <Col md={6} xl={3}>
+                <Col md={6} lg={4}>
                     <Card className="h-100 ps-card-hover">
                         <Card.Body>
                             <div className="d-flex align-items-center mb-2 fw-bold text-success">
@@ -771,6 +784,24 @@ const Proyecto = () => {
                                 Transparencia: el filtrado y la albúmina <strong>no</strong> son variables del
                                 modelo: definen la enfermedad. Si se aportan, las interpreta la guía (KDIGO), que
                                 pide además que se mantengan 3 meses.
+                            </p>
+                        </Card.Body>
+                    </Card>
+                </Col>
+                <Col md={6} lg={4}>
+                    <Card className="h-100 ps-card-hover">
+                        <Card.Body>
+                            <div className="d-flex align-items-center mb-2 fw-bold text-warning">
+                                <Activity className="me-2" />Hígado graso
+                            </div>
+                            <p className="text-soft small mb-2">
+                                <strong>13 292</strong> adultos con una elastografía (FibroScan) válida. Se estima
+                                el hígado graso medido: CAP ≥ 288 dB/m (34%). No separa la causa (alcohol u otras).
+                            </p>
+                            <p className="text-faint small mb-0">
+                                Transparencia: lo que lo define, el CAP, casi nadie lo tiene a mano, así que no se
+                                pide: el modelo lo estima con los factores metabólicos y, en el completo, la
+                                transaminasa ALT. Solo una elastografía lo confirma.
                             </p>
                         </Card.Body>
                     </Card>
@@ -799,7 +830,8 @@ const Proyecto = () => {
                             <Accordion.Body>
                                 Son registros médicos generados artificialmente que imitan fielmente las estadísticas
                                 (promedios, correlaciones) de los pacientes reales, pero no corresponden a ninguna persona física.
-                                Esto permite investigar sin riesgos éticos.
+                                Así se puede compartir y experimentar con mucho menos riesgo para la privacidad, siempre que
+                                se compruebe que no copian a nadie (pestaña Calidad).
                             </Accordion.Body>
                         </Accordion.Item>
                         <Accordion.Item eventKey="1">
@@ -959,7 +991,7 @@ const Proyecto = () => {
                         const board = m?.leaderboard || [];
                         const maxAuc = Math.max(...board.map((r) => r.cv_auc_mean || 0), 0.5001);
                         return (
-                            <Col md={6} xl={3} key={key}>
+                            <Col md={6} lg={4} key={key}>
                                 <Card className="h-100 ps-card-hover">
                                     <Card.Body>
                                         <div className="d-flex align-items-center justify-content-between mb-3">
@@ -1000,7 +1032,7 @@ const Proyecto = () => {
             <div className="d-flex flex-wrap align-items-center justify-content-between gap-3 mt-4">
                 <p className="text-soft small mb-0" style={{ maxWidth: '52ch' }}>
                     Cifras: AUC medio en validación cruzada anidada (5 pliegues). La probabilidad del simulador es
-                    la salida limpia del modelo; los umbrales clínicos (ADA, ACC/AHA) van en una capa
+                    la del modelo, calibrada; los umbrales clínicos (ADA, ACC/AHA, KDIGO) van en una capa
                     aparte.
                 </p>
                 <Button as={Link} to="/metricas" variant="primary">
@@ -1017,8 +1049,8 @@ const Proyecto = () => {
                 <span className="ps-eyebrow">Interpretación</span>
                 <h2>El modelo no se mezcla con el criterio clínico</h2>
                 <p>
-                    La probabilidad que ves es la salida limpia del modelo — la misma que respalda
-                    el AUC publicado. Los umbrales diagnósticos van en una capa aparte, etiquetada.
+                    La probabilidad que ves es la del modelo, calibrada sin cambiar su orden: el AUC
+                    publicado es el suyo. Los umbrales diagnósticos van en una capa aparte, etiquetada.
                 </p>
             </div>
 
@@ -1028,9 +1060,10 @@ const Proyecto = () => {
                         <Card.Body>
                             <h5 className="d-flex align-items-center"><CpuFill className="me-2 text-primary" />La probabilidad del modelo</h5>
                             <p className="text-soft small mb-0">
-                                Sin retoques ni "pisos" artificiales: lo que el modelo calcula es lo
-                                que se muestra y lo que SHAP explica. Así el número es auditable y
-                                coherente con las métricas de validación.
+                                Sin retoques ni "pisos" artificiales: solo una calibración isotónica,
+                                para que un 30% signifique de verdad un 30%, que no cambia el orden de
+                                los casos (el AUC es el mismo). SHAP explica la salida del modelo antes
+                                de calibrar. Así el número es auditable y coherente con las métricas.
                             </p>
                         </Card.Body>
                     </Card>
@@ -1046,9 +1079,9 @@ const Proyecto = () => {
                             <div className="ps-clinic">
                                 <p className="mb-0">
                                     Glucosa y HbA1c según <strong>ADA</strong>; presión arterial
-                                    según <strong>ACC/AHA</strong>.
+                                    según <strong>ACC/AHA</strong>; función renal según <strong>KDIGO</strong>.
                                 </p>
-                                <div className="ref">ADA · ACC/AHA</div>
+                                <div className="ref">ADA · ACC/AHA · KDIGO</div>
                             </div>
                         </Card.Body>
                     </Card>

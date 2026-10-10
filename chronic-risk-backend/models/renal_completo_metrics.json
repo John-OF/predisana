@@ -24,7 +24,7 @@
     "egfr",
     "albumin_creatinine_ratio"
   ],
-  "objetivo": "diagnosticada, filtrado glomerular < 60 o albumina/creatinina en orina >= 30 mg/g",
+  "objetivo": "diagnosticada, filtrado glomerular < 60 o albúmina/creatinina en orina ≥ 30 mg/g",
   "n_train": 9744,
   "n_test": 2419,
   "prevalencia": 0.17867405582922824,

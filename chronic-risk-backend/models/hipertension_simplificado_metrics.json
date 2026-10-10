@@ -17,7 +17,7 @@
     "ap_hi",
     "ap_lo"
   ],
-  "objetivo": "diagnosticada, >= 140/90 mmHg medida o medicacion",
+  "objetivo": "diagnosticada, ≥ 140/90 mmHg medida o con medicación",
   "n_train": 10811,
   "n_test": 2709,
   "prevalencia": 0.44112478031634444,

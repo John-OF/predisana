@@ -55,7 +55,13 @@ export const grupoOneHot = (feature) =>
 
 /** Etiqueta de una columna del modelo: las one-hot se leen como grupo y opción
  * ("Tabaquismo: Exfumador"); getLabel las dejaba con su clave cruda. */
+// `diabetes` es a la vez el NOMBRE de una enfermedad ("Diabetes Tipo 2") y, como
+// variable de los otros modelos, el diagnostico previo: Metricas y el laboratorio
+// listaban "Diabetes Tipo 2" entre las variables del modelo de higado graso.
+const COMO_VARIABLE = { diabetes: 'Diabetes Previa' };
+
 export const getFeatureLabel = (feature) => {
     const grupo = grupoOneHot(feature);
-    return grupo ? `${getLabel(grupo)}: ${getLabel(feature.slice(grupo.length + 1))}` : getLabel(feature);
+    if (grupo) return `${getLabel(grupo)}: ${getLabel(feature.slice(grupo.length + 1))}`;
+    return COMO_VARIABLE[feature] ?? getLabel(feature);
 };

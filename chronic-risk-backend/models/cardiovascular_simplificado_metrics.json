@@ -14,7 +14,7 @@
     "high_cholesterol"
   ],
   "definitorias": [],
-  "objetivo": "cardiopatia coronaria, angina, infarto, insuficiencia cardiaca o ictus autorreportados",
+  "objetivo": "cardiopatía coronaria, angina, infarto, insuficiencia cardíaca o ictus autorreportados",
   "n_train": 12937,
   "n_test": 3249,
   "prevalencia": 0.12754116101105356,

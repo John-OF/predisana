@@ -4,7 +4,16 @@
 // diabetes del 31,8% (mas del doble de la media) salia como "Riesgo bajo".
 import { describe, it, expect } from 'vitest';
 
-import { riskBand, bandNote } from './riskBand';
+import { riskBand, bandNote, pctRiesgo } from './riskBand';
+
+describe('pctRiesgo', () => {
+  it('no muestra un riesgo de 0% ni de 100%', () => {
+    expect(pctRiesgo(0.2)).toBe('<1%');
+    expect(pctRiesgo(99.6)).toBe('>99%');
+    expect(pctRiesgo(33.5)).toBe('34%');
+    expect(pctRiesgo(1)).toBe('1%');
+  });
+});
 
 describe('riskBand', () => {
   it('pinta la banda que decide el backend, no la de los tercios', () => {

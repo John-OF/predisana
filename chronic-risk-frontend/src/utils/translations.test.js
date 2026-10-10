@@ -75,6 +75,9 @@ describe('etiquetas en español', () => {
     expect(getFeatureLabel('gender_Male')).toBe('Sexo: Masculino');
     expect(getFeatureLabel('bmi_autodeclarado')).toBe('IMC autodeclarado');
     expect(getFeatureLabel('age')).toBe('Edad');
+    // Como variable, la diabetes es el diagnostico previo, no la enfermedad.
+    expect(getFeatureLabel('diabetes')).toBe('Diabetes Previa');
+    expect(getLabel('diabetes')).toBe('Diabetes Tipo 2');
   });
 
   it('cada enfermedad servida tiene nombre propio', () => {

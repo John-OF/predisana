@@ -63,8 +63,8 @@ def test_flags_hba1c_ada(app_module, hba1c, categoria):
 
 @pytest.mark.parametrize("sistolica,categoria", [
     (185, "crisis_hipertensiva"),
-    (150, "hipertension_grado_2"),
-    (135, "hipertension_grado_1"),
+    (150, "hipertension_estadio_2"),
+    (135, "hipertension_estadio_1"),
     (125, "presion_elevada"),
     (110, None),
 ])
@@ -93,9 +93,9 @@ def test_safe_get_ausente(app_module):
 # ---------- presion: manda la mas alta de las dos (v2) ----------
 
 @pytest.mark.parametrize("sistolica,diastolica,categoria", [
-    (132, 95, "hipertension_grado_2"),   # el objetivo de hipertension es >= 140/90
-    (118, 85, "hipertension_grado_1"),
-    (0, 92, "hipertension_grado_2"),     # solo la diastolica
+    (132, 95, "hipertension_estadio_2"),   # el objetivo de hipertension es >= 140/90
+    (118, 85, "hipertension_estadio_1"),
+    (0, 92, "hipertension_estadio_2"),     # solo la diastolica
     (125, 70, "presion_elevada"),
     (115, 75, None),
 ])

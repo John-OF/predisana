@@ -18,6 +18,15 @@ export const riskBand = (result) => {
   return pct < 66 ? BANDAS.mid : BANDAS.high;
 };
 
+/** Porcentaje de riesgo para mostrar (0-100 -> texto). Redondeado a entero, un 0,2%
+ *  salia como "0%": un riesgo nulo que ningun modelo puede prometer. */
+export const pctRiesgo = (pct) => {
+  if (!Number.isFinite(pct)) return '—';
+  if (pct < 1) return '<1%';
+  if (pct > 99) return '>99%';
+  return `${Math.round(pct)}%`;
+};
+
 const comoPorcentaje = (v) => `${(v * 100).toFixed(1).replace(/\.0$/, '').replace('.', ',')} %`;
 
 /** Frase que cuenta de donde salen los cortes (`risk_bands` de /predict), o null. */

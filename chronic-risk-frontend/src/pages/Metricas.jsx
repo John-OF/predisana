@@ -9,6 +9,8 @@ import { getLabel, getFeatureLabel, grupoOneHot } from '../utils/translations';
 import { riskBand, bandNote } from '../utils/riskBand';
 
 const DISEASES = ['diabetes', 'hipertension', 'cardiovascular', 'renal', 'higado'];
+// Guía que interpreta lo que define cada enfermedad (las que no tienen, no lo muestran).
+const GUIA_DEFINICION = { diabetes: 'ADA', hipertension: 'ACC/AHA', renal: 'KDIGO' };
 
 const MODEL_LABELS = {
   logistic_regression: 'Regresión Logística',
@@ -195,8 +197,8 @@ const Metricas = () => {
           {(metrics.sin_efecto || []).length > 0 && (
             <Alert variant="secondary" className="small mb-5">
               Las restricciones dejan sin efecto en este modelo: {metrics.sin_efecto.map(f => getFeatureLabel(f)).join(', ')}.
-              En datos de un solo momento, quien ya está diagnosticado suele estar en tratamiento (o
-              ha dejado de fumar) y no hay señal en el sentido clínico. El simulador lo avisa.
+              En estos datos no hay señal en el sentido clínico, a menudo porque son de un solo momento:
+              quien ya está diagnosticado está en tratamiento, o ha dejado de fumar. El simulador lo avisa.
             </Alert>
           )}
           {!(metrics.sin_efecto || []).length && <div className="mb-5" />}
@@ -218,10 +220,10 @@ const Metricas = () => {
                       <ScatterChart margin={{ top: 10, right: 20, bottom: 30, left: 10 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(128,128,128,0.2)" />
                         <XAxis type="number" dataKey="mean_pred" name="Prob. predicha" domain={[0, 1]}
-                          tickFormatter={(v) => v.toFixed(1)} fontSize={12}
+                          ticks={[0, 0.2, 0.4, 0.6, 0.8, 1]} tickFormatter={(v) => v.toFixed(1)} fontSize={12}
                           label={{ value: 'Probabilidad predicha', position: 'insideBottom', offset: -15, fontSize: 12 }} />
                         <YAxis type="number" dataKey="frac_pos" name="Frac. positivos" domain={[0, 1]}
-                          tickFormatter={(v) => v.toFixed(1)} fontSize={12}
+                          ticks={[0, 0.2, 0.4, 0.6, 0.8, 1]} tickFormatter={(v) => v.toFixed(1)} fontSize={12}
                           label={{ value: 'Fracción real de positivos', angle: -90, position: 'insideLeft', fontSize: 12 }} />
                         <ZAxis range={[60, 60]} />
                         <Tooltip formatter={(v) => (typeof v === 'number' ? v.toFixed(3) : v)}
@@ -334,12 +336,12 @@ const Metricas = () => {
               <div className="mt-4">
                 <h5 style={{ fontSize: '1.05rem' }}>Variables del modelo</h5>
                 <p className="text-soft small mb-0">
-                  {[...new Set(metrics.features.map(f => getLabel(grupoOneHot(f) ?? f)))].join(', ')}.
+                  {[...new Set(metrics.features.map(f => grupoOneHot(f) ? getLabel(grupoOneHot(f)) : getFeatureLabel(f)))].join(', ')}.
                 </p>
                 {(metrics.definitorias || []).length > 0 && (
                   <p className="text-faint small mt-2 mb-0">
                     No entran en el modelo porque definen la enfermedad: {metrics.definitorias.map(f => getLabel(f)).join(', ')}.
-                    Si se aportan, las interpreta la guía (ADA, ACC/AHA).
+                    Si se aportan, las interpreta la guía ({GUIA_DEFINICION[selectedDisease]}).
                   </p>
                 )}
               </div>

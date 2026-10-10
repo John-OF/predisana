@@ -19,7 +19,7 @@ const Home = () => {
               </h1>
               <p className="lead">
                 Predisana estima tu probabilidad de <strong>diabetes</strong>,{' '}
-                <strong>hipertensión</strong>, <strong>riesgo cardiovascular</strong> y{' '}
+                <strong>hipertensión</strong>, <strong>riesgo cardiovascular</strong>,{' '}
                 <strong>enfermedad renal crónica</strong> e <strong>hígado graso</strong> con
                 Machine Learning — y te muestra <strong>por qué</strong>, variable por
                 variable, con total transparencia.
@@ -84,7 +84,7 @@ const Home = () => {
                 <div className="ps-ic"><ClipboardData size={22} /></div>
                 <h3 style={{ fontSize: '1.28rem' }}>Capa clínica de referencia</h3>
                 <p className="text-soft mb-0">
-                  Interpretación apoyada en guías ADA y ACC/AHA, presentada aparte y con su
+                  Interpretación apoyada en guías ADA, ACC/AHA y KDIGO, presentada aparte y con su
                   contexto — para leer los números con criterio.
                 </p>
               </div>
@@ -108,7 +108,7 @@ const Home = () => {
                 <span className="ps-tag">1 · Datos</span>
                 <h3 style={{ fontSize: '1.2rem', margin: '12px 0 8px' }}>Datos reales, revisados</h3>
                 <p className="text-soft mb-0">
-                  Las cuatro enfermedades salen de NHANES 2017-2023 (CDC), con examen físico y
+                  Las cinco enfermedades salen de NHANES 2017-2023 (CDC), con examen físico y
                   laboratorio. Antes de entrenar se limpian, y el modo simplificado usa el peso y
                   la talla que la gente <em>declara</em>, que es lo que escribirá aquí.
                 </p>
@@ -130,9 +130,9 @@ const Home = () => {
                 <span className="ps-tag">3 · Explicación</span>
                 <h3 style={{ fontSize: '1.2rem', margin: '12px 0 8px' }}>Transparente y honesta</h3>
                 <p className="text-soft mb-0">
-                  La probabilidad mostrada es la salida limpia del modelo, explicada con SHAP.
-                  La interpretación clínica (ADA / ACC-AHA) se muestra <em>aparte</em>, sin
-                  alterar el número del modelo.
+                  La probabilidad mostrada es la del modelo, solo calibrada (sin cambiar su orden),
+                  y SHAP explica qué la movió. La interpretación clínica (ADA, ACC/AHA, KDIGO) se
+                  muestra <em>aparte</em>, sin alterar el número del modelo.
                 </p>
               </div>
             </Col>

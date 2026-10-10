@@ -577,13 +577,13 @@ def _vacio(val) -> bool:
 #   - Glucosa / HbA1c: American Diabetes Association (ADA), Standards of Care.
 #   - Presión arterial: ACC/AHA 2017 Hypertension Guideline. Desde la v2 cuenta
 #     tambien la diastolica: el objetivo de hipertension es >= 140/90, y con solo la
-#     sistolica un 132/95 salia como grado 1.
+#     sistolica un 132/95 salia como estadio 1.
 #   - Función renal: KDIGO 2024 (filtrado glomerular G1-G5, albuminuria A1-A3). Una
 #     sola medición no basta para el diagnóstico: tiene que mantenerse 3 meses.
 _NIVELES_PRESION = (
     ("presion_elevada", "presión elevada"),
-    ("hipertension_grado_1", "hipertensión grado 1"),
-    ("hipertension_grado_2", "hipertensión grado 2"),
+    ("hipertension_estadio_1", "hipertensión estadio 1"),
+    ("hipertension_estadio_2", "hipertensión estadio 2"),
     ("crisis_hipertensiva", "crisis hipertensiva"),
 )
 # (por debajo de, estadio, descripción): los estadios con filtrado < 60.
@@ -716,10 +716,11 @@ def compute_sin_efecto_flags(clave: str, datos: Dict[str, Any]) -> List[Dict[str
         flags.append({
             "indicator": "sin_efecto", "value": diagnosticos, "category": "no_reflejado_en_el_modelo",
             "source": "modelo",
+            # Sin "es un factor de riesgo": una cardiopatia previa no causa higado graso.
             "detail": (f"Indicaste un diagnóstico de {_enumerar([_DIAGNOSTICOS[f] for f in diagnosticos])}. "
-                       f"Es un factor de riesgo, pero esta estimación no lo refleja: en los datos de "
-                       f"entrenamiento quien ya está diagnosticado suele estar en tratamiento, y el "
-                       f"modelo no encuentra señal en el sentido clínico, así que no le da peso."),
+                       f"Esta estimación no lo refleja: en los datos de entrenamiento el modelo no "
+                       f"encuentra señal en el sentido clínico (a menudo porque quien ya está "
+                       f"diagnosticado está en tratamiento), así que no le da peso."),
         })
     resto = [f for f in marcadas if f not in tabaco and f not in diagnosticos]
     if resto:

@@ -75,7 +75,7 @@ def test_dato_clinico_opcional_valido_sigue_funcionando(client):
     crudo = r.get_data(as_text=True)
     assert "Infinity" not in crudo and "NaN" not in crudo
     flags = json.loads(crudo)["clinical_flags"]
-    assert [f["category"] for f in flags] == ["hipertension_grado_2"]
+    assert [f["category"] for f in flags] == ["hipertension_estadio_2"]
 
 
 def test_dato_clinico_opcional_vacio_es_ausente(client):
@@ -274,7 +274,7 @@ def test_presion_no_entra_al_modelo_pero_si_a_la_capa_clinica(client, modo, perf
     assert con["probability"] == sin["probability"]      # la presion no mueve el modelo
     assert not sin["clinical_flags"]
     [flag] = [f for f in con["clinical_flags"] if f["indicator"] == "blood_pressure"]
-    assert flag["source"] == "ACC/AHA" and flag["category"] == "hipertension_grado_2"
+    assert flag["source"] == "ACC/AHA" and flag["category"] == "hipertension_estadio_2"
 
 
 # ---------- AUD-14: la glucosa real cae en lo que acepta la API ----------

@@ -239,13 +239,14 @@ def entrenar(enfermedad, modo, tr, te, rapido):
         "dataset": f"nhanes_v2_{enfermedad}", "version": 2, "modo": modo,
         "features": M.features(enfermedad, modo),
         "definitorias": list(M.DEFINITORIAS[enfermedad]),
-        "objetivo": {"diabetes": "diagnosticada, HbA1c >= 6,5% o glucosa en ayunas >= 126 mg/dL",
-                     "hipertension": "diagnosticada, >= 140/90 mmHg medida o medicacion",
-                     "cardiovascular": "cardiopatia coronaria, angina, infarto, insuficiencia "
-                                       "cardiaca o ictus autorreportados",
-                     "renal": "diagnosticada, filtrado glomerular < 60 o albumina/creatinina "
-                              "en orina >= 30 mg/g",
-                     "higado": "esteatosis hepatica por elastografia (CAP >= 288 dB/m)"}[enfermedad],
+        "objetivo": {"diabetes": "diagnosticada, HbA1c ≥ 6,5 % o glucosa en ayunas ≥ 126 mg/dL",
+                     "hipertension": "diagnosticada, ≥ 140/90 mmHg medida o con medicación",
+                     "cardiovascular": "cardiopatía coronaria, angina, infarto, insuficiencia "
+                                       "cardíaca o ictus autorreportados",
+                     "renal": "diagnosticada, filtrado glomerular < 60 o albúmina/creatinina "
+                              "en orina ≥ 30 mg/g",
+                     # Se lee en /metricas: con tildes.
+                     "higado": "esteatosis hepática por elastografía (CAP ≥ 288 dB/m)"}[enfermedad],
         "n_train": int(len(y)), "n_test": int(len(yte)), "prevalencia": prevalencia,
         "best_model": ganador_fila["model"], "cv_auc": ganador_fila["cv_auc_mean"],
         # Variables que el modelo servido no usa (las restricciones las dejaron en cero):

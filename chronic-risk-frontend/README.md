@@ -50,7 +50,7 @@ npm run dev       # Vite dev server con HMR (http://localhost:5173)
 npm run build     # build de producción en dist/
 npm run preview   # sirve el build localmente para probarlo
 npm run lint      # ESLint sobre todo el proyecto
-npm test          # Vitest (57 tests, ~2 s)
+npm test          # Vitest (58 tests, ~2 s)
 npm run test:watch  # los mismos, en modo watch
 ```
 
@@ -59,7 +59,7 @@ npm run test:watch  # los mismos, en modo watch
 
 ## Tests
 
-**57 tests con Vitest + Testing Library** (`npm test`), sobre las cosas del front que
+**58 tests con Vitest + Testing Library** (`npm test`), sobre las cosas del front que
 tienen lógica de verdad:
 
 - **`ErrorBoundary`** — que un fallo de render muestre una salida en vez de dejar la
