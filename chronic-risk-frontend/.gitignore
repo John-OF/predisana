@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Vercel CLI: el enlace al proyecto y las variables que descarga
+.vercel
+.env*
+!.env.example
