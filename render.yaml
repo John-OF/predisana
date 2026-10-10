@@ -1,0 +1,41 @@
+# Blueprint de Render: el API (chronic-risk-backend) como servicio web gratuito con
+# Docker. Render lo lee al conectar el repo (New > Blueprint). El frontend va en Vercel
+# y la base de datos en Neon (Postgres gratuito sin caducidad): ver "Despliegue" en el
+# README.
+#
+# Los valores marcados `sync: false` no estan aqui a proposito: Render los pide en su
+# panel al crear el Blueprint (la cadena de Neon lleva la contrasena).
+services:
+  - type: web
+    name: predisana-api
+    runtime: docker
+    plan: free
+    # Virginia: la misma region de AWS que la base de Neon (us-east-1).
+    region: virginia
+    rootDir: chronic-risk-backend
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    # Solo redespliega si cambia el backend (o este archivo), no con cada cambio del front.
+    buildFilter:
+      paths:
+        - chronic-risk-backend/**
+        - render.yaml
+      ignoredPaths:
+        - chronic-risk-backend/tests/**
+        - chronic-risk-backend/**/*.md
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      # Render genera un valor aleatorio; se consulta en el panel (Environment).
+      - key: ADMIN_TOKEN
+        generateValue: true
+      # La URL del frontend en Vercel (https://...vercel.app). Hasta tenerla, vacias:
+      # los endpoints publicos quedan abiertos y el admin solo acepta localhost.
+      - key: CORS_ORIGINS
+        sync: false
+      - key: ADMIN_CORS_ORIGINS
+        sync: false
+      # Detras del proxy de Render: el rate limiting tiene que leer la IP real.
+      - key: TRUST_PROXY_HEADERS
+        value: "1"

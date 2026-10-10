@@ -1,0 +1,11 @@
+# Solo lo que el API necesita en tiempo de ejecucion.
+venv/
+__pycache__/
+.pytest_cache/
+tests/
+data_raw/
+data_processed/
+medical_history.db
+*.pyc
+.env
+.env.*

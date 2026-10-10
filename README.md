@@ -203,17 +203,35 @@ Orden de ejecución:
 2. **Revisión de corrección** — hecha (2026-10-09): textos de todas las páginas contra
    los modelos servidos, barrido de la API (10 modelos, 200 casos virtuales, what-if),
    flujo completo en el navegador y vista móvil a 390 px.
-3. **Despliegue gratuito** — frontend en Vercel (ya tiene `vercel.json`), backend en un
-   plan gratuito con Postgres gratuito (SQLite no sirve si el disco se borra en cada
-   despliegue), con `CORS_ORIGINS` y `ADMIN_TOKEN` en variables de entorno. Hay que
-   contar con el arranque en frío del plan gratuito (carga de modelos y SHAP). Documentar
-   el proceso aquí.
+3. **Despliegue gratuito** — en curso, ver [Despliegue](#despliegue).
 4. **Capturas y demo** — del simulador, el what-if y Métricas, ya sobre la URL pública.
 5. **Texto para el portafolio** — resumen corto con las decisiones técnicas y los
    límites, usando las cifras verificadas de este README.
 6. **Revisar el aviso médico y la privacidad** antes de abrir la URL al público.
 
 Mejoras futuras: más enfermedades (depresión, anemia, EPOC/asma).
+
+## Despliegue
+
+Todo en planes gratuitos, sin dominio propio ni tarjeta:
+
+| Pieza | Dónde | Cómo |
+|---|---|---|
+| Base de datos | **Neon** (Postgres, `aws-us-east-1`) | Proyecto `predisana`. El backend crea la tabla al arrancar. El Postgres gratuito de Render caduca a los 30 días; el de Neon no. |
+| API | **Render** (servicio web gratuito con Docker, Virginia) | [`render.yaml`](render.yaml) + [`chronic-risk-backend/Dockerfile`](chronic-risk-backend/Dockerfile): en Render, *New > Blueprint* sobre este repo. Redespliega solo con cambios del backend. |
+| Frontend | **Vercel** | Proyecto con raíz `chronic-risk-frontend` y `VITE_API_URL` apuntando al API. [`vercel.json`](chronic-risk-frontend/vercel.json) reescribe las rutas de la SPA. |
+
+Variables del API (en el panel de Render): `DATABASE_URL` (la cadena de Neon),
+`ADMIN_TOKEN` (la genera Render), `CORS_ORIGINS` y `ADMIN_CORS_ORIGINS` (la URL de
+Vercel) y `TRUST_PROXY_HEADERS=1`.
+
+Por qué no otros: los Spaces de Hugging Face con Docker piden la suscripción PRO, Koyeb y
+Cloud Run piden tarjeta, Railway y Fly.io ya no tienen plan gratuito.
+
+Lo que cuesta el plan gratuito de Render: 512 MB de RAM (el API ocupa unos 250 MB con los
+diez modelos), una décima de CPU y se duerme a los 15 minutos sin tráfico; despertarlo
+lleva cerca de un minuto. Sus 750 horas al mes alcanzan para tenerlo encendido todo el
+mes, así que un ping gratuito a `/health` cada 10 minutos evita la espera.
 
 ## Licencia
 
