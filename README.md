@@ -108,7 +108,7 @@ las probabilidades (calibración isotónica con curva de fiabilidad).
   probabilidad— y el what-if sombrea en la curva el tramo sin respaldo.
 - **Capa de datos agnóstica al motor** (SQLAlchemy): SQLite en dev, Postgres en
   producción cambiando solo `DATABASE_URL`.
-- **695 tests de pytest** sobre los invariantes delicados: signos clínicos de los
+- **712 tests de pytest** sobre los invariantes delicados: signos clínicos de los
   modelos servidos, que `/metricas` publique lo que la API hace, calibración, capa
   clínica, avisos, laboratorio sintético y auth del admin.
 
@@ -174,7 +174,7 @@ admin requiere definir la variable de entorno `ADMIN_TOKEN` en el backend.
 **Tests del backend:**
 ```powershell
 pip install -r requirements-dev.txt
-python -m pytest         # 695 tests (BD temporal, no toca la de dev)
+python -m pytest         # 712 tests (BD temporal, no toca la de dev)
 ```
 
 **CI:** cada push y pull request a `main` corre en GitHub Actions la suite de pytest
@@ -195,10 +195,10 @@ graso) en dos modos, sobre NHANES 2017-2023, con CI en verde.
 
 Orden de ejecución:
 
-1. **Datos sintéticos** — cerrar lo abierto: la presión diastólica frente a la
-   sistólica (0,43-0,45 en hipertensión y cardiovascular, 0,61 real), el exceso de
-   IMC ≥ 35 en el cardiovascular y las relaciones de la diabetes (HbA1c, glucosa y
-   diagnóstico).
+1. **Datos sintéticos** — hecho: la presión diastólica frente a la sistólica, el exceso
+   de IMC ≥ 35 y la regla de laboratorio que define el objetivo (ver el README del
+   backend). Queda abierto, y es menor: la edad se relaciona menos con la sistólica y el
+   filtrado glomerular que en el real.
 2. **Revisión de corrección** — repasar lo que el sistema afirma (textos de
    Educación, avisos clínicos, what-if, bandas) en las cinco enfermedades, y probar la
    app en el navegador, también en móvil.

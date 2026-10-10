@@ -213,6 +213,9 @@ UMBRAL_TOPE = 0.02          # parte minima de las filas en el maximo para llamar
 MIN_VALORES_CONTINUA = 6    # con menos valores distintos es una escala, no una continua
 
 
+IMC_ESTRATO = 35.0
+
+
 def _columnas_con_tope(real_df: pd.DataFrame, grupos: Dict[str, List[str]]) -> Dict[str, float]:
     """Columnas continuas con un pico en su maximo, y ese maximo."""
     aparte = {c for cols in grupos.values() for c in cols} | set(_columnas_categoricas(real_df, grupos))
@@ -235,6 +238,10 @@ def _clave_estrato(df: pd.DataFrame, grupos: Dict[str, List[str]], cats: List[st
     # A entero antes de comparar: el GAN puede devolver 1.0 donde el real trae 1.
     partes += [d[c].astype(float).round().astype(int).astype(str) for c in cats]
     partes += [(d[c] >= tope).astype(int).astype(str) for c, tope in (topes or {}).items()]
+    # Obesidad grave: el GAN la sobrerrepresenta (30-33% de IMC >= 35 en cardiovascular y
+    # renal frente al 20% real). Como los topes, queda impuesta por seleccion.
+    if "bmi" in d.columns:
+        partes.append((d["bmi"] >= IMC_ESTRATO).astype(int).astype(str))
     if not partes:
         return pd.Series([""] * len(df), index=df.index)
     return partes[0].str.cat(partes[1:], sep="|") if len(partes) > 1 else partes[0]
@@ -326,9 +333,10 @@ def _informe_marginales(real_df: pd.DataFrame, synth_df: pd.DataFrame,
 #     0,30 (real 0,61). La v1 no la tocaba porque la presion de Kaggle iba en multiplos
 #     de 10 (97% del real) y un residuo continuo habria destruido ese patron; la de
 #     NHANES es la media de tres lecturas, con un decimal (multiplos de 10: 3,5%).
-#     Con el residuo, diabetes sale 0,62; hipertension y cardiovascular, 0,43-0,45,
-#     porque el GAN aprende una relacion entre el residuo y la sistolica (-0,15 y
-#     -0,20) que en el real es cero. Queda abierto.
+#     Con el residuo solo, diabetes salia 0,62 pero hipertension y cardiovascular
+#     0,43-0,45: el GAN aprende una relacion entre el residuo y la sistolica (-0,15 y
+#     -0,20) que en el real es cero, y le erra la escala (7,2 a 10,7 con un real de
+#     8,7). Ahora se le quita esa relacion y se lleva a la escala real (0,60-0,63).
 # HONESTIDAD: asi la correlacion de esos pares viene dada en buena parte por
 # construccion (la recta, o la formula del IMC), no aprendida por el GAN. Lo que el
 # GAN sigue teniendo que aprender es todo lo demas: la talla, el residuo, y como se
@@ -364,8 +372,34 @@ def _al_espacio_del_gan(df: pd.DataFrame) -> Tuple[pd.DataFrame, List[dict]]:
                          "pendiente": float(pendiente), "ordenada": float(ordenada),
                          "lo": float(out[dep].min()), "hi": float(out[dep].max())})
             out[PREFIJO_RESIDUO + dep] = out[dep] - (ordenada + pendiente * out[base])
+            plan[-1]["desviacion"] = float(out[PREFIJO_RESIDUO + dep].std())
             out = out.drop(columns=[dep])
     return out, plan
+
+
+def _sin_correlacion_con(residuo: pd.Series, base: pd.Series) -> pd.Series:
+    """Quita al residuo la parte lineal que depende de su base. En el real es cero por
+    construccion (es el residuo de una recta ajustada por minimos cuadrados), pero el
+    GAN aprende una relacion entre los dos (-0,15 a -0,20 entre el residuo de la
+    diastolica y la sistolica) y la correlacion de la presion quedaba en 0,43-0,45 en
+    vez de 0,61. HONESTIDAD: como el resto de lo que se impone aqui, no lo aprende el
+    GAN, se fuerza."""
+    base_c = base - base.mean()
+    varianza = float((base_c ** 2).mean())
+    if not varianza > 0:
+        return residuo
+    return residuo - float((residuo * base_c).mean() - residuo.mean() * base_c.mean()) / varianza * base_c
+
+
+def _a_la_escala_real(residuo: pd.Series, desviacion: float) -> pd.Series:
+    """Media 0 y la desviacion del residuo real. El GAN acertaba la forma del residuo
+    pero no su escala, que variaba entre corridas (la de la diastolica, 7,2 a 10,7 con
+    un real de 8,7): la correlacion con la sistolica dependia de esa suerte. El real
+    tiene media 0 por construccion."""
+    sd = float(residuo.std())
+    if not sd > 0:    # una sola fila, o todas iguales: no hay escala que igualar
+        return residuo
+    return (residuo - residuo.mean()) / sd * desviacion
 
 
 def _del_espacio_del_gan(muestra: pd.DataFrame, plan: List[dict]) -> pd.DataFrame:
@@ -378,6 +412,8 @@ def _del_espacio_del_gan(muestra: pd.DataFrame, plan: List[dict]) -> pd.DataFram
             out["weight"] = peso.clip(paso["lo"], paso["hi"])
         else:
             dep, residuo = paso["dep"], PREFIJO_RESIDUO + paso["dep"]
+            out[residuo] = _a_la_escala_real(
+                _sin_correlacion_con(out[residuo], out[paso["base"]]), paso["desviacion"])
             recta = paso["ordenada"] + paso["pendiente"] * out[paso["base"]]
             out[dep] = (recta + out[residuo]).clip(paso["lo"], paso["hi"])
             out = out.drop(columns=[residuo])
@@ -432,6 +468,48 @@ def _descartar_incoherentes(pool_df: pd.DataFrame) -> pd.DataFrame:
         print(f"   {int(malas.sum())} filas incoherentes descartadas del pool "
               f"({malas.mean() * 100:.2f}%)")
     return pool_df[~malas].reset_index(drop=True)
+
+
+# --------- LO QUE DEFINE EL OBJETIVO (revision 2026-10) ---------
+# El objetivo de diabetes, hipertension y renal incluye una regla de laboratorio: quien
+# la cumple TIENE la enfermedad (HbA1c >= 6,5; >= 140/90 mmHg; filtrado < 60 o albumina
+# >= 30), la sepa o no. En el real es exacto (el 100% de quienes cumplen la regla tienen
+# target 1) y el GAN lo aprende a medias: 67% en diabetes, 69% en hipertension y 41% en
+# renal. Una ficha con la HbA1c en 8 y "sin diabetes" es una contradiccion que se ve a
+# simple vista. Aqui se hace cumplir la regla, y el otro lado (target 1 sin la regla:
+# diagnosticados con la analitica normal o tratados) se deja a la tasa real, porque el
+# GAN los daba de mas. HONESTIDAD: el target de esas filas queda IMPUESTO por la
+# definicion, no aprendido; la prevalencia la vuelve a fijar el ajuste de marginales.
+REGLAS_OBJETIVO = {
+    "diabetes": lambda d: d["hba1c_level"] >= 6.5,
+    "hipertension": lambda d: (d["ap_hi"] >= 140) | (d["ap_lo"] >= 90),
+    "renal": lambda d: (d["egfr"] < 60) | (d["albumin_creatinine_ratio"] >= 30),
+}
+
+
+def _aplicar_definicion_del_objetivo(pool_df: pd.DataFrame, real_df: pd.DataFrame,
+                                     nombre: str, seed: int) -> pd.DataFrame:
+    regla = REGLAS_OBJETIVO.get(nombre)
+    if regla is None:
+        return pool_df
+    out = pool_df.copy()
+    out["target"] = pd.to_numeric(out["target"], errors="coerce").fillna(0).astype(int)
+    cumple = regla(out).values
+    cumple_real = regla(real_df).values
+    q_real = float(real_df.loc[~cumple_real, "target"].mean())
+    corregidas = int((cumple & (out["target"].values == 0)).sum())
+    out.loc[cumple, "target"] = 1
+    sin_regla = np.where(~cumple & (out["target"].values == 1))[0]
+    q_pool = len(sin_regla) / max(1, int((~cumple).sum()))
+    quitar = 0
+    if q_pool > q_real:
+        quitar = int(round(len(sin_regla) * (1 - q_real / q_pool)))
+        rng = np.random.default_rng(seed)
+        out.iloc[rng.choice(sin_regla, size=quitar, replace=False), out.columns.get_loc("target")] = 0
+    print(f"   objetivo = definicion: {corregidas} filas cumplian la regla con target 0 "
+          f"({corregidas / len(out) * 100:.1f}% del pool) y {quitar} tenian target 1 sin ella "
+          f"(tasa {q_pool:.1%} -> {q_real:.1%} del real)")
+    return out
 
 
 # --------- SANITIZACIÓN ---------
@@ -543,7 +621,7 @@ def fit_and_sample_sdv(train_df, model, synth_multiplier, seed, epochs, max_trai
 
 # --------- PROCESO PRINCIPAL ---------
 def process_one_dataset(name, seed, model, synth_multiplier, balance, epochs, max_train_rows,
-                        pasos_objetivo, match_marginales=True, oversample=4.0):
+                        pasos_objetivo, match_marginales=True, oversample=6.0):
     out_dir = os.path.join(CURATED_DIR, name)
     src = os.path.join(out_dir, f"{name}_train.csv")
     if not os.path.exists(src):
@@ -567,6 +645,7 @@ def process_one_dataset(name, seed, model, synth_multiplier, balance, epochs, ma
                 synth_df = pd.concat([ones.sample(n, random_state=seed), zeros.sample(n, random_state=seed)], ignore_index=True)
         grupos = _detect_onehot_groups(train_df)
         synth_df = _descartar_incoherentes(synth_df)
+        synth_df = _aplicar_definicion_del_objetivo(synth_df, train_df, name, seed)
 
         # AUD-24: del pool grande se eligen las filas que reproducen la composicion
         # categorica real. Se hace ANTES de balancear para no pelearse con ese flag.
@@ -606,7 +685,7 @@ def main():
                              "tamano del dataset (ver AUD-24).")
     parser.add_argument("--no_match_marginals", action="store_true",
                         help="No ajustar las marginales categoricas al real (AUD-24).")
-    parser.add_argument("--oversample", type=float, default=4.0,
+    parser.add_argument("--oversample", type=float, default=6.0,
                         help="Cuantas veces mas filas generar antes de submuestrear.")
     parser.add_argument("--steps", type=int, default=15000,
                         help="Pasos de gradiente objetivo para el GAN (default 15000).")

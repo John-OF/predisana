@@ -1,92 +1,92 @@
 {
   "n_used": 2000,
-  "overall": 0.8919,
-  "column_shapes": 0.9272,
-  "column_pair_trends": 0.8567,
+  "overall": 0.902,
+  "column_shapes": 0.9316,
+  "column_pair_trends": 0.8723,
   "per_column": [
     {
-      "column": "smoking_history_current",
-      "score": 0.998
-    },
-    {
       "column": "high_cholesterol",
-      "score": 0.996
-    },
-    {
-      "column": "smoking_history_never",
-      "score": 0.99
+      "score": 0.994
     },
     {
       "column": "gender_Female",
-      "score": 0.988
+      "score": 0.993
     },
     {
       "column": "gender_Male",
-      "score": 0.988
+      "score": 0.993
+    },
+    {
+      "column": "smoking_history_current",
+      "score": 0.992
     },
     {
       "column": "smoking_history_former",
-      "score": 0.988
-    },
-    {
-      "column": "hypertension",
-      "score": 0.982
+      "score": 0.991
     },
     {
       "column": "heart_disease",
-      "score": 0.975
+      "score": 0.99
+    },
+    {
+      "column": "hypertension",
+      "score": 0.985
+    },
+    {
+      "column": "smoking_history_never",
+      "score": 0.982
     },
     {
       "column": "ap_hi",
-      "score": 0.962
-    },
-    {
-      "column": "hba1c_level",
-      "score": 0.944
-    },
-    {
-      "column": "egfr",
-      "score": 0.935
-    },
-    {
-      "column": "hdl_cholesterol",
-      "score": 0.93
-    },
-    {
-      "column": "total_cholesterol",
-      "score": 0.896
-    },
-    {
-      "column": "age",
-      "score": 0.894
-    },
-    {
-      "column": "weight",
-      "score": 0.894
-    },
-    {
-      "column": "waist_circumference",
-      "score": 0.888
+      "score": 0.963
     },
     {
       "column": "ap_lo",
-      "score": 0.888
+      "score": 0.96
     },
     {
-      "column": "bmi",
-      "score": 0.867
+      "column": "egfr",
+      "score": 0.945
+    },
+    {
+      "column": "hdl_cholesterol",
+      "score": 0.932
+    },
+    {
+      "column": "hba1c_level",
+      "score": 0.93
+    },
+    {
+      "column": "waist_circumference",
+      "score": 0.911
+    },
+    {
+      "column": "weight",
+      "score": 0.91
+    },
+    {
+      "column": "total_cholesterol",
+      "score": 0.893
+    },
+    {
+      "column": "age",
+      "score": 0.891
     },
     {
       "column": "bmi_autodeclarado",
-      "score": 0.857
+      "score": 0.877
     },
     {
-      "column": "albumin_creatinine_ratio",
-      "score": 0.812
+      "column": "bmi",
+      "score": 0.87
     },
     {
       "column": "height",
-      "score": 0.8
+      "score": 0.782
+    },
+    {
+      "column": "albumin_creatinine_ratio",
+      "score": 0.78
     }
   ],
   "tstr": {
@@ -115,21 +115,21 @@
       {
         "model": "logreg",
         "trtr_auc": 0.8208,
-        "tstr_auc": 0.8057,
-        "ratio": 0.982
+        "tstr_auc": 0.8089,
+        "ratio": 0.986
       },
       {
         "model": "random_forest",
         "trtr_auc": 0.8421,
-        "tstr_auc": 0.8142,
-        "ratio": 0.967
+        "tstr_auc": 0.8134,
+        "ratio": 0.966
       }
     ]
   },
   "privacy": {
-    "median_synthetic": 1.5691,
+    "median_synthetic": 1.5937,
     "median_real_test": 1.4625,
-    "ratio": 1.073,
+    "ratio": 1.09,
     "share_near_zero_synthetic": 0.0,
     "share_near_zero_real_test": 0.0,
     "exact_copies": 0,
@@ -173,26 +173,26 @@
     "synthetic": [
       [
         1.0,
-        -0.17,
-        0.0,
-        0.26
+        -0.13,
+        0.04,
+        0.2
       ],
       [
-        -0.17,
+        -0.13,
         1.0,
-        0.88,
-        0.07
+        0.87,
+        0.2
       ],
       [
-        0.0,
-        0.88,
+        0.04,
+        0.87,
         1.0,
-        0.13
+        0.25
       ],
       [
-        0.26,
-        0.07,
-        0.13,
+        0.2,
+        0.2,
+        0.25,
         1.0
       ]
     ]

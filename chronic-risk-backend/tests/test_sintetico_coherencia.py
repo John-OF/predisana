@@ -88,6 +88,66 @@ def test_lo_derivado_se_topa_al_rango_real():
     assert vuelta["weight"].iloc[0] == real["weight"].max()
 
 
+# ---------- la presion, el objetivo y la obesidad (revision 2026-10) ----------
+
+def test_el_residuo_no_depende_de_su_base_y_tiene_la_escala_real():
+    rng = np.random.default_rng(0)
+    base = pd.Series(rng.normal(120, 18, 5000))
+    residuo = pd.Series(-0.2 * (base - 120) + rng.normal(0, 12, 5000))   # el GAN se inventa la relacion
+    limpio = cs._a_la_escala_real(cs._sin_correlacion_con(residuo, base), 8.7)
+    assert abs(limpio.corr(base)) < 1e-9
+    assert limpio.std() == pytest.approx(8.7) and limpio.mean() == pytest.approx(0, abs=1e-9)
+
+
+def test_una_sola_fila_no_se_toca():
+    uno = pd.Series([3.0])
+    assert cs._a_la_escala_real(cs._sin_correlacion_con(uno, pd.Series([5.0])), 8.7).iloc[0] == 3.0
+
+
+@pytest.mark.parametrize("enf", sorted(cs.REGLAS_OBJETIVO))
+def test_quien_cumple_la_regla_de_laboratorio_tiene_la_enfermedad(enf):
+    """En el real es exacto (HbA1c >= 6,5; 140/90; filtrado < 60 o albumina >= 30). El
+    GAN lo daba al 67%, 69% y 41%: fichas con la HbA1c en 8 y 'sin diabetes'."""
+    sint = _sintetico(enf)
+    cumple = cs.REGLAS_OBJETIVO[enf](sint)
+    assert cumple.mean() > 0.1
+    assert (sint.loc[cumple, "target"] == 1).all()
+
+
+@pytest.mark.parametrize("enf", sorted(cs.REGLAS_OBJETIVO))
+def test_la_definicion_del_objetivo_deja_la_tasa_de_los_diagnosticados_sin_regla_al_real(enf):
+    """Quien tiene la enfermedad sin cumplir la regla (diagnosticado, tratado) lo daba
+    el GAN de mas: renal 16% frente al 1,2% real."""
+    real, sint = _real(enf), _sintetico(enf)
+    q_real = real.loc[~cs.REGLAS_OBJETIVO[enf](real), "target"].mean()
+    q_sint = sint.loc[~cs.REGLAS_OBJETIVO[enf](sint), "target"].mean()
+    assert abs(q_sint - q_real) < 0.06, (q_real, q_sint)
+
+
+def test_aplicar_la_definicion_solo_cambia_el_target():
+    real = _real("renal")
+    pool = _sintetico("renal").assign(target=0)
+    fuera = cs._aplicar_definicion_del_objetivo(pool, real, "renal", seed=1)
+    assert fuera.drop(columns="target").equals(pool.drop(columns="target"))
+    assert (fuera["target"] == cs.REGLAS_OBJETIVO["renal"](pool).astype(int)).all()
+    # sin regla (cardiovascular, higado) no hace nada
+    assert cs._aplicar_definicion_del_objetivo(pool, real, "cardiovascular", 1) is pool
+
+
+@pytest.mark.parametrize("enf", M.ENFERMEDADES)
+def test_la_obesidad_grave_no_se_sobrerrepresenta(enf):
+    """Cardiovascular y renal sacaban un 30-33% de IMC >= 35 frente al 20% real."""
+    real, sint = _real(enf), _sintetico(enf)
+    assert abs((sint["bmi"] >= 35).mean() - (real["bmi"] >= 35).mean()) < 0.02
+
+
+@pytest.mark.parametrize("enf", ["diabetes", "hipertension", "cardiovascular"])
+def test_la_correlacion_de_la_presion_cuadra_con_el_real(enf):
+    """Hipertension y cardiovascular salian a 0,43-0,45 con un real de 0,61."""
+    real, sint = _real(enf), _sintetico(enf)
+    assert abs(sint["ap_hi"].corr(sint["ap_lo"]) - real["ap_hi"].corr(real["ap_lo"])) < 0.05
+
+
 # ---------- precision del dato real ----------
 
 def test_decimales_cuenta_lo_que_usa_la_columna_no_su_peor_fila():
