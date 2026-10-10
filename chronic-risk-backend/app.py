@@ -238,7 +238,14 @@ TOPCODED: Dict[str, Dict[str, float]] = {d: {"age": 80} for d in ENFERMEDADES}
 # ==========================================
 # 1. BASE DE DATOS (SQLAlchemy, agnóstica al motor — A3)
 # ==========================================
-engine = create_engine(DATABASE_URL, future=True)
+# Postgres en produccion es Neon, que duerme la base a los 5 min sin uso y corta las
+# conexiones abiertas: pool_pre_ping descarta del pool las muertas antes de usarlas (si
+# no, la primera peticion tras la siesta fallaria). connect_timeout: si la base no
+# contesta, el arranque falla con el error en el log en vez de colgarse en silencio.
+_ENGINE_KWARGS: Dict[str, Any] = {"future": True}
+if DATABASE_URL.startswith("postgresql"):
+    _ENGINE_KWARGS.update(pool_pre_ping=True, connect_args={"connect_timeout": 15})
+engine = create_engine(DATABASE_URL, **_ENGINE_KWARGS)
 SessionLocal = sessionmaker(bind=engine, future=True, expire_on_commit=False)
 Base = declarative_base()
 
@@ -1043,6 +1050,9 @@ def get_random_sample(disease):
 # sigue viendo el estado real; un bucle contra /health ya no llega a la BD.
 _HEALTH_DB_TTL_S = 5.0
 _health_db = {"checked_at": None, "ok": False}
+# Ultimo estado que dio /health: solo se registra cuando cambia (el primero dice que el
+# worker ya atiende y que el chequeo del hosting llega; luego, caidas y vueltas).
+_health_estado = {"ultimo": None}
 
 
 def _db_ok_cached() -> bool:
@@ -1074,6 +1084,11 @@ def health():
         "models_loaded": sorted(MODELS.keys()),
         "models_missing": faltan,
     }
+    if payload["status"] != _health_estado["ultimo"]:
+        _health_estado["ultimo"] = payload["status"]
+        print(f"[info] /health: {payload['status']} (base de datos "
+              f"{'ok' if db_ok else 'sin respuesta'}, modelos que faltan: {len(faltan)})",
+              flush=True)
     return jsonify(payload), (200 if ok else 503)
 
 
@@ -1740,13 +1755,18 @@ def _memoria_mb() -> Optional[float]:
         return None
 
 
-# Inicialización global (se ejecuta siempre)
+# Inicialización global (se ejecuta siempre). Una linea por fase: gunicorn no vigila al
+# worker mientras carga la app, y el primer deploy en Render se quedo 15 min sin decir
+# en que fase estaba.
 _t_arranque = time.perf_counter()
 _load_all()
-init_db()
 _rss = _memoria_mb()
 print(f"[info] {len(MODELS)} modelos cargados en {time.perf_counter() - _t_arranque:.1f} s"
       + (f", {_rss:.0f} MB en memoria" if _rss is not None else ""), flush=True)
+_t_arranque = time.perf_counter()
+init_db()
+print(f"[info] base de datos ({engine.url.get_backend_name()}) lista en "
+      f"{time.perf_counter() - _t_arranque:.1f} s", flush=True)
 
 # Inicialización local
 if __name__ == "__main__":

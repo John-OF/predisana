@@ -12,8 +12,8 @@ RUN useradd -m -u 1000 user
 USER user
 # Un hilo por libreria numerica. LightGBM (OpenMP), NumPy (OpenBLAS) y numba lanzan uno
 # por cada nucleo que ven, y en el plan gratuito ven todos los de la maquina con una
-# decima de CPU de cuota: los hilos en espera activa se comian la cuota y el primer
-# deploy no llego a responder /health en 15 minutos (en local arranca en 2 s).
+# decima de CPU de cuota: los que esperan en activo se la pueden comer entera. Es una
+# de las sospechas del primer deploy, que no llego a responder /health en 15 minutos.
 ENV PATH="/home/user/.local/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     OMP_NUM_THREADS=1 \
@@ -30,8 +30,9 @@ COPY --chown=user . .
 # Un solo worker: los diez modelos y sus explicadores SHAP se cargan por proceso, y el
 # rate limiting guarda sus contadores en memoria (con varios workers, cada uno llevaria
 # los suyos). Los hilos atienden peticiones en paralelo. El hosting fija PORT (Render,
-# 10000); 8000 es el de desarrollo. El timeout cubre tambien el arranque, que carga los
-# modelos: 2 s en un portatil, bastante mas con la decima de CPU del plan gratuito.
+# 10000); 8000 es el de desarrollo. El timeout es para peticiones lentas con la decima de
+# CPU; NO cubre el arranque (gunicorn no vigila al worker hasta que la app termina de
+# cargar), ahi el unico limite es el de Render, 15 minutos.
 ENV PORT=8000
 EXPOSE 8000
 CMD gunicorn --workers 1 --threads 4 --timeout 180 --bind 0.0.0.0:${PORT} app:app
