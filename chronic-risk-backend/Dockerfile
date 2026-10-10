@@ -10,8 +10,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 \
 # Sin root dentro del contenedor.
 RUN useradd -m -u 1000 user
 USER user
+# Un hilo por libreria numerica. LightGBM (OpenMP), NumPy (OpenBLAS) y numba lanzan uno
+# por cada nucleo que ven, y en el plan gratuito ven todos los de la maquina con una
+# decima de CPU de cuota: los hilos en espera activa se comian la cuota y el primer
+# deploy no llego a responder /health en 15 minutos (en local arranca en 2 s).
 ENV PATH="/home/user/.local/bin:$PATH" \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    OMP_NUM_THREADS=1 \
+    OPENBLAS_NUM_THREADS=1 \
+    MKL_NUM_THREADS=1 \
+    NUMBA_NUM_THREADS=1
 WORKDIR /home/user/app
 
 COPY --chown=user requirements.txt .
