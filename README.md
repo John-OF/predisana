@@ -183,6 +183,37 @@ y el `lint` + `test` + `build` + `npm audit` del frontend (`.github/workflows/ci
 Consulta los README de cada subcarpeta para el detalle del pipeline de datos,
 endpoints y convenciones.
 
+## Estado y próximos pasos
+
+**Meta a corto plazo: un despliegue funcional y público**, todo en servidores gratuitos
+(sin dominio propio ni pagar nada), para tener una URL y capturas que enseñar. Lo
+primordial es que lo que el sistema dice y hace sea correcto; las enfermedades nuevas
+quedan como mejora futura.
+
+Hecho: cinco enfermedades (diabetes, hipertensión, cardiovascular, renal e hígado
+graso) en dos modos, sobre NHANES 2017-2023, con CI en verde.
+
+Orden de ejecución:
+
+1. **Datos sintéticos** — cerrar lo abierto: la presión diastólica frente a la
+   sistólica (0,43-0,45 en hipertensión y cardiovascular, 0,61 real), el exceso de
+   IMC ≥ 35 en el cardiovascular y las relaciones de la diabetes (HbA1c, glucosa y
+   diagnóstico).
+2. **Revisión de corrección** — repasar lo que el sistema afirma (textos de
+   Educación, avisos clínicos, what-if, bandas) en las cinco enfermedades, y probar la
+   app en el navegador, también en móvil.
+3. **Despliegue gratuito** — frontend en Vercel (ya tiene `vercel.json`), backend en un
+   plan gratuito con Postgres gratuito (SQLite no sirve si el disco se borra en cada
+   despliegue), con `CORS_ORIGINS` y `ADMIN_TOKEN` en variables de entorno. Hay que
+   contar con el arranque en frío del plan gratuito (carga de modelos y SHAP). Documentar
+   el proceso aquí.
+4. **Capturas y demo** — del simulador, el what-if y Métricas, ya sobre la URL pública.
+5. **Texto para el portafolio** — resumen corto con las decisiones técnicas y los
+   límites, usando las cifras verificadas de este README.
+6. **Revisar el aviso médico y la privacidad** antes de abrir la URL al público.
+
+Mejoras futuras: más enfermedades (depresión, anemia, EPOC/asma).
+
 ## Licencia
 
 Software propietario. © 2026 John Orellana. Todos los derechos reservados.
