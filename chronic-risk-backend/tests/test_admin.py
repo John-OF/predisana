@@ -82,3 +82,39 @@ def test_admin_export_csv(client, admin_headers):
     lineas = r.get_data(as_text=True).strip().splitlines()
     assert lineas[0].startswith("id,timestamp,disease")
     assert len(lineas) >= 2  # cabecera + al menos una simulacion logueada
+
+
+# ---------- lo que ve el admin cuadra con lo que vio el usuario (revision 2026-10) ----------
+
+def test_admin_lista_la_banda_que_vio_el_usuario_y_la_hora_en_utc(client, admin_headers, perfil_diabetes):
+    """La columna "Resultado" era la clase cruda del modelo (>= 0,5 sin calibrar), que el
+    simulador no muestra; y la hora, UTC sin la Z, se leia como local."""
+    vista = client.post("/predict/diabetes", json=perfil_diabetes).get_json()
+    [fila] = client.get("/admin/predictions?limit=1", headers=admin_headers).get_json()["items"]
+    assert fila["risk_band"] == vista["risk_band"]
+    assert fila["timestamp"].endswith("Z")
+
+
+def test_admin_stats_reparte_por_banda_y_por_modo(client, admin_headers, perfil_diabetes):
+    client.post("/predict/diabetes?mode=simplificado", json=perfil_diabetes)
+    s = client.get("/admin/stats", headers=admin_headers).get_json()
+    assert s["timezone"] == "UTC"
+    for fila in s["by_disease"]:
+        assert sum(fila["bands"].values()) == fila["count"]
+        assert sum(fila["modes"].values()) <= fila["count"]   # filas viejas sin modo
+        assert set(fila["risk_bands"]) >= {"low_below", "high_from"}
+    diabetes = next(f for f in s["by_disease"] if f["disease"] == "diabetes")
+    assert diabetes["modes"]["simplificado"] >= 1
+
+
+def test_el_top_de_factores_solo_cuenta_variables_de_los_modelos_servidos(client, app_module, admin_headers):
+    """Una fila de la v1 (con la glucosa como variable) no puede colarse en el top."""
+    import json
+    with app_module.SessionLocal() as s:
+        s.add(app_module.Prediction(disease="diabetes", probability=0.4, prediction=0,
+                                    top_features=json.dumps([{"feature": "blood_glucose_level", "shap": 2.0},
+                                                             {"feature": "cholesterol", "shap": 1.0}])))
+        s.commit()
+    top = {f["feature"] for f in client.get("/admin/stats", headers=admin_headers).get_json()["top_features"]}
+    assert not {"blood_glucose_level", "cholesterol"} & top
+

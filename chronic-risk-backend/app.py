@@ -7,7 +7,7 @@ import re
 import math
 import hmac
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache, wraps
 from typing import Dict, Any, List, Optional
 
@@ -250,13 +250,16 @@ class Prediction(Base):
     disease = Column(String(50), index=True)
     input_data = Column(SAText)                  # JSON con las features enviadas
     prediction = Column(Integer)                 # clase 0/1
-    probability = Column(Float)                  # salida limpia del modelo
+    probability = Column(Float)                  # probabilidad calibrada (la que ve el usuario)
     model_name = Column(String(50))              # A5: modelo ganador servido
     mode = Column(String(20))                    # v2: simplificado | completo
     clinical_note = Column(SAText)               # A4: nota clínica ADA/ACC-AHA
     top_features = Column(SAText)                # JSON con el SHAP top
     session_id = Column(String(64), index=True)  # UUID anónimo (agrupa sin identificar)
-    timestamp = Column(DateTime, server_default=func.now())
+    # Siempre en UTC y sin zona. Lo pone Python, no la BD: el now() de Postgres depende de
+    # la zona de la sesion, y el panel tiene que saber en que hora esta para mostrar la local.
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+                       server_default=func.now())
 
 
 def _migrate_add_columns():
@@ -1518,6 +1521,16 @@ def _parse_date_range():
     return dt_from, dt_to_excl
 
 
+def _iso_utc(ts: Optional[datetime]) -> Optional[str]:
+    """ISO con la Z de UTC: sin ella, el navegador leia la hora UTC como local y el panel
+    mostraba las simulaciones con 5 horas de desfase (Ecuador)."""
+    if ts is None:
+        return None
+    if ts.tzinfo is not None:
+        ts = ts.astimezone(timezone.utc).replace(tzinfo=None)
+    return ts.isoformat() + "Z"
+
+
 def _query_predictions_filtered(s):
     """Query base del admin: solo enfermedades servidas + filtro de rango de fechas."""
     q = s.query(Prediction).filter(Prediction.disease.in_(ENFERMEDADES))
@@ -1549,8 +1562,14 @@ def admin_stats():
     # --- Histograma de probabilidad por enfermedad (10 bins 0..1) ---
     # --- Frecuencia de features SHAP en el top ---
     N_BINS = 10
-    by_d = {d: {"count": 0, "sum_prob": 0.0, "positives": 0,
-                "hist": [0] * N_BINS} for d in supported}
+    # Solo variables de los modelos servidos: las filas de la v1 traen otras (la glucosa
+    # o "cholesterol" eran variables entonces) y se colaban en el top sin etiqueta.
+    variables_actuales = {f for feats in FEATURES.values() for f in feats}
+    by_d = {d: {"count": 0, "sum_prob": 0.0, "positives": 0, "hist": [0] * N_BINS,
+                # La banda que vio el usuario (con la probabilidad calibrada y los cortes de
+                # su enfermedad), no la clase cruda del modelo, que el simulador no muestra.
+                "bands": {"low": 0, "mid": 0, "high": 0},
+                "modes": {m: 0 for m in MODOS}} for d in supported}
     hourly = [0] * 24
     feat_freq: Dict[str, Dict[str, float]] = {}
 
@@ -1565,6 +1584,9 @@ def admin_stats():
         b["positives"] += int(r.prediction or 0)
         idx = min(int(p * N_BINS), N_BINS - 1)
         b["hist"][idx] += 1
+        b["bands"][risk_band(d, p)] += 1
+        if r.mode in b["modes"]:
+            b["modes"][r.mode] += 1
         if r.timestamp:
             hourly[r.timestamp.hour] += 1
         tf = _safe_json_loads(r.top_features)
@@ -1573,7 +1595,7 @@ def admin_stats():
                 if not isinstance(item, dict):
                     continue
                 name = item.get("feature")
-                if not name or str(name).startswith("gender_"):
+                if not name or str(name).startswith("gender_") or name not in variables_actuales:
                     continue
                 agg = feat_freq.setdefault(name, {"count": 0, "sum_abs_shap": 0.0})
                 agg["count"] += 1
@@ -1592,6 +1614,9 @@ def admin_stats():
             "positive_rate": round(b["positives"] / n, 4) if n else 0.0,
             "model": " / ".join(f"{m}: {MODEL_NAMES.get(_clave(d, m), '?')}" for m in MODOS),
             "models": {m: MODEL_NAMES.get(_clave(d, m)) for m in MODOS},
+            "bands": b["bands"],
+            "modes": b["modes"],
+            "risk_bands": risk_bands(d),
         })
         prob_histogram[d] = b["hist"]
 
@@ -1617,7 +1642,9 @@ def admin_stats():
         "timeline": timeline,
         "prob_histogram": prob_histogram,
         "prob_bins": N_BINS,
+        # Horas y dias en UTC: el panel los pasa a la hora local del navegador.
         "hourly": hourly,
+        "timezone": "UTC",
         "top_features": top_features,
     })
 
@@ -1655,7 +1682,8 @@ def admin_predictions():
             "mode": r.mode,
             "clinical_note": r.clinical_note,
             "session_id": r.session_id,
-            "timestamp": r.timestamp.isoformat() if r.timestamp else None,
+            "timestamp": _iso_utc(r.timestamp),
+            "risk_band": risk_band(r.disease, float(r.probability or 0.0)),
             "input_data": _safe_json_loads(r.input_data),
             "top_features": _safe_json_loads(r.top_features),
         } for r in rows]
@@ -1684,7 +1712,7 @@ def admin_export_csv():
     for r in rows:
         writer.writerow([
             r.id,
-            r.timestamp.isoformat() if r.timestamp else "",
+            _iso_utc(r.timestamp) or "",
             _csv_safe(r.disease),
             _csv_safe(r.mode or ""),
             _csv_safe(r.model_name or ""),

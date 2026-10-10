@@ -50,7 +50,7 @@ npm run dev       # Vite dev server con HMR (http://localhost:5173)
 npm run build     # build de producción en dist/
 npm run preview   # sirve el build localmente para probarlo
 npm run lint      # ESLint sobre todo el proyecto
-npm test          # Vitest (58 tests, ~2 s)
+npm test          # Vitest (59 tests, ~2 s)
 npm run test:watch  # los mismos, en modo watch
 ```
 
@@ -59,7 +59,7 @@ npm run test:watch  # los mismos, en modo watch
 
 ## Tests
 
-**58 tests con Vitest + Testing Library** (`npm test`), sobre las cosas del front que
+**59 tests con Vitest + Testing Library** (`npm test`), sobre las cosas del front que
 tienen lógica de verdad:
 
 - **`ErrorBoundary`** — que un fallo de render muestre una salida en vez de dejar la
@@ -83,7 +83,7 @@ tienen lógica de verdad:
   etiqueta de su grupo (`gender_Male` → "Sexo"): con un prefijo cualquiera,
   `bmi_autodeclarado` pasaba el test por la etiqueta de `bmi`. Exige también que cada
   enfermedad servida tenga nombre y aparezca en las páginas que declaran su lista a mano
-  (simulador, métricas, proyecto y educación). Y donde se pinta una
+  (simulador, métricas, educación, laboratorio y `utils/catalogo.jsx`). Y donde se pinta una
   columna one-hot suelta (métricas, laboratorio, admin), `getFeatureLabel` la lee como
   grupo y opción («Tabaquismo: Exfumador») en vez de `smoking_history_former`.
 - **`AvisoSoporte`** — los avisos de cuánto fiarse del resultado, con la forma exacta
@@ -130,10 +130,11 @@ El archivo `vercel.json` ya está configurado para servir la SPA con rewrites a
 | Ruta             | Componente       | Descripción |
 |------------------|------------------|-------------|
 | `/`              | `Home`           | Hero, propuesta de valor y metodología en 3 pasos. |
-| `/educacion`     | `Educacion`      | Enciclopedia breve de las 3 enfermedades crónicas. |
+| `/educacion`     | `Educacion`      | Enciclopedia breve de las 5 enfermedades crónicas. |
 | `/simulacion`    | `Simulacion`     | La página principal: formulario del modo simplificado o completo → riesgo + SHAP + capa clínica + what-if. |
 | `/metricas`      | `Metricas`       | Por enfermedad y modo: leaderboard con el filtro de validación, AUC (también ponderado), calibración, bandas y reporte por clase. |
-| `/proyecto`      | `Proyecto`       | Case study: historia de los datos, panorámica de modelos y laboratorio sintético (4 demos). |
+| `/laboratorio`   | `Laboratorio`    | Laboratorio sintético (4 pestañas: generar y evaluar, ¿real o sintético?, distribuciones, calidad). La pestaña va en la URL (`?pestana=generar|duelo|dist|calidad`). |
+| `/proyecto`      | `Proyecto`       | Case study: historia de los datos, panorámica de modelos, capa clínica y stack. |
 | `/aviso`         | `Aviso`          | Aviso legal / disclaimer médico. |
 | `/admin`         | `Admin`          | Dashboard de uso **dev-only**: sin link en la navbar, se accede por URL directa + token (`ADMIN_TOKEN` del backend). |
 
@@ -157,7 +158,7 @@ Cada enfermedad tiene dos modelos (v2) y las llamadas llevan `?mode=simplificado
   (curva contrafactual; el backend NO la registra en BD). En el simplificado, peso e IMC
   se barren a talla fija: la respuesta trae `coupled` y el panel lo explica bajo la curva.
 
-**Laboratorio sintético (página Proyecto)**
+**Laboratorio sintético (página Laboratorio)**
 - `getSyntheticCase(disease)` → `GET /synthetic/<disease>`
 - `evaluateSyntheticCase(disease, payload, mode = 'completo')` → `POST /predict/<disease>?source=synthetic`
   (la ficha entera por el modelo completo, el que lee todas sus variables; el backend
@@ -227,8 +228,8 @@ chronic-risk-frontend/
   `key={pathname}` lo resetea al navegar; remontarlo no vuelve a pedir los chunks
   (`React.lazy` cachea el módulo ya resuelto), así que no deshace el code-splitting.
 - **Las 5 enfermedades** (`diabetes`, `hipertension`, `cardiovascular`, `renal`, `higado`) son un
-  set cerrado declarado en `DISEASES` dentro de `Simulacion.jsx` (y `Metricas.jsx` /
-  `Proyecto.jsx`, más su ficha en `Educacion.jsx`). Si se añade una nueva al backend, hay
+  set cerrado declarado en `DISEASES` dentro de `Simulacion.jsx` (y `Metricas.jsx`,
+  `utils/catalogo.jsx` para Proyecto y el Laboratorio, más su ficha en `Educacion.jsx`). Si se añade una nueva al backend, hay
   que añadirla aquí también: el contrato de etiquetas lo comprueba contra los modelos
   servidos, así que una enfermedad que falte en una página tumba un test.
 - **`Simulacion.jsx`** es la página más compleja: consume `/config`, `/predict`,

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { Fragment, useState, useEffect, useCallback } from 'react';
 import { Container, Row, Col, Form, Button, Table, Spinner, Alert, Badge } from 'react-bootstrap';
 import { ShieldLock, BoxArrowRight, ArrowClockwise, Download, FunnelFill } from 'react-bootstrap-icons';
 import {
@@ -9,22 +9,44 @@ import {
   verifyAdmin, getAdminStats, getAdminPredictions, downloadAdminCsv,
 } from '../services/api';
 import { getLabel, getFeatureLabel } from '../utils/translations';
+import { riskBand } from '../utils/riskBand';
+import { prettyModel } from '../utils/catalogo';
 
 // El token vive en sessionStorage: se borra al cerrar la pestaña (más seguro que
 // localStorage para una credencial de admin). NO es auth de usuario.
 const TOKEN_KEY = 'predisana_admin_token';
 
-const MODEL_LABELS = {
-  logistic_regression: 'Regresión Logística', logreg: 'Regresión Logística',
-  random_forest: 'Random Forest', lightgbm: 'LightGBM', xgboost: 'XGBoost',
-};
-const prettyModel = (m) => MODEL_LABELS[m] || (m ? String(m) : '—');
 const pct = (x, d = 1) => (x == null ? '—' : `${(x * 100).toFixed(d)}%`);
+// La API manda la hora en UTC con su Z: el navegador la pasa a la hora local.
 const fmtTs = (iso) => {
   if (!iso) return '—';
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
 };
+
+// Desfase horario del navegador frente a UTC, en horas (Ecuador: -5). Las horas del
+// servidor van en UTC; si el desfase no es entero (India, +5:30) se dejan en UTC.
+const DESFASE = -new Date().getTimezoneOffset() / 60;
+const HORA_LOCAL = Number.isInteger(DESFASE);
+
+// Rellena con ceros los días sin simulaciones: sin ellos, el área unía dos días
+// separados por una semana como si hubiera una tendencia entre ellos.
+const conDiasVacios = (timeline) => {
+  if (timeline.length < 2) return timeline;
+  const cuenta = Object.fromEntries(timeline.map((t) => [t.day, t.count]));
+  const out = [];
+  const fin = new Date(`${timeline[timeline.length - 1].day}T00:00:00Z`);
+  for (let d = new Date(`${timeline[0].day}T00:00:00Z`); d <= fin; d.setUTCDate(d.getUTCDate() + 1)) {
+    const dia = d.toISOString().slice(0, 10);
+    out.push({ day: dia, count: cuenta[dia] || 0 });
+  }
+  return out;
+};
+
+// Etiqueta de una variable de la ficha guardada (grupos one-hot incluidos).
+const SI_NO = ['hypertension', 'diabetes', 'high_cholesterol', 'heart_disease'];
+const valorFicha = (k, v) => (k.startsWith('gender_') || k.startsWith('smoking_history_') || SI_NO.includes(k)
+  ? (Number(v) === 1 ? 'sí' : 'no') : String(v));
 
 const Admin = () => {
   const [token, setToken] = useState(() => sessionStorage.getItem(TOKEN_KEY) || '');
@@ -43,6 +65,7 @@ const Admin = () => {
   const [dateTo, setDateTo] = useState('');
   const [histDisease, setHistDisease] = useState('');
   const [exporting, setExporting] = useState(false);
+  const [abierta, setAbierta] = useState(null);   // fila del historial desplegada
 
   const loadDashboard = useCallback(async (tok, range = {}) => {
     setLoading(true);
@@ -173,23 +196,33 @@ const Admin = () => {
 
   // ---- Dashboard ----
   const byDisease = stats?.by_disease || [];
-  const timeline = stats?.timeline || [];
+  const timeline = conDiasVacios(stats?.timeline || []);
   const maxCount = Math.max(...byDisease.map(d => d.count || 0), 1);
+  const consultadas = byDisease.filter(d => d.count > 0).length;
 
-  // Uso por hora del día (0-23).
-  const hourlyData = (stats?.hourly || []).map((c, h) => ({
-    hour: String(h).padStart(2, '0'), count: c,
+  // Uso por hora del día (0-23), pasado a la hora local si el desfase es entero.
+  const hourlyUtc = stats?.hourly || [];
+  const hourlyData = hourlyUtc.map((_, h) => ({
+    hour: String(h).padStart(2, '0'),
+    count: HORA_LOCAL ? hourlyUtc[(((h - DESFASE) % 24) + 24) % 24] : hourlyUtc[h],
   }));
 
   // Histograma de probabilidad para la enfermedad elegida (10 bins 0..1).
   const nBins = stats?.prob_bins || 10;
   const diseasesWithData = byDisease.filter(d => d.count > 0).map(d => d.disease);
   const activeHistDisease = histDisease || diseasesWithData[0] || (byDisease[0]?.disease);
-  const histBins = (stats?.prob_histogram?.[activeHistDisease] || []).map((c, i) => ({
-    band: `${Math.round((i / nBins) * 100)}–${Math.round(((i + 1) / nBins) * 100)}%`,
-    count: c,
-    high: i >= nBins / 2,
-  }));
+  // Cada franja, del color de la banda que ve el usuario en esa enfermedad (por su
+  // punto medio): antes, rojo desde el 50% para todas.
+  const cortes = byDisease.find(d => d.disease === activeHistDisease)?.risk_bands;
+  const histBins = (stats?.prob_histogram?.[activeHistDisease] || []).map((c, i) => {
+    const medio = (i + 0.5) / nBins;
+    const banda = !cortes ? 'mid' : medio < cortes.low_below ? 'low' : medio >= cortes.high_from ? 'high' : 'mid';
+    return {
+      band: `${Math.round((i / nBins) * 100)}–${Math.round(((i + 1) / nBins) * 100)}%`,
+      count: c,
+      color: { low: '#4fae8c', mid: '#d8a64a', high: '#c8736a' }[banda],
+    };
+  });
 
   // Top features SHAP más frecuentes.
   const topFeatures = stats?.top_features || [];
@@ -266,8 +299,8 @@ const Admin = () => {
             <Col sm={6} lg={3}>
               <div className="ps-kpi">
                 <div className="k-lbl">Enfermedades</div>
-                <div className="k-val">{byDisease.length}</div>
-                <div className="k-sub">modelos consultados</div>
+                <div className="k-val">{consultadas}</div>
+                <div className="k-sub">consultadas, de {byDisease.length}</div>
               </div>
             </Col>
             <Col sm={6} lg={3}>
@@ -282,7 +315,7 @@ const Admin = () => {
           {/* Timeline */}
           {timeline.length > 0 && (
             <div className="mb-5">
-              <h3 style={{ fontSize: '1.3rem', marginBottom: '14px' }}>Simulaciones por día</h3>
+              <h3 style={{ fontSize: '1.3rem', marginBottom: '14px' }}>Simulaciones por día <span className="text-faint small">(días UTC)</span></h3>
               <ResponsiveContainer width="100%" height={240}>
                 <AreaChart data={timeline} margin={{ top: 8, right: 16, left: -8, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
@@ -310,7 +343,10 @@ const Admin = () => {
                   </Form.Select>
                 )}
               </div>
-              <p className="text-soft small mb-2">Cuántas simulaciones caen en cada franja de riesgo (probabilidad calibrada) para {getLabel(activeHistDisease)}.</p>
+              <p className="text-soft small mb-2">
+                Cuántas simulaciones caen en cada franja de probabilidad (la calibrada, la que ve el usuario) para{' '}
+                {getLabel(activeHistDisease)}, con el color de su banda: verde bajo, ocre moderado, rojo alto.
+              </p>
               <ResponsiveContainer width="100%" height={230}>
                 <BarChart data={histBins} margin={{ top: 6, right: 12, left: -12, bottom: 4 }}>
                   <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
@@ -319,7 +355,7 @@ const Admin = () => {
                   <Tooltip />
                   <Bar dataKey="count" name="Simulaciones" radius={[4, 4, 0, 0]}>
                     {histBins.map((b, i) => (
-                      <Cell key={i} fill={b.high ? '#c8736a' : '#2f9e8f'} />
+                      <Cell key={i} fill={b.color} />
                     ))}
                   </Bar>
                 </BarChart>
@@ -327,7 +363,9 @@ const Admin = () => {
             </Col>
             <Col lg={6}>
               <h3 style={{ fontSize: '1.3rem', marginBottom: '8px' }}>Simulaciones por hora del día</h3>
-              <p className="text-soft small mb-2">Cuándo se usa el simulador (hora del servidor, 0–23).</p>
+              <p className="text-soft small mb-2">
+                Cuándo se usa el simulador ({HORA_LOCAL ? 'hora local de este navegador' : 'hora UTC'}, 0–23).
+              </p>
               <ResponsiveContainer width="100%" height={230}>
                 <BarChart data={hourlyData} margin={{ top: 6, right: 12, left: -12, bottom: 4 }}>
                   <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
@@ -379,7 +417,7 @@ const Admin = () => {
                   <th>Enfermedad</th>
                   <th>Modelo</th>
                   <th>Simulaciones</th>
-                  <th>Tasa positiva</th>
+                  <th title="Banda que vio el usuario">Bajo · Moderado · Alto</th>
                   <th>Prob. media</th>
                   <th style={{ width: '24%' }}>Volumen</th>
                 </tr>
@@ -395,8 +433,17 @@ const Admin = () => {
                           ))
                         : prettyModel(d.model)}
                     </td>
-                    <td className="num">{d.count}</td>
-                    <td className="num">{pct(d.positive_rate)}</td>
+                    <td className="num">
+                      {d.count}
+                      {d.modes && d.count > 0 && (
+                        <div className="small text-faint">{d.modes.simplificado} simpl. · {d.modes.completo} compl.</div>
+                      )}
+                    </td>
+                    <td className="num small">
+                      {d.bands && d.count > 0
+                        ? ['low', 'mid', 'high'].map(b => pct(d.bands[b] / d.count, 0)).join(' · ')
+                        : '—'}
+                    </td>
                     <td className="num text-faint">{pct(d.avg_probability)}</td>
                     <td><div className="ps-mini-bar" style={{ width: `${Math.round((d.count / maxCount) * 100)}%` }} /></td>
                   </tr>
@@ -407,7 +454,10 @@ const Admin = () => {
 
           {/* Predicciones recientes */}
           <h3 style={{ fontSize: '1.3rem', marginBottom: '14px' }}>Simulaciones recientes</h3>
-          <p className="text-soft small mb-3">Últimas {preds.length} (máx. 50). Anónimas: el <code>session_id</code> es un UUID aleatorio sin PII.</p>
+          <p className="text-soft small mb-3">
+            Últimas {preds.length} (máx. 50). Anónimas: el <code>session_id</code> es un UUID aleatorio sin PII.
+            Pulsa una fila para ver los datos que se enviaron y la nota clínica.
+          </p>
           <div className="table-responsive">
             <Table className="align-middle" size="sm">
               <thead>
@@ -415,28 +465,45 @@ const Admin = () => {
                   <th>#</th>
                   <th>Fecha</th>
                   <th>Enfermedad</th>
-                  <th>Resultado</th>
+                  <th>Banda</th>
                   <th>Prob.</th>
                   <th>Modelo</th>
                   <th>Sesión</th>
                 </tr>
               </thead>
               <tbody>
-                {preds.map((p) => (
-                  <tr key={p.id}>
-                    <td className="text-faint">{p.id}</td>
-                    <td className="small">{fmtTs(p.timestamp)}</td>
-                    <td className="text-capitalize">{getLabel(p.disease)}</td>
-                    <td>
-                      <Badge bg={p.prediction === 1 ? 'danger' : 'success'}>
-                        {p.prediction === 1 ? 'Riesgo' : 'Bajo riesgo'}
-                      </Badge>
-                    </td>
-                    <td className="num">{pct(p.probability)}</td>
-                    <td className="small">{prettyModel(p.model)}{p.mode ? ` · ${getLabel(p.mode)}` : ''}</td>
-                    <td className="small text-faint">{p.session_id ? p.session_id.slice(0, 8) : '—'}</td>
-                  </tr>
-                ))}
+                {preds.map((p) => {
+                  const banda = riskBand(p);
+                  return (
+                    <Fragment key={p.id}>
+                      <tr onClick={() => setAbierta(abierta === p.id ? null : p.id)} style={{ cursor: 'pointer' }}>
+                        <td className="text-faint">{p.id}</td>
+                        <td className="small">{fmtTs(p.timestamp)}</td>
+                        <td className="text-capitalize">{getLabel(p.disease)}</td>
+                        <td>
+                          <span className="ps-risk-pill" style={{ background: banda.bg, color: banda.color, fontSize: '.75rem' }}>{banda.label}</span>
+                        </td>
+                        <td className="num">{pct(p.probability)}</td>
+                        <td className="small">{prettyModel(p.model)}{p.mode ? ` · ${getLabel(p.mode)}` : ''}</td>
+                        <td className="small text-faint">{p.session_id ? p.session_id.slice(0, 8) : '—'}</td>
+                      </tr>
+                      {abierta === p.id && (
+                        <tr>
+                          <td colSpan={7} className="small">
+                            <div className="d-flex flex-wrap gap-2 mb-2">
+                              {Object.entries(p.input_data || {}).map(([k, v]) => (
+                                <Badge key={k} bg="light" text="dark" className="fw-normal">
+                                  {getFeatureLabel(k)}: {valorFicha(k, v)}
+                                </Badge>
+                              ))}
+                            </div>
+                            <div className="text-soft">{p.clinical_note || 'Sin nota clínica.'}</div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </Table>
           </div>

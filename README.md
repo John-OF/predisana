@@ -108,7 +108,7 @@ las probabilidades (calibración isotónica con curva de fiabilidad).
   probabilidad— y el what-if sombrea en la curva el tramo sin respaldo.
 - **Capa de datos agnóstica al motor** (SQLAlchemy): SQLite en dev, Postgres en
   producción cambiando solo `DATABASE_URL`.
-- **712 tests de pytest** sobre los invariantes delicados: signos clínicos de los
+- **715 tests de pytest** sobre los invariantes delicados: signos clínicos de los
   modelos servidos, que `/metricas` publique lo que la API hace, calibración, capa
   clínica, avisos, laboratorio sintético y auth del admin.
 
@@ -145,7 +145,8 @@ Monorepo con dos componentes:
 | `/` | Portada: propuesta de valor y metodología en 3 pasos |
 | `/simulacion` | El simulador: formulario → riesgo + SHAP + capa clínica + what-if |
 | `/metricas` | Por enfermedad y modo: leaderboard con el filtro de validación, calibración, bandas y reporte por clase |
-| `/proyecto` | Case study: historia de los datos, modelos, laboratorio sintético, stack |
+| `/laboratorio` | Laboratorio de datos sintéticos (CTGAN): generar y evaluar, «¿real o sintético?», distribuciones y calidad (`?pestana=duelo` abre una pestaña directa) |
+| `/proyecto` | Case study: historia de los datos, modelos, capa clínica, stack |
 | `/educacion` | Enciclopedia breve de las cinco enfermedades |
 | `/aviso` | Aviso legal / disclaimer |
 | `/admin` | Dashboard de uso (dev-only, por URL directa + token; sin link en la UI) |
@@ -165,7 +166,7 @@ python app.py                     # http://localhost:8000
 ```powershell
 npm install
 npm run dev              # Vite dev server (http://localhost:5173)
-npm test                 # 58 tests de Vitest (~2 s)
+npm test                 # 59 tests de Vitest (~2 s)
 ```
 
 El frontend lee `VITE_API_URL` (por defecto `http://localhost:8000`). El panel
@@ -174,7 +175,7 @@ admin requiere definir la variable de entorno `ADMIN_TOKEN` en el backend.
 **Tests del backend:**
 ```powershell
 pip install -r requirements-dev.txt
-python -m pytest         # 712 tests (BD temporal, no toca la de dev)
+python -m pytest         # 715 tests (BD temporal, no toca la de dev)
 ```
 
 **CI:** cada push y pull request a `main` corre en GitHub Actions la suite de pytest

@@ -90,11 +90,14 @@ describe('etiquetas en español', () => {
 
   // Las paginas declaran su lista de enfermedades a mano: una nueva en el backend
   // (como la renal) no aparece en el simulador ni en metricas hasta que se anade aqui.
-  it.each(['Simulacion.jsx', 'Metricas.jsx', 'Proyecto.jsx', 'Educacion.jsx'])(
+  // Proyecto y el Laboratorio la toman de utils/catalogo.jsx; el Laboratorio declara
+  // ademas las variables de las distribuciones por enfermedad.
+  it.each(['pages/Simulacion.jsx', 'pages/Metricas.jsx', 'utils/catalogo.jsx', 'pages/Educacion.jsx',
+           'pages/Laboratorio.jsx'])(
     '%s lista todas las enfermedades servidas', (pagina) => {
-      const src = readFileSync(join(process.cwd(), 'src', 'pages', pagina), 'utf-8');
+      const src = readFileSync(join(process.cwd(), 'src', ...pagina.split('/')), 'utf-8');
       for (const d of enfermedades) {
-        expect(src.includes(`'${d}'`) || src.includes(`${d}: {`), `${pagina}: ${d}`).toBe(true);
+        expect(src.includes(`'${d}'`) || src.includes(`${d}: {`) || src.includes(`${d}: [`), `${pagina}: ${d}`).toBe(true);
       }
     });
 });

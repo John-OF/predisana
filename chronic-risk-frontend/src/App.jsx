@@ -16,6 +16,7 @@ const Educacion = lazy(() => import('./pages/Educacion'));
 const Simulacion = lazy(() => import('./pages/Simulacion'));
 const Metricas = lazy(() => import('./pages/Metricas'));
 const Proyecto = lazy(() => import('./pages/Proyecto'));
+const Laboratorio = lazy(() => import('./pages/Laboratorio'));
 const Aviso = lazy(() => import('./pages/Aviso'));
 const Admin = lazy(() => import('./pages/Admin'));
 
@@ -48,6 +49,7 @@ const RutasConLimite = () => {
           <Route path="/educacion" element={<Educacion />} />
           <Route path="/simulacion" element={<Simulacion />} />
           <Route path="/metricas" element={<Metricas />} />
+          <Route path="/laboratorio" element={<Laboratorio />} />
           <Route path="/proyecto" element={<Proyecto />} />
           <Route path="/aviso" element={<Aviso />} />
           {/* Panel dev-only (A3): sin link en navbar, acceso por URL directa + token. */}

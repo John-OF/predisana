@@ -15,7 +15,7 @@ API REST en Python/Flask que sirve modelos de Machine Learning para estimar el r
 - **Explicabilidad SHAP** (`LinearExplainer` para la LogReg, `TreeExplainer` para LightGBM): top-5 de variables por predicción.
 - **Capa clínica, cobertura de datos y coherencia desacopladas**: umbrales ADA, ACC/AHA y KDIGO, avisos de extrapolación y de datos que no cuadran entre sí. Nada de eso toca la probabilidad.
 - **Análisis contrafactual (`/whatif`)**, **laboratorio de datos sintéticos** (CTGAN + informe de fidelidad, utilidad y privacidad) y **registro anónimo de uso** con panel admin.
-- **Suite de 712 tests (pytest)** sobre los invariantes delicados de la API, los modelos y los datos.
+- **Suite de 715 tests (pytest)** sobre los invariantes delicados de la API, los modelos y los datos.
 
 ---
 
@@ -338,8 +338,8 @@ Tres preguntas sobre el sintético, no una. **Fidelidad**: SDMetrics `QualityRep
 ### Admin (dev-only): `GET /admin/verify` · `/admin/stats` · `/admin/predictions` · `/admin/export.csv`
 Protegidos por el header `X-Admin-Token`, que debe coincidir con la env var `ADMIN_TOKEN` (sin ella responden **503**; token incorrecto, **401**). No es auth de usuario — los usuarios nunca se loguean. Además: `Origin` no permitido → **403**, y más de `RATE_LIMIT_ADMIN_VERIFY` intentos de token **fallidos** por minuto y por IP, sumando los cuatro endpoints → **429** en todo el panel, también con el token bueno (si no, el acierto se distinguiría de los fallos). El uso con el token bueno no gasta ese cupo; cada endpoint tiene además su `RATE_LIMIT_ADMIN`.
 
-- `/admin/stats` — analítica **agregada y anónima**: totales, sesiones únicas, conteo/tasa de positivos/probabilidad media por enfermedad, histograma de probabilidades, timeline diario, uso por hora y features SHAP más frecuentes. Trae el modelo de cada modo. Acepta `?from=YYYY-MM-DD&to=YYYY-MM-DD`.
-- `/admin/predictions?limit=&disease=&from=&to=` — simulaciones recientes, con su modo. `limit` va de 1 a 500 (50 por defecto, también si llega ≤ 0: SQLite lee `LIMIT -1` como "sin límite").
+- `/admin/stats` — analítica **agregada y anónima**: totales, sesiones únicas y, por enfermedad, conteo, uso por modo, reparto por la **banda que vio el usuario** (`bands`, con los cortes en `risk_bands`), probabilidad media e histograma; timeline diario, uso por hora y las variables SHAP más frecuentes (solo de los modelos servidos: las filas de la v1 traían otras). Trae el modelo de cada modo. Horas y días van en **UTC** (`timezone`); el panel pasa las horas a la local del navegador. Acepta `?from=YYYY-MM-DD&to=YYYY-MM-DD` (días UTC).
+- `/admin/predictions?limit=&disease=&from=&to=` — simulaciones recientes, con su modo, su banda (`risk_band`) y la hora en UTC con su `Z` (sin ella el navegador la leía como local: 5 horas de desfase en Ecuador). `limit` va de 1 a 500 (50 por defecto, también si llega ≤ 0: SQLite lee `LIMIT -1` como "sin límite").
 - `/admin/export.csv` — export CSV server-side con los mismos filtros.
 
 ---
@@ -358,7 +358,7 @@ chronic-risk-backend/
 ├── curate_and_synthesize.py     # Síntesis CTGAN/TVAE sobre el train de cada enfermedad
 ├── build_quality_reports.py     # Precomputa el informe de calidad del sintético a JSON
 ├── synthetic_quality.py         # SDMetrics + correlaciones + TSTR + privacidad
-├── tests/                       # Suite pytest (712 tests; BD temporal propia)
+├── tests/                       # Suite pytest (715 tests; BD temporal propia)
 ├── pytest.ini
 ├── .env.example                 # Plantilla de variables de entorno
 ├── requirements.txt             # Runtime del API (directas, UTF-8)
