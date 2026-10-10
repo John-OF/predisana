@@ -1730,9 +1730,23 @@ def admin_export_csv():
     )
 
 
+def _memoria_mb() -> Optional[float]:
+    """Memoria residente del proceso (Linux; en otros sistemas, None). El plan gratuito de
+    Render da 512 MB y no avisa de cuanto se usa."""
+    try:
+        with open("/proc/self/status", encoding="ascii") as f:
+            return next(int(l.split()[1]) / 1024 for l in f if l.startswith("VmRSS:"))
+    except (OSError, StopIteration, ValueError):
+        return None
+
+
 # Inicialización global (se ejecuta siempre)
+_t_arranque = time.perf_counter()
 _load_all()
 init_db()
+_rss = _memoria_mb()
+print(f"[info] {len(MODELS)} modelos cargados en {time.perf_counter() - _t_arranque:.1f} s"
+      + (f", {_rss:.0f} MB en memoria" if _rss is not None else ""), flush=True)
 
 # Inicialización local
 if __name__ == "__main__":
