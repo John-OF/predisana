@@ -12,8 +12,7 @@ RUN useradd -m -u 1000 user
 USER user
 # Un hilo por libreria numerica. LightGBM (OpenMP), NumPy (OpenBLAS) y numba lanzan uno
 # por cada nucleo que ven, y en el plan gratuito ven todos los de la maquina con una
-# decima de CPU de cuota: los que esperan en activo se la pueden comer entera. Es una
-# de las sospechas del primer deploy, que no llego a responder /health en 15 minutos.
+# decima de CPU de cuota: los que esperan en activo se la pueden comer entera.
 ENV PATH="/home/user/.local/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     OMP_NUM_THREADS=1 \
